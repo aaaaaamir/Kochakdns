@@ -24,6 +24,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,38 +38,6 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 
-// ==================== Data Classes ====================
-data class DnsServer(
-    val role: String,
-    val priority: Int,
-    val family: String,
-    val address: String
-)
-
-data class DnsProfile(
-    val name: String,
-    val enabled: Boolean,
-    val ipv4Primary: String?,
-    val ipv6Primary: String?,
-    val ipv4Secondary: String?,
-    val ipv6Secondary: String?,
-    val servers: List<DnsServer>,
-    val updatedAt: String?
-)
-
-data class DnsItem(
-    val name: String,
-    val servers: List<DnsServer>,
-    val ping: Long = -1,
-    val previousPing: Long = -1
-) {
-    val jitter: Long
-        get() = if (ping > 0 && previousPing > 0) {
-            Math.abs(ping - previousPing)
-        } else 0
-}
-
-// ==================== Main Activity ====================
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -121,11 +90,9 @@ class DnsActivity : AppCompatActivity() {
         buildUI()
         setupVpnReceiver()
 
-        // Load saved DNS selection
         val prefs = getSharedPreferences("dns_prefs", MODE_PRIVATE)
         selectedDnsName = prefs.getString("selected_dns", null)
 
-        // Start initial sync and ping loop
         lifecycleScope.launch {
             syncDnsData()
             startPingLoop()
@@ -164,7 +131,6 @@ class DnsActivity : AppCompatActivity() {
             )
         }
 
-        // Header with status indicator
         val header = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -172,7 +138,6 @@ class DnsActivity : AppCompatActivity() {
             )
         }
 
-        // Active profile name
         activeProfileNameText = TextView(this).apply {
             text = "پروفایل فعال"
             setTextColor(Color.parseColor("#FFD700"))
@@ -187,14 +152,12 @@ class DnsActivity : AppCompatActivity() {
         }
         header.addView(activeProfileNameText)
 
-        // Status indicator (top-right)
         statusIndicator = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(120, 120).apply {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
             }
         }
 
-        // Loading spinner
         loadingSpinner = ProgressBar(this).apply {
             isIndeterminate = true
             visibility = View.GONE
@@ -205,7 +168,6 @@ class DnsActivity : AppCompatActivity() {
         }
         statusIndicator.addView(loadingSpinner)
 
-        // Retry button
         retryButton = Button(this).apply {
             text = "↻"
             textSize = 24f
@@ -227,7 +189,6 @@ class DnsActivity : AppCompatActivity() {
         header.addView(statusIndicator)
         mainContainer.addView(header)
 
-        // Power Button
         powerButton = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -258,7 +219,6 @@ class DnsActivity : AppCompatActivity() {
         powerButton.addView(powerIcon)
         mainContainer.addView(powerButton)
 
-        // Stats row (Jitter & Last Ping)
         val statsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -270,7 +230,6 @@ class DnsActivity : AppCompatActivity() {
             }
         }
 
-        // Jitter
         val jitterContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -292,7 +251,6 @@ class DnsActivity : AppCompatActivity() {
         jitterContainer.addView(jitterLabel)
         jitterContainer.addView(jitterText)
 
-        // Last Ping
         val pingContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -318,7 +276,6 @@ class DnsActivity : AppCompatActivity() {
         statsRow.addView(pingContainer)
         mainContainer.addView(statsRow)
 
-        // Network Stats
         statsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -341,7 +298,6 @@ class DnsActivity : AppCompatActivity() {
         statsLayout.addView(bytesReceivedText)
         mainContainer.addView(statsLayout)
 
-        // DNS List Header
         val listHeader = TextView(this).apply {
             text = "📡 لیست DNS"
             setTextColor(Color.WHITE)
@@ -356,7 +312,6 @@ class DnsActivity : AppCompatActivity() {
         }
         mainContainer.addView(listHeader)
 
-        // Scrollable DNS List
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -421,6 +376,7 @@ class DnsActivity : AppCompatActivity() {
 
             val vpnIntent = VpnService.prepare(this)
             if (vpnIntent != null) {
+                @Suppress("DEPRECATION")
                 startActivityForResult(vpnIntent, 1001)
             } else {
                 startVpn()
@@ -483,26 +439,22 @@ class DnsActivity : AppCompatActivity() {
         isSyncing = true
         showLoading()
 
-        // Load from DataStore (simplified - no DnsSyncManager dependency)
         withContext(Dispatchers.IO) {
             try {
-                val dataStore = applicationContext.dataStore
+                val dataStore = applicationContext.dnsDataStore
                 val prefs = dataStore.data.first()
                 val json = prefs[stringPreferencesKey("dns_profile_data")]
                 
                 if (json != null) {
-                    val profile = parseProfileFromJson(json)
-                    if (profile != null) {
-                        mainHandler.post {
-                            loadDnsFromProfile(profile)
-                            isSyncing = false
-                            hideLoading()
-                        }
-                        return@withContext
+                    val profile = DnsProfile.fromJson(json)
+                    mainHandler.post {
+                        loadDnsFromProfile(profile)
+                        isSyncing = false
+                        hideLoading()
                     }
+                    return@withContext
                 }
                 
-                // No data, show error
                 mainHandler.post {
                     isSyncing = false
                     showError()
@@ -513,41 +465,6 @@ class DnsActivity : AppCompatActivity() {
                     showError()
                 }
             }
-        }
-    }
-
-    private fun parseProfileFromJson(json: String): DnsProfile? {
-        return try {
-            val obj = org.json.JSONObject(json)
-            val serversArray = obj.optJSONArray("servers")
-            val servers = mutableListOf<DnsServer>()
-
-            if (serversArray != null) {
-                for (i in 0 until serversArray.length()) {
-                    val s = serversArray.getJSONObject(i)
-                    servers.add(
-                        DnsServer(
-                            role = s.optString("role"),
-                            priority = s.optInt("priority"),
-                            family = s.optString("family"),
-                            address = s.optString("address")
-                        )
-                    )
-                }
-            }
-
-            DnsProfile(
-                name = obj.optString("name"),
-                enabled = obj.optBoolean("enabled"),
-                ipv4Primary = obj.optString("ipv4Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Primary = obj.optString("ipv6Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv4Secondary = obj.optString("ipv4Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Secondary = obj.optString("ipv6Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                servers = servers,
-                updatedAt = obj.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }
-            )
-        } catch (e: Exception) {
-            null
         }
     }
 
