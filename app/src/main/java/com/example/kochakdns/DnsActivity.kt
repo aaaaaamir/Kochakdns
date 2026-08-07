@@ -39,38 +39,6 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 
-// ==================== Data Classes ====================
-data class DnsServer(
-    val role: String,
-    val priority: Int,
-    val family: String,
-    val address: String
-)
-
-data class DnsProfile(
-    val name: String,
-    val enabled: Boolean,
-    val ipv4Primary: String?,
-    val ipv6Primary: String?,
-    val ipv4Secondary: String?,
-    val ipv6Secondary: String?,
-    val servers: List<DnsServer>,
-    val updatedAt: String?
-)
-
-data class DnsItem(
-    val name: String,
-    val servers: List<DnsServer>,
-    val ping: Long = -1,
-    val previousPing: Long = -1
-) {
-    val jitter: Long
-        get() = if (ping > 0 && previousPing > 0) {
-            Math.abs(ping - previousPing)
-        } else 0
-}
-
-// ==================== Main Activity ====================
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -474,21 +442,18 @@ class DnsActivity : AppCompatActivity() {
 
         withContext(Dispatchers.IO) {
             try {
-                // ✅ اصلاح شده: استفاده از dnsDataStore
                 val dataStore = applicationContext.dnsDataStore
                 val prefs = dataStore.data.first()
                 val json = prefs[stringPreferencesKey("dns_profile_data")]
                 
                 if (json != null) {
-                    val profile = parseProfileFromJson(json)
-                    if (profile != null) {
-                        mainHandler.post {
-                            loadDnsFromProfile(profile)
-                            isSyncing = false
-                            hideLoading()
-                        }
-                        return@withContext
+                    val profile = DnsProfile.fromJson(json)
+                    mainHandler.post {
+                        loadDnsFromProfile(profile)
+                        isSyncing = false
+                        hideLoading()
                     }
+                    return@withContext
                 }
                 
                 mainHandler.post {
@@ -501,41 +466,6 @@ class DnsActivity : AppCompatActivity() {
                     showError()
                 }
             }
-        }
-    }
-
-    private fun parseProfileFromJson(json: String): DnsProfile? {
-        return try {
-            val obj = org.json.JSONObject(json)
-            val serversArray = obj.optJSONArray("servers")
-            val servers = mutableListOf<DnsServer>()
-
-            if (serversArray != null) {
-                for (i in 0 until serversArray.length()) {
-                    val s = serversArray.getJSONObject(i)
-                    servers.add(
-                        DnsServer(
-                            role = s.optString("role"),
-                            priority = s.optInt("priority"),
-                            family = s.optString("family"),
-                            address = s.optString("address")
-                        )
-                    )
-                }
-            }
-
-            DnsProfile(
-                name = obj.optString("name"),
-                enabled = obj.optBoolean("enabled"),
-                ipv4Primary = obj.optString("ipv4Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Primary = obj.optString("ipv6Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv4Secondary = obj.optString("ipv4Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Secondary = obj.optString("ipv6Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                servers = servers,
-                updatedAt = obj.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }
-            )
-        } catch (e: Exception) {
-            null
         }
     }
 
@@ -885,7 +815,6 @@ class DnsActivity : AppCompatActivity() {
                     background = shape
                 }
 
-                // ✅ اصلاح شده: استفاده از آدرس کامل برای جلوگیری از تداخل
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
