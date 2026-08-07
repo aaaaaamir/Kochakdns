@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
 
+// ==================== Data Classes ====================
 data class DnsServer(
     val role: String,
     val priority: Int,
@@ -88,7 +89,7 @@ data class DnsItem(
         } else 0
 }
 
-// Singleton for VPN stats
+// ==================== VPN Stats Singleton ====================
 object VpnStats {
     val totalBytesSent = AtomicLong(0)
     val totalBytesReceived = AtomicLong(0)
