@@ -27,15 +27,14 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      # اجرای مستقیم دستور gradle
-      - name: Build release APK for ARM64
+      # اجرای دستور بیلد (نسخه Debug امضاشده و آماده نصب روی گوشی)
+      - name: Build Debug APK for ARM64
         run: |
-          gradle clean assembleRelease
+          gradle clean assembleDebug
 
-      # آپلود فایل APK (با پشتیبانی از همه نام‌ها)
+      # آپلود فایل APK خروجی جهت دانلود از Artifacts
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: kochakdns-arm64-apk
-          path: app/build/outputs/apk/release/*.apk
-          
+          path: app/build/outputs/apk/debug/*.apk
