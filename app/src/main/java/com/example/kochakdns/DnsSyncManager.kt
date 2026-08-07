@@ -97,6 +97,12 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
+    suspend fun getLastSyncTime(): Long? {
+        return withContext(Dispatchers.IO) {
+            dataStore.data.first()[LAST_SYNC_KEY]
+        }
+    }
+
     private fun fetchFromServer(): DnsProfile {
         val url = URL("$BASE_URL/api/dns/active")
         val conn = url.openConnection() as HttpURLConnection
