@@ -1,0 +1,40 @@
+name: Build Android ARM64
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+          ndk: 25.2.9519653
+
+      - name: Grant Gradle executable permissions
+        run: chmod +x ./gradlew
+
+      - name: Build release APK for ARM64
+        run: |
+          ./gradlew clean assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kochakdns-arm64-apk
+          path: app/build/outputs/apk/release/app-release.apk

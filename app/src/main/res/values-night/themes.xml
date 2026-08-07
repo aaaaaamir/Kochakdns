@@ -1,0 +1,5 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.Kochakdns" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="android:containerBackground">@color/black</item>
+    </style>
+</resources>

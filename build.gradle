@@ -1,0 +1,13 @@
+// Minimal root build file for Gradle wrapper generation.
+
+plugins {
+    // معرفی نسخه پلاگین‌های اندروید به سیستم گریدل
+        id 'com.android.application' version '8.1.0' apply false
+            id 'com.android.library' version '8.1.0' apply false
+                id 'org.jetbrains.kotlin.android' version '1.8.10' apply false // اگر در پروژه از کاتلین استفاده شده است
+                }
+
+                task clean(type: Delete) {
+                    delete rootProject.buildDir
+                    }
+                    
