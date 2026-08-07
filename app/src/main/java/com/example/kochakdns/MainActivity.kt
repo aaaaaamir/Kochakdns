@@ -12,12 +12,14 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 
 class MainActivity : AppCompatActivity() {
 
@@ -25,12 +27,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // مجوز VPN تایید شد
+            // مجوز تایید شد
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        supportActionBar?.hide()
 
         setupSplashScreen()
         checkVpnPermission()
@@ -52,97 +55,116 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        val cardView = CardView(this).apply {
+            radius = 64f
+            cardElevation = 16f
+            setCardBackgroundColor(Color.parseColor("#1E1E2E"))
+            layoutParams = LinearLayout.LayoutParams(340, 340).apply {
+                setMargins(0, 0, 0, 32)
+            }
+        }
+
         val logoIcon = ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
-            layoutParams = LinearLayout.LayoutParams(260, 260)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
         }
+        cardView.addView(logoIcon)
 
         val titleText = TextView(this).apply {
             text = "کُچک دی ان اس"
-            textSize = 28f
+            textSize = 30f
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             alpha = 0f
-            translationY = -60f
+            translationY = -80f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 48, 0, 0)
+                setMargins(0, 24, 0, 0)
             }
         }
 
         val descText = TextView(this).apply {
-            text = "vip gaming dns"
+            text = "VIP GAMING DNS"
             textSize = 16f
             setTextColor(Color.parseColor("#FFD700"))
             setTypeface(null, Typeface.BOLD)
+            letterSpacing = 0.2f
             gravity = Gravity.CENTER
             alpha = 0f
-            translationY = -60f
+            translationY = -80f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 16, 0, 0)
+                setMargins(0, 12, 0, 0)
             }
         }
 
-        container.addView(logoIcon)
+        container.addView(cardView)
         container.addView(titleText)
         container.addView(descText)
         rootLayout.addView(container)
 
         setContentView(rootLayout)
 
-        // ۱. انیمیشن بلر آیکون
+        cardView.scaleX = 0.3f
+        cardView.scaleY = 0.3f
+        cardView.alpha = 0f
+        cardView.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(1200)
+            .setInterpolator(OvershootInterpolator(1.5f))
+            .start()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ValueAnimator.ofFloat(25f, 0.1f).apply {
-                duration = 1400
+            ValueAnimator.ofFloat(30f, 0f).apply {
+                duration = 1200
                 addUpdateListener { anim ->
                     val radius = anim.animatedValue as Float
-                    logoIcon.setRenderEffect(
-                        RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
-                    )
+                    if (radius > 0.5f) {
+                        logoIcon.setRenderEffect(
+                            RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
+                        )
+                    } else {
+                        logoIcon.setRenderEffect(null)
+                    }
                 }
                 start()
             }
-        } else {
-            logoIcon.alpha = 0.2f
-            logoIcon.scaleX = 1.3f
-            logoIcon.scaleY = 1.3f
-            logoIcon.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(1400)
-                .start()
         }
 
-        // ۲. انیمیشن عنوان اصلی
         titleText.animate()
             .alpha(1f)
             .translationY(0f)
-            .setDuration(800)
-            .setStartDelay(400)
+            .setDuration(900)
+            .setStartDelay(300)
+            .setInterpolator(OvershootInterpolator(1.1f))
             .start()
 
-        // ۳. انیمیشن توضیحات طلایی
         descText.animate()
             .alpha(1f)
             .translationY(0f)
-            .setDuration(800)
-            .setStartDelay(800)
+            .setDuration(900)
+            .setStartDelay(600)
+            .setInterpolator(OvershootInterpolator(1.1f))
             .withEndAction {
-                startGoldShimmerEffect(descText)
+                startLuxuryGlowEffect(descText)
             }
             .start()
     }
 
-    private fun startGoldShimmerEffect(textView: TextView) {
-        ObjectAnimator.ofFloat(textView, "alpha", 1f, 0.35f, 1f).apply {
-            duration = 1200
+    private fun startLuxuryGlowEffect(textView: TextView) {
+        ObjectAnimator.ofFloat(textView, "alpha", 1f, 0.6f, 1f).apply {
+            duration = 2000
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             start()
