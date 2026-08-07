@@ -3,6 +3,7 @@ package com.example.kochakdns
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 
 data class DnsServer(
     val role: String,
@@ -51,12 +52,14 @@ data class DnsProfile(
             if (serversArray != null) {
                 for (i in 0 until serversArray.length()) {
                     val s = serversArray.getJSONObject(i)
-                    servers.add(DnsServer(
-                        role = s.optString("role"),
-                        priority = s.optInt("priority"),
-                        family = s.optString("family"),
-                        address = s.optString("address")
-                    ))
+                    servers.add(
+                        DnsServer(
+                            role = s.optString("role"),
+                            priority = s.optInt("priority"),
+                            family = s.optString("family"),
+                            address = s.optString("address")
+                        )
+                    )
                 }
             }
             return DnsProfile(
@@ -80,7 +83,7 @@ data class DnsItem(
     val previousPing: Long = -1
 ) {
     val jitter: Long
-        get() = if (ping > 0 && previousPing > 0) Math.abs(ping - previousPing) else 0
+        get() = if (ping > 0 && previousPing > 0) abs(ping - previousPing) else 0
 }
 
 object VpnStats {
@@ -88,6 +91,10 @@ object VpnStats {
     val totalBytesReceived = AtomicLong(0)
     val totalPacketsSent = AtomicLong(0)
     val totalPacketsLost = AtomicLong(0)
+    
+    @Volatile
     var isVpnActive = false
+    
+    @Volatile
     var activeDnsName: String? = null
 }
