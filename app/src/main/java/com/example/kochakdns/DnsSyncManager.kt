@@ -1,4 +1,4 @@
-package com.example.kochakdns  // ← پکیج خودت رو بذار
+package com.example.kochakdns
 
 import android.content.Context
 import android.graphics.Color
@@ -18,101 +18,18 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-// ==================== DataStore ====================
-private val Context.dnsDataStore: DataStore<Preferences> by preferencesDataStore(name = "dns_sync_data")
+val Context.dnsDataStore: DataStore<Preferences> by preferencesDataStore(name = "dns_sync_data")
 
-// ==================== Data Classes ====================
-data class DnsServer(
-    val role: String,
-    val priority: Int,
-    val family: String,
-    val address: String
-)
-
-data class DnsProfile(
-    val name: String,
-    val enabled: Boolean,
-    val ipv4Primary: String?,
-    val ipv6Primary: String?,
-    val ipv4Secondary: String?,
-    val ipv6Secondary: String?,
-    val servers: List<DnsServer>,
-    val updatedAt: String?
-) {
-    fun toJson(): String {
-        val serversArray = JSONArray()
-        servers.forEach { s ->
-            serversArray.put(JSONObject().apply {
-                put("role", s.role)
-                put("priority", s.priority)
-                put("family", s.family)
-                put("address", s.address)
-            })
-        }
-
-        return JSONObject().apply {
-            put("name", name)
-            put("enabled", enabled)
-            put("ipv4Primary", ipv4Primary ?: JSONObject.NULL)
-            put("ipv6Primary", ipv6Primary ?: JSONObject.NULL)
-            put("ipv4Secondary", ipv4Secondary ?: JSONObject.NULL)
-            put("ipv6Secondary", ipv6Secondary ?: JSONObject.NULL)
-            put("updatedAt", updatedAt ?: JSONObject.NULL)
-            put("servers", serversArray)
-        }.toString()
-    }
-
-    companion object {
-        fun fromJson(json: String): DnsProfile {
-            val obj = JSONObject(json)
-            val serversArray = obj.optJSONArray("servers")
-            val servers = mutableListOf<DnsServer>()
-
-            if (serversArray != null) {
-                for (i in 0 until serversArray.length()) {
-                    val s = serversArray.getJSONObject(i)
-                    servers.add(DnsServer(
-                        role = s.optString("role"),
-                        priority = s.optInt("priority"),
-                        family = s.optString("family"),
-                        address = s.optString("address")
-                    ))
-                }
-            }
-
-            return DnsProfile(
-                name = obj.optString("name"),
-                enabled = obj.optBoolean("enabled"),
-                ipv4Primary = obj.optString("ipv4Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Primary = obj.optString("ipv6Primary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv4Secondary = obj.optString("ipv4Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                ipv6Secondary = obj.optString("ipv6Secondary").takeIf { it.isNotEmpty() && it != "null" },
-                servers = servers,
-                updatedAt = obj.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }
-            )
-        }
-    }
-}
-
-// ==================== Main Manager ====================
 class DnsSyncManager(private val context: Context) {
 
     companion object {
-        // ⬇️⬇️⬇️ آدرس بک‌اند خودت رو اینجا بذار (خط 101) ⬇️⬇️⬇️
         private const val BASE_URL = "https://kochakdns-backend.amir26076.workers.dev"
-        // ⬆️⬆️⬆️ فقط همین یک خط رو عوض کن ⬆️⬆️⬆️
-
         private var accessToken: String? = null
 
-        /**
-         * بعداً اگر API_ACCESS_TOKEN گذاشتی، فقط این یک خط رو صدا کن:
-         * DnsSyncManager.setAccessToken("your-token")
-         */
         fun setAccessToken(token: String?) {
             accessToken = token
         }
@@ -124,11 +41,6 @@ class DnsSyncManager(private val context: Context) {
     private val DNS_DATA_KEY = stringPreferencesKey("dns_profile_data")
     private val LAST_SYNC_KEY = longPreferencesKey("last_sync_time")
 
-    /**
-     * دریافت از سرور و ذخیره
-     * در صورت موفقیت: دیتای قبلی پاک و با جدید جایگزین می‌شود
-     * در صورت خطا: دیتای قبلی دست نمی‌خورد
-     */
     suspend fun sync(
         onSuccess: ((DnsProfile) -> Unit)? = null,
         onError: ((String) -> Unit)? = null
@@ -138,7 +50,6 @@ class DnsSyncManager(private val context: Context) {
                 fetchFromServer()
             }
 
-            // ✅ موفقیت → پاک کردن قبلی و ذخیره جدید
             saveProfile(profile)
 
             mainHandler.post {
@@ -165,9 +76,6 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
-    /**
-     * خواندن کانفیگ ذخیره شده (بدون درخواست شبکه)
-     */
     suspend fun getSavedProfile(): DnsProfile? {
         return withContext(Dispatchers.IO) {
             val prefs = dataStore.data.first()
@@ -180,9 +88,6 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
-    /**
-     * پاک کردن دیتای ذخیره شده
-     */
     suspend fun clearSavedData() {
         withContext(Dispatchers.IO) {
             dataStore.edit { prefs ->
@@ -191,17 +96,6 @@ class DnsSyncManager(private val context: Context) {
             }
         }
     }
-
-    /**
-     * آخرین زمان sync (میلی‌ثانیه)
-     */
-    suspend fun getLastSyncTime(): Long? {
-        return withContext(Dispatchers.IO) {
-            dataStore.data.first()[LAST_SYNC_KEY]
-        }
-    }
-
-    // ==================== Private ====================
 
     private fun fetchFromServer(): DnsProfile {
         val url = URL("$BASE_URL/api/dns/active")
@@ -213,7 +107,6 @@ class DnsSyncManager(private val context: Context) {
             conn.requestMethod = "GET"
             conn.setRequestProperty("Accept", "application/json")
 
-            // اگر token تنظیم شده باشه، اضافه می‌شود
             accessToken?.let { token ->
                 conn.setRequestProperty("Authorization", "Bearer $token")
             }
@@ -276,7 +169,6 @@ class DnsSyncManager(private val context: Context) {
 
     private suspend fun saveProfile(profile: DnsProfile) {
         dataStore.edit { prefs ->
-            // پاک کردن دیتای قبلی و جایگزینی با جدید
             prefs.remove(DNS_DATA_KEY)
             prefs[DNS_DATA_KEY] = profile.toJson()
             prefs[LAST_SYNC_KEY] = System.currentTimeMillis()
