@@ -1,8 +1,10 @@
 package com.example.kochakdns
 
+import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
@@ -11,7 +13,6 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -20,6 +21,13 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.dnssync.DnsSyncManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -27,8 +35,18 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // مجوز تایید شد
+            onPermissionsGranted()
+        } else {
+            // حتی اگر رد شد، ادامه بده
+            onPermissionsGranted()
         }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        // فارغ از نتیجه، به مرحله بعد برو
+        checkVpnPermission()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,7 +54,62 @@ class MainActivity : AppCompatActivity() {
         supportActionBar?.hide()
 
         setupSplashScreen()
-        checkVpnPermission()
+        
+        // شروع فرآیند بعد از splash screen
+        lifecycleScope.launch {
+            delay(3000) // 3 ثانیه splash
+            checkNotificationPermission()
+        }
+    }
+
+    private fun checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ نیاز به مجوز نوتیفیکیشن دارد
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // درخواست مجوز
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // قبلاً داده شده
+                checkVpnPermission()
+            }
+        } else {
+            // Android 12 و پایین‌تر - نیاز نیست
+            checkVpnPermission()
+        }
+    }
+
+    private fun checkVpnPermission() {
+        val vpnIntent = VpnService.prepare(this)
+        if (vpnIntent != null) {
+            vpnPermissionLauncher.launch(vpnIntent)
+        } else {
+            // قبلاً مجوز داده شده
+            onPermissionsGranted()
+        }
+    }
+
+    private fun onPermissionsGranted() {
+        val appContext = applicationContext
+        
+        // شروع DNS sync در background (مستقل از lifecycle MainActivity)
+        CoroutineScope(Dispatchers.IO).launch {
+            val dnsSyncManager = DnsSyncManager(appContext)
+            dnsSyncManager.sync()
+            // Toast خودکار نمایش داده می‌شود (موفقیت یا خطا)
+        }
+        
+        // رفتن به DnsActivity
+        navigateToDnsActivity()
+    }
+
+    private fun navigateToDnsActivity() {
+        val intent = Intent(this, DnsActivity::class.java)
+        startActivity(intent)
+        finish() // MainActivity را ببند
     }
 
     @Suppress("NewApi")
@@ -168,13 +241,6 @@ class MainActivity : AppCompatActivity() {
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             start()
-        }
-    }
-
-    private fun checkVpnPermission() {
-        val vpnIntent = VpnService.prepare(this)
-        if (vpnIntent != null) {
-            vpnPermissionLauncher.launch(vpnIntent)
         }
     }
 }
