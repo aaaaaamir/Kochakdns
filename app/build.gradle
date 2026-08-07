@@ -39,11 +39,27 @@ android {
 }
 
 dependencies {
+    // ========== Core Android ==========
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
+    // ========== Coroutines (برای async/await در Kotlin) ==========
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+
+    // ========== Lifecycle (برای lifecycleScope) ==========
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+
+    // ========== DataStore (برای ذخیره DNS Config) ==========
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
+
+    // ========== Fragment (اگر از Fragment استفاده می‌کنید) ==========
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
+
+    // ========== Testing ==========
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.6'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
