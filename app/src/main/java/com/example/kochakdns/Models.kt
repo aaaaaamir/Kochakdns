@@ -4,7 +4,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
 
-// ==================== Data Classes ====================
 data class DnsServer(
     val role: String,
     val priority: Int,
@@ -32,7 +31,6 @@ data class DnsProfile(
                 put("address", s.address)
             })
         }
-
         return JSONObject().apply {
             put("name", name)
             put("enabled", enabled)
@@ -50,7 +48,6 @@ data class DnsProfile(
             val obj = JSONObject(json)
             val serversArray = obj.optJSONArray("servers")
             val servers = mutableListOf<DnsServer>()
-
             if (serversArray != null) {
                 for (i in 0 until serversArray.length()) {
                     val s = serversArray.getJSONObject(i)
@@ -62,7 +59,6 @@ data class DnsProfile(
                     ))
                 }
             }
-
             return DnsProfile(
                 name = obj.optString("name"),
                 enabled = obj.optBoolean("enabled"),
@@ -84,12 +80,9 @@ data class DnsItem(
     val previousPing: Long = -1
 ) {
     val jitter: Long
-        get() = if (ping > 0 && previousPing > 0) {
-            Math.abs(ping - previousPing)
-        } else 0
+        get() = if (ping > 0 && previousPing > 0) Math.abs(ping - previousPing) else 0
 }
 
-// ==================== VPN Stats Singleton ====================
 object VpnStats {
     val totalBytesSent = AtomicLong(0)
     val totalBytesReceived = AtomicLong(0)
