@@ -1,4 +1,23 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ========== مجوزهای ضروری ========== -->
+    
+    <!-- دسترسی به اینترنت (برای دریافت DNS از سرور) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- بررسی وضعیت شبکه (اختیاری ولی توصیه می‌شود) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <!-- برای اجرای VPN به صورت Foreground Service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    
+    <!-- برای اندروید 14+ (API 34+) - نوع Foreground Service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    
+    <!-- برای اندروید 13+ (API 33+) - نمایش نوتیفیکیشن VPN -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -9,25 +28,30 @@
         android:theme="@style/Theme.Kochakdns">
 
         <!-- فعالیت اصلی برنامه -->
-        <activity 
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.AppCompat.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- سرویس وی‌پی‌ان جهت شناسایی توسط سیستم -->
+        <!-- سرویس وی‌پی‌ان -->
         <service
             android:name=".MyVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="true">
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
-                <action android:name="android.intent.action.VPN_SERVICE" />
+                <action android:name="android.net.VpnService" />
             </intent-filter>
+            
+            <!-- برای اندروید 14+ - توضیح استفاده از Foreground Service -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="VPN service for DNS management" />
         </service>
 
     </application>
