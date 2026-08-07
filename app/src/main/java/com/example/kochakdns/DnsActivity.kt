@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup.LayoutParams
 import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
@@ -38,35 +39,6 @@ import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-
-// ==================== Data Classes ====================
-data class DnsServer(
-    val role: String,
-    val priority: Int,
-    val family: String,
-    val address: String
-)
-
-data class DnsProfile(
-    val name: String,
-    val enabled: Boolean,
-    val ipv4Primary: String?,
-    val ipv6Primary: String?,
-    val ipv4Secondary: String?,
-    val ipv6Secondary: String?,
-    val servers: List<DnsServer>,
-    val updatedAt: String?
-)
-
-data class DnsItem(
-    val name: String,
-    val servers: List<DnsServer>,
-    val ping: Long = -1,
-    val previousPing: Long = -1
-) {
-    val jitter: Long
-        get() = if (ping > 0 && previousPing > 0) Math.abs(ping - previousPing) else 0
-}
 
 // ==================== Main Activity ====================
 class DnsActivity : AppCompatActivity() {
@@ -754,9 +726,9 @@ class DnsActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(32, 24, 32, 24)
                 setBackgroundColor(Color.parseColor("#1E1E2E"))
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     bottomMargin = 16
                 }
@@ -774,7 +746,7 @@ class DnsActivity : AppCompatActivity() {
             }
             val infoContainer = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             nameText = TextView(context).apply {
                 text = initial.name
@@ -802,9 +774,9 @@ class DnsActivity : AppCompatActivity() {
                     }
                     background = shape
                 }
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 setOnClickListener {
                     selectDns(initial.name)
