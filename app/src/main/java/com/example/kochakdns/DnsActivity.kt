@@ -1,9 +1,5 @@
 package com.example.kochakdns
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -15,307 +11,51 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.example.dnssync.DnsProfile
-import com.example.dnssync.DnsServer
-import com.example.dnssync.DnsSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.util.concurrent.atomic.AtomicLong
 
-// ==================== Singleton for VPN Stats ====================
-object VpnStats {
-    val totalBytesSent = AtomicLong(0)
-    val totalBytesReceived = AtomicLong(0)
-    val totalPacketsSent = AtomicLong(0)
-    val totalPacketsLost = AtomicLong(0)
-    var isVpnActive = false
-    var activeDnsName: String? = null
-}
+// ==================== Data Classes ====================
+data class DnsServer(
+    val role: String,
+    val priority: Int,
+    val family: String,
+    val address: String
+)
 
-// ==================== VPN Service ====================
-class MyVpnService : VpnService() {
+data class DnsProfile(
+    val name: String,
+    val enabled: Boolean,
+    val ipv4Primary: String?,
+    val ipv6Primary: String?,
+    val ipv4Secondary: String?,
+    val ipv6Secondary: String?,
+    val servers: List<DnsServer>,
+    val updatedAt: String?
+)
 
-    companion object {
-        const val NOTIFICATION_ID = 1001
-        const val CHANNEL_ID = "vpn_channel"
-        const val ACTION_START = "action_start"
-        const val ACTION_STOP = "action_stop"
-        const val EXTRA_DNS_SERVERS = "dns_servers"
-        const val EXTRA_DNS_NAME = "dns_name"
-    }
-
-    private var vpnThread: Thread? = null
-    private var isCancelled = false
-    private var vpnInterface: ParcelFileDescriptor? = null
-    private var protectSocket: DatagramSocket? = null
-    private var statsUpdateHandler: Handler? = null
-    private var currentDnsName: String? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
-                stopVpn()
-                return START_NOT_STICKY
-            }
-            ACTION_START -> {
-                val dnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS) ?: emptyList()
-                val dnsName = intent.getStringExtra(EXTRA_DNS_NAME) ?: "DNS"
-                currentDnsName = dnsName
-                startVpn(dnsServers, dnsName)
-            }
-            else -> {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-        }
-        return START_STICKY
-    }
-
-    private fun startVpn(dnsServers: List<String>, dnsName: String) {
-        if (dnsServers.isEmpty()) {
-            stopSelf()
-            return
-        }
-
-        startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
-
-        val builder = Builder().apply {
-            addAddress("10.8.0.1", 32)
-            addRoute("0.0.0.0", 0)
-            dnsServers.take(4).forEach { dns ->
-                try {
-                    addDnsServer(dns)
-                } catch (e: Exception) {
-                    // Invalid DNS, skip
-                }
-            }
-            setSession("Kochak DNS - $dnsName")
-            setBlocking(true)
-            setMtu(1500)
-        }
-
-        try {
-            vpnInterface = builder.establish()
-            if (vpnInterface == null) {
-                stopSelf()
-                return
-            }
-
-            VpnStats.isVpnActive = true
-            VpnStats.activeDnsName = dnsName
-
-            // Reset stats for this session
-            VpnStats.totalBytesSent.set(0)
-            VpnStats.totalBytesReceived.set(0)
-            VpnStats.totalPacketsSent.set(0)
-            VpnStats.totalPacketsLost.set(0)
-
-            // Start packet processing thread
-            isCancelled = false
-            vpnThread = Thread {
-                processPackets()
-            }.apply {
-                name = "VpnThread"
-                start()
-            }
-
-            // Start stats update handler (update notification every 2s)
-            statsUpdateHandler = Handler(Looper.getMainLooper())
-            statsUpdateHandler?.post(object : Runnable {
-                override fun run() {
-                    if (!isCancelled) {
-                        updateNotification()
-                        statsUpdateHandler?.postDelayed(this, 2000)
-                    }
-                }
-            })
-
-            // Broadcast VPN started
-            sendBroadcast(Intent("VPN_STARTED"))
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-            stopSelf()
-        }
-    }
-
-    private fun processPackets() {
-        val vpnInterface = this.vpnInterface ?: return
-        val inputStream = FileInputStream(vpnInterface.fileDescriptor)
-        val outputStream = FileOutputStream(vpnInterface.fileDescriptor)
-        val packet = ByteArray(32767)
-
-        while (!isCancelled) {
-            try {
-                val length = inputStream.read(packet)
-                if (length > 0) {
-                    VpnStats.totalPacketsSent.incrementAndGet()
-                    VpnStats.totalBytesSent.addAndGet(length.toLong())
-                    
-                    // Forward packet through protected socket
-                    try {
-                        forwardPacket(packet, length)
-                    } catch (e: Exception) {
-                        VpnStats.totalPacketsLost.incrementAndGet()
-                    }
-                }
-            } catch (e: Exception) {
-                if (!isCancelled) {
-                    // Read error
-                    break
-                }
-            }
-        }
-
-        try { inputStream.close() } catch (_: Exception) {}
-        try { outputStream.close() } catch (_: Exception) {}
-    }
-
-    private fun forwardPacket(packet: ByteArray, length: Int) {
-        // Simplified: just count the packet
-        // In a real VPN, you'd need to parse IP header and forward appropriately
-        // For DNS-only VPN, we mainly just want to intercept and count
-        
-        // Echo back for demo purposes (this is simplified)
-        // Real implementation would need proper packet routing
-        VpnStats.totalBytesReceived.addAndGet(length.toLong())
-    }
-
-    private fun stopVpn() {
-        isCancelled = true
-        VpnStats.isVpnActive = false
-
-        vpnThread?.interrupt()
-        vpnThread = null
-
-        try { vpnInterface?.close() } catch (_: Exception) {}
-        vpnInterface = null
-
-        try { protectSocket?.close() } catch (_: Exception) {}
-        protectSocket = null
-
-        statsUpdateHandler?.removeCallbacksAndMessages(null)
-
-        sendBroadcast(Intent("VPN_STOPPED"))
-        stopForeground(true)
-        stopSelf()
-    }
-
-    override fun onDestroy() {
-        stopVpn()
-        super.onDestroy()
-    }
-
-    override fun onRevoke() {
-        stopVpn()
-        super.onRevoke()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Kochak VPN",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "VPN Service"
-                setShowBadge(false)
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
-    }
-
-    private fun buildNotification(contentText: String): Notification {
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, DnsActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val stopIntent = Intent(this, MyVpnService::class.java).apply {
-            action = ACTION_STOP
-        }
-        val stopPendingIntent = PendingIntent.getService(
-            this,
-            1,
-            stopIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("Kochak DNS")
-            .setContentText(contentText)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال", stopPendingIntent)
-
-        return builder.build()
-    }
-
-    private fun updateNotification() {
-        val bytesSent = VpnStats.totalBytesSent.get()
-        val bytesReceived = VpnStats.totalBytesReceived.get()
-        val packetsSent = VpnStats.totalPacketsSent.get()
-        val packetsLost = VpnStats.totalPacketsLost.get()
-
-        val contentText = buildString {
-            append("↑ ${formatBytes(bytesSent)} | ↓ ${formatBytes(bytesReceived)}\n")
-            append("📦 $packetsSent | ❌ $packetsLost")
-        }
-
-        val notification = buildNotification(contentText)
-        val manager = getSystemService(NotificationManager::class.java)
-        manager?.notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun formatBytes(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-            bytes < 1024 * 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
-            else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
-        }
-    }
-}
-
-// ==================== Data Class for DNS Item ====================
 data class DnsItem(
     val name: String,
     val servers: List<DnsServer>,
@@ -337,17 +77,16 @@ class DnsActivity : AppCompatActivity() {
     private lateinit var jitterText: TextView
     private lateinit var lastPingText: TextView
     private lateinit var statsLayout: LinearLayout
-    private lateinit var packetsSentText: TextView
-    private lateinit var packetsLostText: TextView
-    private lateinit var bytesSentText: TextView
-    private lateinit var bytesReceivedText: TextView
+    private lateinit var packetsSentText: LinearLayout
+    private lateinit var packetsLostText: LinearLayout
+    private lateinit var bytesSentText: LinearLayout
+    private lateinit var bytesReceivedText: LinearLayout
     private lateinit var dnsListContainer: LinearLayout
     private lateinit var statusIndicator: FrameLayout
     private lateinit var retryButton: Button
     private lateinit var loadingSpinner: ProgressBar
     private lateinit var activeProfileNameText: TextView
 
-    private val dnsSyncManager by lazy { DnsSyncManager(this) }
     private var pingJob: Job? = null
     private var statsJob: Job? = null
     private var isSyncing = false
@@ -400,7 +139,7 @@ class DnsActivity : AppCompatActivity() {
             addAction("VPN_STOPPED")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(vpnReceiver, filter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(vpnReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(vpnReceiver, filter)
         }
@@ -455,7 +194,7 @@ class DnsActivity : AppCompatActivity() {
             }
         }
 
-        // Loading spinner (circular, rotates)
+        // Loading spinner
         loadingSpinner = ProgressBar(this).apply {
             isIndeterminate = true
             visibility = View.GONE
@@ -488,7 +227,7 @@ class DnsActivity : AppCompatActivity() {
         header.addView(statusIndicator)
         mainContainer.addView(header)
 
-        // Power Button (Large Circle)
+        // Power Button
         powerButton = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -500,7 +239,6 @@ class DnsActivity : AppCompatActivity() {
                 bottomMargin = 32
             }
 
-            // Make it circular (requires API level workaround)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 val shape = android.graphics.drawable.GradientDrawable().apply {
                     shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -520,7 +258,7 @@ class DnsActivity : AppCompatActivity() {
         powerButton.addView(powerIcon)
         mainContainer.addView(powerButton)
 
-        // Stats below power button (Jitter & Last Ping)
+        // Stats row (Jitter & Last Ping)
         val statsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -536,11 +274,7 @@ class DnsActivity : AppCompatActivity() {
         val jitterContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val jitterLabel = TextView(this).apply {
             text = "JITTER"
@@ -562,11 +296,7 @@ class DnsActivity : AppCompatActivity() {
         val pingContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val pingLabel = TextView(this).apply {
             text = "LAST PING"
@@ -588,7 +318,7 @@ class DnsActivity : AppCompatActivity() {
         statsRow.addView(pingContainer)
         mainContainer.addView(statsRow)
 
-        // Network Stats (Packets & Bytes)
+        // Network Stats
         statsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -656,11 +386,7 @@ class DnsActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
 
             val labelView = TextView(context).apply {
                 text = label
@@ -683,7 +409,6 @@ class DnsActivity : AppCompatActivity() {
 
     private fun toggleVpn() {
         if (isVpnConnected) {
-            // Stop VPN
             val intent = Intent(this, MyVpnService::class.java).apply {
                 action = MyVpnService.ACTION_STOP
             }
@@ -694,7 +419,6 @@ class DnsActivity : AppCompatActivity() {
                 return
             }
 
-            // Check VPN permission
             val vpnIntent = VpnService.prepare(this)
             if (vpnIntent != null) {
                 startActivityForResult(vpnIntent, 1001)
@@ -704,6 +428,7 @@ class DnsActivity : AppCompatActivity() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001 && resultCode == RESULT_OK) {
@@ -758,41 +483,90 @@ class DnsActivity : AppCompatActivity() {
         isSyncing = true
         showLoading()
 
-        dnsSyncManager.sync(
-            onSuccess = { profile ->
-                isSyncing = false
-                hideLoading()
-                mainHandler.post {
-                    loadDnsFromProfile(profile)
+        // Load from DataStore (simplified - no DnsSyncManager dependency)
+        withContext(Dispatchers.IO) {
+            try {
+                val dataStore = applicationContext.dataStore
+                val prefs = dataStore.data.first()
+                val json = prefs[stringPreferencesKey("dns_profile_data")]
+                
+                if (json != null) {
+                    val profile = parseProfileFromJson(json)
+                    if (profile != null) {
+                        mainHandler.post {
+                            loadDnsFromProfile(profile)
+                            isSyncing = false
+                            hideLoading()
+                        }
+                        return@withContext
+                    }
                 }
-            },
-            onError = { error ->
-                isSyncing = false
-                showError()
+                
+                // No data, show error
+                mainHandler.post {
+                    isSyncing = false
+                    showError()
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    isSyncing = false
+                    showError()
+                }
             }
-        )
+        }
+    }
+
+    private fun parseProfileFromJson(json: String): DnsProfile? {
+        return try {
+            val obj = org.json.JSONObject(json)
+            val serversArray = obj.optJSONArray("servers")
+            val servers = mutableListOf<DnsServer>()
+
+            if (serversArray != null) {
+                for (i in 0 until serversArray.length()) {
+                    val s = serversArray.getJSONObject(i)
+                    servers.add(
+                        DnsServer(
+                            role = s.optString("role"),
+                            priority = s.optInt("priority"),
+                            family = s.optString("family"),
+                            address = s.optString("address")
+                        )
+                    )
+                }
+            }
+
+            DnsProfile(
+                name = obj.optString("name"),
+                enabled = obj.optBoolean("enabled"),
+                ipv4Primary = obj.optString("ipv4Primary").takeIf { it.isNotEmpty() && it != "null" },
+                ipv6Primary = obj.optString("ipv6Primary").takeIf { it.isNotEmpty() && it != "null" },
+                ipv4Secondary = obj.optString("ipv4Secondary").takeIf { it.isNotEmpty() && it != "null" },
+                ipv6Secondary = obj.optString("ipv6Secondary").takeIf { it.isNotEmpty() && it != "null" },
+                servers = servers,
+                updatedAt = obj.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }
+            )
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun loadDnsFromProfile(profile: DnsProfile) {
         dnsItems.clear()
         previousPings.clear()
 
-        // Main profile as first item
-        val primaryServers = profile.servers
         dnsItems.add(
             DnsItem(
                 name = profile.name,
-                servers = primaryServers
+                servers = profile.servers
             )
         )
 
-        // Update active profile name
         activeProfileNameText.text = profile.name
 
-        // If we have a selected DNS, keep it; otherwise select the active profile
         if (selectedDnsName == null) {
             selectedDnsName = profile.name
-            selectedDnsServers = primaryServers
+            selectedDnsServers = profile.servers
             getSharedPreferences("dns_prefs", MODE_PRIVATE).edit()
                 .putString("selected_dns", profile.name)
                 .apply()
@@ -800,7 +574,6 @@ class DnsActivity : AppCompatActivity() {
 
         rebuildDnsList()
 
-        // Start ping loop if not already running
         if (pingJob == null || pingJob?.isActive == false) {
             startPingLoop()
         }
@@ -811,9 +584,8 @@ class DnsActivity : AppCompatActivity() {
             dnsListContainer.removeAllViews()
             dnsItemViews.clear()
 
-            // Sort by ping (lowest first, then unknown)
-            val sorted = dnsItems.sortedWith(compareBy<DnsItem> { 
-                if (it.ping < 0) Long.MAX_VALUE else it.ping 
+            val sorted = dnsItems.sortedWith(compareBy<DnsItem> {
+                if (it.ping < 0) Long.MAX_VALUE else it.ping
             })
 
             sorted.forEach { item ->
@@ -829,24 +601,22 @@ class DnsActivity : AppCompatActivity() {
         pingJob = lifecycleScope.launch(Dispatchers.IO) {
             while (isActive) {
                 val itemsToPing = dnsItems.toList()
-                
-                // Ping all DNS concurrently
+
                 val pingResults = itemsToPing.map { item ->
                     async {
-                        val primaryIpv4 = item.servers.firstOrNull { 
-                            it.family == "ipv4" && it.role == "primary" 
+                        val primaryIpv4 = item.servers.firstOrNull {
+                            it.family == "ipv4" && it.role == "primary"
                         }?.address
-                        
+
                         if (primaryIpv4 != null) {
                             val ping = pingDns(primaryIpv4)
-                            item.name to ping
+                            Pair(item.name, ping)
                         } else {
-                            item.name to -1L
+                            Pair(item.name, -1L)
                         }
                     }
-                }.map { it.await() }
+                }.awaitAll()
 
-                // Update items with new pings
                 mainHandler.post {
                     pingResults.forEach { (name, newPing) ->
                         val index = dnsItems.indexOfFirst { it.name == name }
@@ -861,15 +631,11 @@ class DnsActivity : AppCompatActivity() {
                             )
                             dnsItems[index] = newItem
 
-                            // Update view
                             dnsItemViews[name]?.update(newItem, name == selectedDnsName)
                         }
                     }
 
-                    // Update selected DNS stats at top
                     updateSelectedDnsStats()
-
-                    // Re-sort list
                     sortDnsList()
                 }
 
@@ -879,11 +645,10 @@ class DnsActivity : AppCompatActivity() {
     }
 
     private fun sortDnsList() {
-        val sorted = dnsItems.sortedWith(compareBy<DnsItem> { 
-            if (it.ping < 0) Long.MAX_VALUE else it.ping 
+        val sorted = dnsItems.sortedWith(compareBy<DnsItem> {
+            if (it.ping < 0) Long.MAX_VALUE else it.ping
         })
 
-        // Reorder views
         dnsListContainer.removeAllViews()
         sorted.forEach { item ->
             dnsItemViews[item.name]?.let { view ->
@@ -907,7 +672,6 @@ class DnsActivity : AppCompatActivity() {
                 "-- ms"
             }
 
-            // Color code ping
             when {
                 selectedItem.ping < 0 -> lastPingText.setTextColor(Color.parseColor("#666666"))
                 selectedItem.ping < 50 -> lastPingText.setTextColor(Color.parseColor("#4CAF50"))
@@ -923,35 +687,34 @@ class DnsActivity : AppCompatActivity() {
             try {
                 val socket = DatagramSocket()
                 socket.soTimeout = 3000
-                
-                // Simple DNS query (root zone)
+
                 val data = byteArrayOf(
-                    0x00, 0x01,  // ID
-                    0x00, 0x00,  // Flags (standard query)
-                    0x00, 0x01,  // Questions: 1
-                    0x00, 0x00,  // Answer RRs
-                    0x00, 0x00,  // Authority RRs
-                    0x00, 0x00,  // Additional RRs
-                    0x00,        // Root domain
-                    0x00, 0x02,  // Type: NS
-                    0x00, 0x01   // Class: IN
+                    0x00, 0x01,
+                    0x00, 0x00,
+                    0x00, 0x01,
+                    0x00, 0x00,
+                    0x00, 0x00,
+                    0x00, 0x00,
+                    0x00,
+                    0x00, 0x02,
+                    0x00, 0x01
                 )
-                
+
                 val packet = DatagramPacket(
-                    data, 
-                    data.size, 
-                    InetAddress.getByName(address), 
+                    data,
+                    data.size,
+                    InetAddress.getByName(address),
                     53
                 )
-                
+
                 socket.send(packet)
-                
+
                 val buffer = ByteArray(512)
                 val response = DatagramPacket(buffer, buffer.size)
-                
+
                 socket.receive(response)
                 socket.close()
-                
+
                 System.currentTimeMillis() - start
             } catch (e: Exception) {
                 -1L
@@ -970,13 +733,11 @@ class DnsActivity : AppCompatActivity() {
 
     private fun updateStatsDisplay() {
         runOnUiThread {
-            // Get stats from VpnStats singleton
             val sent = VpnStats.totalPacketsSent.get()
             val lost = VpnStats.totalPacketsLost.get()
             val bytesSent = VpnStats.totalBytesSent.get()
             val bytesRecv = VpnStats.totalBytesReceived.get()
 
-            // Update stat items
             (packetsSentText.findViewWithTag<TextView>("value"))?.text = "$sent"
             (packetsLostText.findViewWithTag<TextView>("value"))?.text = "$lost"
             (bytesSentText.findViewWithTag<TextView>("value"))?.text = formatBytes(bytesSent)
@@ -997,8 +758,7 @@ class DnsActivity : AppCompatActivity() {
         runOnUiThread {
             retryButton.visibility = View.GONE
             loadingSpinner.visibility = View.VISIBLE
-            
-            // Start rotation animation
+
             val rotation = RotateAnimation(
                 0f, 360f,
                 Animation.RELATIVE_TO_SELF, 0.5f,
@@ -1025,7 +785,7 @@ class DnsActivity : AppCompatActivity() {
             loadingSpinner.clearAnimation()
             loadingSpinner.visibility = View.GONE
             retryButton.visibility = View.VISIBLE
-            
+
             Toast.makeText(this, "خطا در دریافت DNS. دکمه ↻ را بزنید.", Toast.LENGTH_LONG).show()
         }
     }
@@ -1040,22 +800,18 @@ class DnsActivity : AppCompatActivity() {
             .putString("selected_dns", name)
             .apply()
 
-        // Update all item views
         dnsItemViews.forEach { (n, view) ->
             view.update(dnsItems.find { it.name == n }!!, n == selectedDnsName)
         }
 
         updateSelectedDnsStats()
 
-        // If VPN is active, restart with new DNS
         if (isVpnConnected) {
-            // Stop and restart VPN
             val stopIntent = Intent(this, MyVpnService::class.java).apply {
                 action = MyVpnService.ACTION_STOP
             }
             startService(stopIntent)
 
-            // Wait a bit then restart
             mainHandler.postDelayed({
                 startVpn()
             }, 500)
@@ -1067,11 +823,11 @@ class DnsActivity : AppCompatActivity() {
         statsJob?.cancel()
         try {
             unregisterReceiver(vpnReceiver)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         super.onDestroy()
     }
 
-    // ==================== Inner class for DNS item view ====================
     inner class DnsItemView(context: Context, initial: DnsItem) {
         val view: LinearLayout
         private val nameText: TextView
@@ -1107,11 +863,7 @@ class DnsActivity : AppCompatActivity() {
 
             val infoContainer = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
             nameText = TextView(context).apply {
