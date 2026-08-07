@@ -20,12 +20,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # تنظیم اندروید SDK همراه با پذیرش خودکار لایسنس‌ها و نصب پکیج‌ها
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34
-          build-tools: 34.0.0
-          ndk: 25.2.9519653
+          cmdline-tools-version: '12266719'
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: true
+          packages: |
+            tools
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;25.2.9519653
 
       # نصب و تنظیم خودکار گریدل ۸.۴ (بدون نیاز به gradlew در ریپازیتوری)
       - name: Setup Gradle
