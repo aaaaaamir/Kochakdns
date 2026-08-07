@@ -1,5 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme for Night mode. -->
     <style name="Theme.Kochakdns" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="android:containerBackground">@color/black</item>
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/secondary</item>
+        <item name="colorPrimaryVariant">@color/primary_variant</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorSecondaryVariant">@color/secondary_variant</item>
+        <item name="colorOnSecondary">@color/white</item>
+
+        <!-- Status bar and Navigation bar colors. -->
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:navigationBarColor">@color/background_dark</item>
+
+        <!-- Background & Window colors. -->
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="colorSurface">@color/surface_dark</item>
     </style>
 </resources>
