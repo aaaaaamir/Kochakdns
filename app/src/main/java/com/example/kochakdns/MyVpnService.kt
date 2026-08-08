@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 
@@ -36,30 +37,73 @@ class MyVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopVpn(); return START_NOT_STICKY }
+            ACTION_STOP -> {
+                stopVpn()
+                return START_NOT_STICKY
+            }
             ACTION_START -> {
                 val dnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS) ?: emptyList()
                 val dnsName = intent.getStringExtra(EXTRA_DNS_NAME) ?: "DNS"
                 startVpn(dnsServers, dnsName)
             }
-            else -> { stopSelf(); return START_NOT_STICKY }
+            else -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
         return START_STICKY
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
-        if (dnsServers.isEmpty()) { stopSelf(); return }
+        if (dnsServers.isEmpty()) {
+            stopSelf()
+            return
+        }
+
+        // بستن اتصال قبلی در صورت وجود
+        stopVpnInternal()
+
         startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
+
         val builder = Builder().apply {
-            addAddress("10.8.0.1", 32)
-            addRoute("0.0.0.0", 0)
-            dnsServers.take(4).forEach { dns -> try { addDnsServer(dns) } catch (_: Exception) {} }
+            addAddress("10.0.0.2", 32)
+            
+            // اضافه کردن آدرس‌های دی‌ان‌اس با اعتبارسنجی
+            var hasValidDns = false
+            dnsServers.take(4).forEach { dns ->
+                if (dns.isNotBlank()) {
+                    try {
+                        addDnsServer(dns)
+                        hasValidDns = true
+                    } catch (e: Exception) {
+                        Log.e("MyVpnService", "IP دی‌ان‌اس نامعتبر است: $dns", e)
+                    }
+                }
+            }
+
+            if (!hasValidDns) {
+                try {
+                    addDnsServer("1.1.1.1")
+                    addDnsServer("1.0.0.1")
+                } catch (_: Exception) {}
+            }
+
+            // اجازه عبور ترافیک عادی برنامه‌ها از شبکه اصلی (جلوگیری از قطعی اینترنت)
+            allowBypass()
+
+            // عدم استفاده از addRoute("0.0.0.0", 0) جهت جلوگیری از مسدود شدن ترافیک برنامه‌ها
             setSession("Kochak DNS - $dnsName")
             setBlocking(true)
             setMtu(1500)
         }
+
         try {
-            vpnInterface = builder.establish() ?: run { stopSelf(); return }
+            vpnInterface = builder.establish() ?: run {
+                stopSelf()
+                return
+            }
+
+            // ریست و فعال‌سازی آمار
             VpnStats.isVpnActive = true
             VpnStats.activeDnsName = dnsName
             VpnStats.totalBytesSent.set(0)
@@ -67,66 +111,107 @@ class MyVpnService : VpnService() {
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
             isCancelled = false
-            vpnThread = Thread { processPackets() }.apply { name = "VpnThread"; start() }
+
+            // ترد خواندن بسته‌ها جهت ثبت آمار
+            vpnThread = Thread { processPackets() }.apply {
+                name = "VpnThread"
+                start()
+            }
+
+            // هندلر به‌روزرسانی دوره‌ای نوتیفیکیشن
             statsUpdateHandler = Handler(Looper.getMainLooper())
             statsUpdateHandler?.post(object : Runnable {
                 override fun run() {
-                    if (!isCancelled) { updateNotification(); statsUpdateHandler?.postDelayed(this, 2000) }
+                    if (!isCancelled) {
+                        updateNotification()
+                        statsUpdateHandler?.postDelayed(this, 2000)
+                    }
                 }
             })
+
             sendBroadcast(Intent("VPN_STARTED"))
-        } catch (e: Exception) { e.printStackTrace(); stopSelf() }
+
+        } catch (e: Exception) {
+            Log.e("MyVpnService", "خطا در اجرای دی‌ان‌اس سرویس", e)
+            stopVpn()
+        }
     }
 
     private fun processPackets() {
-        val vpnInterface = this.vpnInterface ?: return
-        val inputStream = FileInputStream(vpnInterface.fileDescriptor)
-        val packet = ByteArray(32767)
-        while (!isCancelled) {
-            try {
-                val length = inputStream.read(packet)
-                if (length > 0) {
-                    VpnStats.totalPacketsSent.incrementAndGet()
-                    VpnStats.totalBytesSent.addAndGet(length.toLong())
-                    VpnStats.totalBytesReceived.addAndGet(length.toLong())
+        val pfd = this.vpnInterface ?: return
+        try {
+            val inputStream = FileInputStream(pfd.fileDescriptor)
+            val packet = ByteArray(32767)
+            while (!isCancelled) {
+                try {
+                    val length = inputStream.read(packet)
+                    if (length > 0) {
+                        VpnStats.totalPacketsSent.incrementAndGet()
+                        VpnStats.totalBytesSent.addAndGet(length.toLong())
+                        VpnStats.totalBytesReceived.addAndGet(length.toLong())
+                    }
+                } catch (_: Exception) {
+                    if (!isCancelled) break
                 }
-            } catch (_: Exception) { if (!isCancelled) break }
-        }
-        try { inputStream.close() } catch (_: Exception) {}
+            }
+            inputStream.close()
+        } catch (_: Exception) {}
     }
 
-    private fun stopVpn() {
+    private fun stopVpnInternal() {
         isCancelled = true
         VpnStats.isVpnActive = false
         vpnThread?.interrupt()
         vpnThread = null
-        try { vpnInterface?.close() } catch (_: Exception) {}
+        try {
+            vpnInterface?.close()
+        } catch (_: Exception) {}
         vpnInterface = null
         statsUpdateHandler?.removeCallbacksAndMessages(null)
+    }
+
+    private fun stopVpn() {
+        stopVpnInternal()
         sendBroadcast(Intent("VPN_STOPPED"))
         stopForeground(true)
         stopSelf()
     }
 
-    override fun onDestroy() { stopVpn(); super.onDestroy() }
-    override fun onRevoke() { stopVpn(); super.onRevoke() }
+    override fun onDestroy() {
+        stopVpn()
+        super.onDestroy()
+    }
+
+    override fun onRevoke() {
+        stopVpn()
+        super.onRevoke()
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Kochak VPN", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "VPN Service"; setShowBadge(false)
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Kochak VPN",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "VPN Service"
+                setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification(contentText: String): Notification {
-        val pendingIntent = PendingIntent.getActivity(this, 0,
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0,
             Intent(this, DnsActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val stopIntent = Intent(this, MyVpnService::class.java).apply { action = ACTION_STOP }
-        val stopPendingIntent = PendingIntent.getService(this, 1, stopIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentTitle("Kochak DNS")
