@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams
 import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
