@@ -22,9 +22,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.example.kochakdns.DnsSyncManager   // ✅ ایمپورت صحیح
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -64,11 +61,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onPermissionsGranted() {
-        val appContext = applicationContext
-        CoroutineScope(Dispatchers.IO).launch {
-            val dnsSyncManager = DnsSyncManager(appContext)
-            dnsSyncManager.sync()
-        }
+        // sync دیگه اینجا زده نمی‌شه؛ DnsActivity خودش موقع باز شدن یک
+        // sync زنده انجام می‌ده و منتظرش می‌مونه، پس نیازی به این کپی
+        // موازی و رقابتی نیست.
         navigateToDnsActivity()
     }
 
