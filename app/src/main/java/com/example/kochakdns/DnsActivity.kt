@@ -38,14 +38,6 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import kotlin.math.abs
 
-// مدل داده برای آیتم‌های لیست DNS در UI
-data class DnsItem(
-    val name: String,
-    val servers: List<DnsServer>,
-    val ping: Long = -1L,
-    val previousPing: Long = -1L,
-    val jitter: Long = 0L
-)
 
 class DnsActivity : AppCompatActivity() {
 
