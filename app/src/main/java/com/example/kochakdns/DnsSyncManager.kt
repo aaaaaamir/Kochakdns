@@ -233,7 +233,7 @@ class DnsSyncManager(private val context: Context) {
                     ipv6Secondary = dns?.optString("ipv6_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
                     servers = servers,
                     updatedAt = item.optString("updated_at").takeIf { it.isNotEmpty() && it != "null" },
-                    isActiveOnServer = item.optBoolean("is_active", false)
+                    isActive = item.optBoolean("is_active", false)
                 )
 
                 profilesList.add(profile)
@@ -260,7 +260,7 @@ class DnsSyncManager(private val context: Context) {
     private suspend fun saveProfiles(profiles: List<DnsProfile>) {
         val jsonArray = JSONArray()
         profiles.forEach { profile ->
-            jsonArray.put(JSONObject(profile.toJson()))
+            jsonArray.put(JSONObject(profile.toJson().toString()))
         }
 
         dataStore.edit { prefs ->
@@ -310,7 +310,7 @@ class DnsSyncManager(private val context: Context) {
             allProfiles.find { it.name == selectedName } ?: allProfiles.firstOrNull()
         } else {
             // اگر کاربر چیزی انتخاب نکرده بود، پروفایلی که روی سرور active است یا اولی را برمی‌گرداند
-            allProfiles.find { it.isActiveOnServer } ?: allProfiles.firstOrNull()
+            allProfiles.find { it.isActive } ?: allProfiles.firstOrNull()
         }
     }
 
