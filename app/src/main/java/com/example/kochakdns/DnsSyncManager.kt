@@ -3,8 +3,6 @@ package com.example.kochakdns
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.os.Handler
-import android.os.Looper
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -16,11 +14,14 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import org.json.JSONException
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 
 val Context.dnsDataStore: DataStore<Preferences> by preferencesDataStore(name = "dns_sync_data")
 
@@ -29,11 +30,13 @@ class DnsSyncManager(private val context: Context) {
     companion object {
         private const val BASE_URL = "https://kochakdns-backend.amir26076.workers.dev"
         private var accessToken: String? = null
-        fun setAccessToken(token: String?) { accessToken = token }
+        
+        fun setAccessToken(token: String?) { 
+            accessToken = token 
+        }
     }
 
     private val dataStore = context.dnsDataStore
-    private val mainHandler = Handler(Looper.getMainLooper())
     private val DNS_DATA_KEY = stringPreferencesKey("dns_profile_data")
     private val LAST_SYNC_KEY = longPreferencesKey("last_sync_time")
 
@@ -42,18 +45,20 @@ class DnsSyncManager(private val context: Context) {
         onError: ((String) -> Unit)? = null
     ) {
         try {
-            val profile = withContext(Dispatchers.IO) { fetchFromServer() }
+            val profile = withContext(Dispatchers.IO) { 
+                fetchFromServer() 
+            }
             saveProfile(profile)
-            mainHandler.post { showToast("✓ سرورهای DNS با موفقیت بروزرسانی شدند", false) }
+            
+            withContext(Dispatchers.Main) {
+                showToast("✓ سرورهای DNS با موفقیت بروزرسانی شدند", false)
+            }
             onSuccess?.invoke(profile)
         } catch (e: Exception) {
-            val errorMessage = when (e) {
-                is java.net.UnknownHostException,
-                is java.net.SocketTimeoutException,
-                is java.io.IOException -> "خطا در بروزرسانی سرور های dns لطفا اگر دفعه اول است که وارد میشوید از فیلترشکن استفاده کنید."
-                else -> e.message ?: "خطای ناشناخته"
+            val errorMessage = parseErrorMessage(e)
+            withContext(Dispatchers.Main) {
+                showToast(errorMessage, true)
             }
-            mainHandler.post { showToast(errorMessage, true) }
             onError?.invoke(errorMessage)
         }
     }
@@ -66,42 +71,95 @@ class DnsSyncManager(private val context: Context) {
             conn.readTimeout = 15000
             conn.requestMethod = "GET"
             conn.setRequestProperty("Accept", "application/json")
-            accessToken?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) throw Exception("خطای سرور: ${conn.responseCode}")
+            conn.setRequestProperty("User-Agent", "KochakDNS-Android-Client/1.0")
+            
+            accessToken?.let { 
+                conn.setRequestProperty("Authorization", "Bearer $it") 
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                // خواندن متن خطا از errorStream در صورت بروز خطای HTTP
+                val errorBody = try {
+                    conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                } catch (ignored: Exception) {
+                    ""
+                }
+                
+                throw when (responseCode) {
+                    401 -> Exception("خطای احراز هویت: توکن دسترسی نامعتبر یا منقضی شده است.")
+                    403, 503 -> Exception("دسترسی رد شد. لطفاً بررسی کنید که آیا به فیلترشکن نیاز است یا درخواست محدود شده است.")
+                    else -> Exception("خطای سرور (کد $responseCode): ${if (errorBody.isNotBlank()) errorBody else "پاسخ نامعتبر"}")
+                }
+            }
+
             val responseBody = conn.inputStream.bufferedReader().use { it.readText() }
+            
+            // بررسی اینکه آیا پاسخ به اشتباه HTML (مثل صفحه بلاک کلودفلر) برگشته است
+            val trimmedResponse = responseBody.trim()
+            if (trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true) || 
+                trimmedResponse.startsWith("<html", ignoreCase = true)) {
+                throw IOException("سرور پاسخ نامعتبر (HTML) برگرداند. احتمالاً دسترسی توسط شبکه یا فایروال مسدود شده است.")
+            }
+
             return parseResponse(responseBody)
-        } finally { conn.disconnect() }
+        } finally { 
+            conn.disconnect() 
+        }
     }
 
     private fun parseResponse(jsonString: String): DnsProfile {
-        val root = JSONObject(jsonString)
-        if (!root.optBoolean("ok", false)) throw Exception("پاسخ سرور نامعتبر است")
-        if (!root.optBoolean("active", false)) throw Exception("هیچ پروفایل فعالی تنظیم نشده است")
-        val data = root.optJSONObject("data") ?: throw Exception("داده DNS در پاسخ سرور وجود ندارد")
-        val dns = data.optJSONObject("dns")
-        val servers = mutableListOf<DnsServer>()
-        val serversArray = data.optJSONArray("servers")
-        if (serversArray != null) {
-            for (i in 0 until serversArray.length()) {
-                val s = serversArray.getJSONObject(i)
-                servers.add(DnsServer(
-                    role = s.optString("role"),
-                    priority = s.optInt("priority"),
-                    family = s.optString("family"),
-                    address = s.optString("address")
-                ))
+        try {
+            val root = JSONObject(jsonString)
+            
+            if (!root.optBoolean("ok", false)) {
+                throw Exception("پاسخ سرور نامعتبر است (وضعیت ok ناموفق بود).")
             }
+            if (!root.optBoolean("active", false)) {
+                throw Exception("هیچ پروفایل فعالی روی سرور تنظیم نشده است.")
+            }
+            
+            val data = root.optJSONObject("data") ?: throw Exception("داده DNS در پاسخ سرور وجود ندارد.")
+            val dns = data.optJSONObject("dns")
+            val servers = mutableListOf<DnsServer>()
+            val serversArray = data.optJSONArray("servers")
+            
+            if (serversArray != null) {
+                for (i in 0 until serversArray.length()) {
+                    val s = serversArray.getJSONObject(i)
+                    servers.add(
+                        DnsServer(
+                            role = s.optString("role"),
+                            priority = s.optInt("priority"),
+                            family = s.optString("family"),
+                            address = s.optString("address")
+                        )
+                    )
+                }
+            }
+            
+            return DnsProfile(
+                name = data.optString("name"),
+                enabled = data.optBoolean("enabled"),
+                ipv4Primary = dns?.optString("ipv4_primary")?.takeIf { it.isNotEmpty() && it != "null" },
+                ipv6Primary = dns?.optString("ipv6_primary")?.takeIf { it.isNotEmpty() && it != "null" },
+                ipv4Secondary = dns?.optString("ipv4_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
+                ipv6Secondary = dns?.optString("ipv6_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
+                servers = servers,
+                updatedAt = data.optString("updated_at").takeIf { it.isNotEmpty() && it != "null" }
+            )
+        } catch (e: JSONException) {
+            throw Exception("خطا در تحلیل ساختار JSON دریافتی از سرور.")
         }
-        return DnsProfile(
-            name = data.optString("name"),
-            enabled = data.optBoolean("enabled"),
-            ipv4Primary = dns?.optString("ipv4_primary")?.takeIf { it.isNotEmpty() && it != "null" },
-            ipv6Primary = dns?.optString("ipv6_primary")?.takeIf { it.isNotEmpty() && it != "null" },
-            ipv4Secondary = dns?.optString("ipv4_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
-            ipv6Secondary = dns?.optString("ipv6_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
-            servers = servers,
-            updatedAt = data.optString("updated_at").takeIf { it.isNotEmpty() && it != "null" }
-        )
+    }
+
+    private fun parseErrorMessage(e: Exception): String {
+        return when (e) {
+            is UnknownHostException -> "خطای شبکه: آدرس سرور یافت نشد. لطفاً اتصال اینترنت یا فیلترشکن خود را بررسی کنید."
+            is SocketTimeoutException -> "خطای تایم‌آوت: سرور پاسخگویی به موقع نداشت. لطفاً فیلترشکن خود را بررسی کنید."
+            is IOException -> e.message ?: "خطای ارتباط با شبکه رخ داد."
+            else -> e.message ?: "خطای ناشناخته رخ داد."
+        }
     }
 
     private suspend fun saveProfile(profile: DnsProfile) {
