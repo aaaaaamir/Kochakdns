@@ -21,20 +21,43 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # نصب و تنظیم خودکار گریدل ۸.۴
+      # نصب گرادل و فعال‌سازی خلاصه گزارش خطاهای بیلد
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.4'
+          add-job-summary: 'always'
 
-      # اجرای دستور بیلد (نسخه Debug امضاشده و آماده نصب روی گوشی)
+      # دادن دسترسی اجرای gradlew
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # بررسی دقیق باگ‌ها و کدهای نادرست (Android Lint)
+      - name: Run Android Lint
+        run: |
+          ./gradlew lintDebug --stacktrace --warning-mode=all
+        continue-on-error: true
+
+      # اجرای بیلد با چاپ کامل جزییات استک‌تریس و خطاها
       - name: Build Debug APK for ARM64
         run: |
-          gradle clean assembleDebug
+          ./gradlew assembleDebug --build-cache --stacktrace --warning-mode=all
 
-      # آپلود فایل APK خروجی جهت دانلود از Artifacts
+      # آپلود فایل APK در صورت موفقیت
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: kochakdns-arm64-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      # آپلود گزارش متنی و HTML کامل باگ‌ها و خطاهای کامپایل (حتی موقع شکست بیلد)
+      - name: Upload Error & Bug Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compiler-and-lint-reports
+          path: |
+            app/build/reports/
+            app/build/outputs/logs/
+
