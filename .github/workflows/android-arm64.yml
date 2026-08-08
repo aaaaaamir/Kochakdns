@@ -28,9 +28,14 @@ jobs:
           gradle-version: '8.4'
           add-job-summary: 'always'
 
-      # دادن دسترسی اجرای gradlew
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      # بررسی وجود gradlew و ساخت خودکار آن در صورت عدم وجود
+      - name: Ensure gradlew exists and make executable
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "gradlew not found! Generating Gradle Wrapper..."
+            gradle wrapper --gradle-version 8.4
+          fi
+          chmod +x ./gradlew
 
       # بررسی دقیق باگ‌ها و کدهای نادرست (Android Lint)
       - name: Run Android Lint
