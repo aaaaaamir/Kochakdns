@@ -15,13 +15,18 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.HttpsURLConnection
 
 val Context.dnsDataStore: DataStore<Preferences> by preferencesDataStore(name = "dns_sync_data")
 
@@ -29,27 +34,61 @@ class DnsSyncManager(private val context: Context) {
 
     companion object {
         private const val BASE_URL = "https://kochakdns-backend.amir26076.workers.dev"
+        private const val BASE_HOST = "kochakdns-backend.amir26076.workers.dev"
         private var accessToken: String? = null
-        
-        fun setAccessToken(token: String?) { 
-            accessToken = token 
+
+        fun setAccessToken(token: String?) {
+            accessToken = token
         }
+
+        // DNS-over-HTTPS resolvers, queried by literal IP so the request itself
+        // never needs a (poisonable) DNS lookup. Cloudflare first, Google as fallback.
+        private val DOH_ENDPOINTS = listOf(
+            "https://1.1.1.1/dns-query",
+            "https://8.8.8.8/resolve"
+        )
+
+        // Cache resolved IPs briefly in memory so we don't hit DoH on every request.
+        private val dohCache = mutableMapOf<String, Pair<String, Long>>()
+        private const val DOH_CACHE_TTL_MS = 5 * 60 * 1000L // 5 minutes
     }
 
     private val dataStore = context.dnsDataStore
     private val DNS_DATA_KEY = stringPreferencesKey("dns_profile_data")
     private val LAST_SYNC_KEY = longPreferencesKey("last_sync_time")
 
+    // ------------------------------------------------------------
+    // Custom Dns for OkHttp: resolves hostnames via DoH instead of
+    // the (potentially poisoned/hijacked) system/ISP DNS resolver.
+    // ------------------------------------------------------------
+    private inner class DohDns : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            val ip = resolveViaDoH(hostname)
+                ?: throw UnknownHostException("امکان resolve امن دامنه $hostname وجود نداشت (DoH ناموفق بود).")
+            // Parsing a literal IP string does not trigger a network DNS lookup.
+            return listOf(InetAddress.getByName(ip))
+        }
+    }
+
+    private val client: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .dns(DohDns())
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
     suspend fun sync(
         onSuccess: ((DnsProfile) -> Unit)? = null,
         onError: ((String) -> Unit)? = null
     ) {
         try {
-            val profile = withContext(Dispatchers.IO) { 
-                fetchFromServer() 
+            val profile = withContext(Dispatchers.IO) {
+                fetchFromServer()
             }
             saveProfile(profile)
-            
+
             withContext(Dispatchers.Main) {
                 showToast("✓ سرورهای DNS با موفقیت بروزرسانی شدند", false)
             }
@@ -63,67 +102,117 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
-    private fun fetchFromServer(): DnsProfile {
-        val url = URL("$BASE_URL/api/dns/active")
-        val conn = url.openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("User-Agent", "KochakDNS-Android-Client/1.0")
-            
-            accessToken?.let { 
-                conn.setRequestProperty("Authorization", "Bearer $it") 
-            }
+    // ------------------------------------------------------------
+    // DNS-over-HTTPS resolution (bypasses system/ISP DNS entirely)
+    // ------------------------------------------------------------
+    private fun resolveViaDoH(hostname: String): String? {
+        dohCache[hostname]?.let { (ip, ts) ->
+            if (System.currentTimeMillis() - ts < DOH_CACHE_TTL_MS) return ip
+        }
 
-            val responseCode = conn.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                // خواندن متن خطا از errorStream در صورت بروز خطای HTTP
+        for (endpoint in DOH_ENDPOINTS) {
+            try {
+                val ip = queryDoh(endpoint, hostname)
+                if (ip != null) {
+                    dohCache[hostname] = ip to System.currentTimeMillis()
+                    return ip
+                }
+            } catch (_: Exception) {
+                // try next endpoint
+            }
+        }
+        return null
+    }
+
+    private fun queryDoh(endpoint: String, hostname: String): String? {
+        // endpoint host is a literal IP (1.1.1.1 / 8.8.8.8) -> no DNS lookup needed here.
+        val url = URL("$endpoint?name=$hostname&type=A")
+        val conn = url.openConnection() as HttpsURLConnection
+        try {
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept", "application/dns-json")
+
+            if (conn.responseCode != 200) return null
+
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(body)
+            val answers = json.optJSONArray("Answer") ?: return null
+
+            for (i in 0 until answers.length()) {
+                val a = answers.getJSONObject(i)
+                if (a.optInt("type") == 1) { // A record
+                    val data = a.optString("data")
+                    if (data.isNotBlank()) return data
+                }
+            }
+            return null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Actual API request, routed through the DoH-resolved IP while
+    // still using the correct hostname for TLS SNI / cert checks
+    // (OkHttp handles this automatically via the custom Dns above).
+    // ------------------------------------------------------------
+    private fun fetchFromServer(): DnsProfile {
+        val requestBuilder = Request.Builder()
+            .url("$BASE_URL/api/dns/active")
+            .get()
+            .header("Accept", "application/json")
+            .header("User-Agent", "KochakDNS-Android-Client/1.0")
+
+        accessToken?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            if (!response.isSuccessful) {
                 val errorBody = try {
-                    conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
-                } catch (ignored: Exception) {
+                    response.body?.string() ?: ""
+                } catch (_: Exception) {
                     ""
                 }
-                
-                throw when (responseCode) {
+                throw when (response.code) {
                     401 -> Exception("خطای احراز هویت: توکن دسترسی نامعتبر یا منقضی شده است.")
                     403, 503 -> Exception("دسترسی رد شد. لطفاً بررسی کنید که آیا به فیلترشکن نیاز است یا درخواست محدود شده است.")
-                    else -> Exception("خطای سرور (کد $responseCode): ${if (errorBody.isNotBlank()) errorBody else "پاسخ نامعتبر"}")
+                    else -> Exception("خطای سرور (کد ${response.code}): ${if (errorBody.isNotBlank()) errorBody else "پاسخ نامعتبر"}")
                 }
             }
 
-            val responseBody = conn.inputStream.bufferedReader().use { it.readText() }
-            
-            // بررسی اینکه آیا پاسخ به اشتباه HTML (مثل صفحه بلاک کلودفلر) برگشته است
+            val responseBody = response.body?.string()
+                ?: throw IOException("پاسخ خالی از سرور دریافت شد.")
+
             val trimmedResponse = responseBody.trim()
-            if (trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true) || 
-                trimmedResponse.startsWith("<html", ignoreCase = true)) {
+            if (trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true) ||
+                trimmedResponse.startsWith("<html", ignoreCase = true)
+            ) {
                 throw IOException("سرور پاسخ نامعتبر (HTML) برگرداند. احتمالاً دسترسی توسط شبکه یا فایروال مسدود شده است.")
             }
 
             return parseResponse(responseBody)
-        } finally { 
-            conn.disconnect() 
         }
     }
 
     private fun parseResponse(jsonString: String): DnsProfile {
         try {
             val root = JSONObject(jsonString)
-            
+
             if (!root.optBoolean("ok", false)) {
                 throw Exception("پاسخ سرور نامعتبر است (وضعیت ok ناموفق بود).")
             }
             if (!root.optBoolean("active", false)) {
                 throw Exception("هیچ پروفایل فعالی روی سرور تنظیم نشده است.")
             }
-            
+
             val data = root.optJSONObject("data") ?: throw Exception("داده DNS در پاسخ سرور وجود ندارد.")
             val dns = data.optJSONObject("dns")
             val servers = mutableListOf<DnsServer>()
             val serversArray = data.optJSONArray("servers")
-            
+
             if (serversArray != null) {
                 for (i in 0 until serversArray.length()) {
                     val s = serversArray.getJSONObject(i)
@@ -137,7 +226,7 @@ class DnsSyncManager(private val context: Context) {
                     )
                 }
             }
-            
+
             return DnsProfile(
                 name = data.optString("name"),
                 enabled = data.optBoolean("enabled"),
@@ -155,7 +244,7 @@ class DnsSyncManager(private val context: Context) {
 
     private fun parseErrorMessage(e: Exception): String {
         return when (e) {
-            is UnknownHostException -> "خطای شبکه: آدرس سرور یافت نشد. لطفاً اتصال اینترنت یا فیلترشکن خود را بررسی کنید."
+            is UnknownHostException -> "خطای شبکه: امکان resolve امن آدرس سرور وجود نداشت. لطفاً اتصال اینترنت یا فیلترشکن خود را بررسی کنید."
             is SocketTimeoutException -> "خطای تایم‌آوت: سرور پاسخگویی به موقع نداشت. لطفاً فیلترشکن خود را بررسی کنید."
             is IOException -> e.message ?: "خطای ارتباط با شبکه رخ داد."
             else -> e.message ?: "خطای ناشناخته رخ داد."
