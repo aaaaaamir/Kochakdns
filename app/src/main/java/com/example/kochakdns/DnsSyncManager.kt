@@ -160,7 +160,7 @@ class DnsSyncManager(private val context: Context) {
     // ------------------------------------------------------------
     private fun fetchFromServer(): DnsProfile {
         val requestBuilder = Request.Builder()
-            .url("$BASE_URL/api/dns/active")
+            .url("$BASE_URL/api/dns/list")
             .get()
             .header("Accept", "application/json")
             .header("User-Agent", "KochakDNS-Android-Client/1.0")
