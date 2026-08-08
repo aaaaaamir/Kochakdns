@@ -9,7 +9,6 @@ import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
-import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -31,16 +30,14 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) onPermissionsGranted()
-        else onPermissionsGranted()
-    }
+    // نکته: درخواست مجوز VPN (VpnService.prepare) عمداً از اینجا حذف شد.
+    // این مجوز فقط باید وقتی کاربر واقعاً دکمه‌ی اتصال رو توی DnsActivity می‌زنه
+    // درخواست بشه (که همین الان هم درست پیاده‌سازی شده). گرفتنش اینجا، هنگام
+    // باز شدن اپ، باعث می‌شد اندروید هر VPN/فیلترشکن فعال دیگه‌ای رو قطع کنه.
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { checkVpnPermission() }
+    ) { onPermissionsGranted() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,17 +56,11 @@ class MainActivity : AppCompatActivity() {
             ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                checkVpnPermission()
+                onPermissionsGranted()
             }
         } else {
-            checkVpnPermission()
+            onPermissionsGranted()
         }
-    }
-
-    private fun checkVpnPermission() {
-        val vpnIntent = VpnService.prepare(this)
-        if (vpnIntent != null) vpnPermissionLauncher.launch(vpnIntent)
-        else onPermissionsGranted()
     }
 
     private fun onPermissionsGranted() {
