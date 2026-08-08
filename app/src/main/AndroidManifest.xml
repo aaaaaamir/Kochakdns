@@ -7,7 +7,7 @@
     <!-- دسترسی به اینترنت (برای دریافت DNS از سرور) -->
     <uses-permission android:name="android.permission.INTERNET" />
     
-    <!-- بررسی وضعیت شبکه (اختیاری ولی توصیه می‌شود) -->
+    <!-- بررسی وضعیت شبکه -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     
     <!-- برای اجرای VPN به صورت Foreground Service -->
@@ -37,6 +37,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- فعالیت مدیریت و تنظیمات DNS (اضافه شده) -->
+        <activity
+            android:name=".DnsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
 
         <!-- سرویس وی‌پی‌ان -->
         <service
