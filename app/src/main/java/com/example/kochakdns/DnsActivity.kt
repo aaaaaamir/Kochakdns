@@ -179,7 +179,8 @@ class DnsActivity : AppCompatActivity() {
         powerButton = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#1E1E2E"))
+            isClickable = true
+            isFocusable = true
             setOnClickListener { toggleVpn() }
             layoutParams = LinearLayout.LayoutParams(480, 480).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -193,6 +194,16 @@ class DnsActivity : AppCompatActivity() {
                     setStroke(8, Color.parseColor("#2A2A3E"))
                 }
                 background = shape
+                // ریپل لمسی گرد، هم‌شکل با خود دکمه، تا کاربر همیشه ببینه تپش ثبت شده
+                val rippleMask = android.graphics.drawable.GradientDrawable().apply {
+                    this.shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                }
+                foreground = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#55FFFFFF")),
+                    null,
+                    rippleMask
+                )
             }
         }
         powerIcon = TextView(this).apply {
@@ -336,21 +347,33 @@ class DnsActivity : AppCompatActivity() {
 
     private fun toggleVpn() {
         if (isVpnConnected) {
-            val intent = Intent(this, MyVpnService::class.java).apply {
-                action = MyVpnService.ACTION_STOP
+            try {
+                val intent = Intent(this, MyVpnService::class.java).apply {
+                    action = MyVpnService.ACTION_STOP
+                }
+                startService(intent)
+                // آپدیت فوری UI؛ منتظر broadcast نمی‌مونیم چون ممکنه دیر برسه یا نرسه
+                isVpnConnected = false
+                updatePowerButton()
+                Toast.makeText(this, "قطع شد", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "خطا در قطع اتصال: ${e.message}", Toast.LENGTH_LONG).show()
             }
-            startService(intent)
         } else {
             if (selectedDnsServers.isEmpty()) {
                 Toast.makeText(this, "لطفاً ابتدا یک DNS انتخاب کنید", Toast.LENGTH_SHORT).show()
                 return
             }
-            val vpnIntent = VpnService.prepare(this)
-            if (vpnIntent != null) {
-                @Suppress("DEPRECATION")
-                startActivityForResult(vpnIntent, 1001)
-            } else {
-                startVpn()
+            try {
+                val vpnIntent = VpnService.prepare(this)
+                if (vpnIntent != null) {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(vpnIntent, 1001)
+                } else {
+                    startVpn()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -364,6 +387,9 @@ class DnsActivity : AppCompatActivity() {
     }
 
     private fun startVpn() {
+        // فیدبک فوری: تا وقتی broadcast تایید وصل شدن برسه، حالت «در حال اتصال» نشون بده
+        powerIcon.setTextColor(Color.parseColor("#FFD700"))
+        Toast.makeText(this, "در حال اتصال...", Toast.LENGTH_SHORT).show()
         val intent = Intent(this, MyVpnService::class.java).apply {
             action = MyVpnService.ACTION_START
             putStringArrayListExtra(
@@ -372,10 +398,15 @@ class DnsActivity : AppCompatActivity() {
             )
             putExtra(MyVpnService.EXTRA_DNS_NAME, selectedDnsName ?: "DNS")
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+            updatePowerButton()
         }
     }
 
@@ -386,8 +417,8 @@ class DnsActivity : AppCompatActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val shape = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.parseColor("#2E7D32"))
-                        setStroke(8, Color.parseColor("#4CAF50"))
+                        setColor(Color.parseColor("#1B3A22"))
+                        setStroke(10, Color.parseColor("#4CAF50"))
                     }
                     powerButton.background = shape
                 }
@@ -402,12 +433,31 @@ class DnsActivity : AppCompatActivity() {
                     powerButton.background = shape
                 }
             }
+            // یک بانس کوچیک روی هر تغییر حالت، تا کاربر همیشه حس کنه چیزی عوض شد
+            powerButton.animate().cancel()
+            powerButton.scaleX = 0.88f
+            powerButton.scaleY = 0.88f
+            powerButton.animate()
+                .scaleX(1f).scaleY(1f)
+                .setDuration(220)
+                .setInterpolator(android.view.animation.OvershootInterpolator(2.5f))
+                .start()
         }
     }
 
     private suspend fun syncDnsData() {
         isSyncing = true
         showLoading()
+
+        // ابتدا یک sync زنده انجام می‌دیم و منتظرش می‌مونیم تا کامل بشه.
+        // قبلاً این صفحه فقط از DataStore می‌خوند و امیدوار بود که sync
+        // پس‌زمینه‌ی MainActivity زودتر تمام شده باشه؛ چون درخواست DoH چند
+        // مرحله‌ای شده، این فرض دیگه برقرار نبود و لیست خالی می‌موند.
+        withContext(Dispatchers.IO) {
+            val dnsSyncManager = DnsSyncManager(applicationContext)
+            dnsSyncManager.sync()
+        }
+
         withContext(Dispatchers.IO) {
             try {
                 val dataStore = applicationContext.dnsDataStore
