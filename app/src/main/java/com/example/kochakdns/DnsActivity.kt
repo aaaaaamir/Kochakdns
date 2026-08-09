@@ -41,6 +41,15 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 
 // ==================== Main Activity ====================
+
+/**
+ * وضعیت صریح دکمه‌ی وصل/قطع. به‌جای یک boolean ساده که چند جای مختلف کد
+ * مستقیم دستکاریش می‌کردن (و منبع باگ‌های race condition بود)، حالا فقط
+ * از طریق setVpnState() تغییر می‌کنه و هر تغییر حالت دقیقاً یک بار UI رو
+ * آپدیت می‌کنه.
+ */
+enum class VpnUiState { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING }
+
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -61,8 +70,9 @@ class DnsActivity : AppCompatActivity() {
 
     private var pingJob: Job? = null
     private var statsJob: Job? = null
+    private var confirmJob: Job? = null
     private var isSyncing = false
-    private var isVpnConnected = false
+    private var vpnState: VpnUiState = VpnUiState.DISCONNECTED
     private var selectedDnsName: String? = null
     private var selectedDnsServers: List<DnsServer> = emptyList()
     private val dnsItems = mutableListOf<DnsItem>()
@@ -73,14 +83,8 @@ class DnsActivity : AppCompatActivity() {
     private val vpnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                "VPN_STARTED" -> {
-                    isVpnConnected = true
-                    updatePowerButton()
-                }
-                "VPN_STOPPED" -> {
-                    isVpnConnected = false
-                    updatePowerButton()
-                }
+                "VPN_STARTED" -> setVpnState(VpnUiState.CONNECTED)
+                "VPN_STOPPED" -> setVpnState(VpnUiState.DISCONNECTED)
             }
         }
     }
@@ -92,10 +96,25 @@ class DnsActivity : AppCompatActivity() {
         setupVpnReceiver()
         val prefs = getSharedPreferences("dns_prefs", MODE_PRIVATE)
         selectedDnsName = prefs.getString("selected_dns", null)
+        setVpnState(if (VpnStats.isVpnActive) VpnUiState.CONNECTED else VpnUiState.DISCONNECTED)
         lifecycleScope.launch {
             syncDnsData()
             startPingLoop()
             startStatsUpdateLoop()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // هر بار که برمی‌گردی به این صفحه، دکمه رو با وضعیت واقعی VPN هماهنگ کن
+        // (نه صرفاً چیزی که آخرین broadcast گفته)، تا هیچ‌وقت رنگش دروغ نگه.
+        // فقط وقتی معتبره که وسط یک انتقال (CONNECTING/DISCONNECTING) نباشیم،
+        // چون اون حالت‌ها خودشون به‌زودی نتیجه رو ست می‌کنن.
+        val actuallyConnected = VpnStats.isVpnActive
+        if (vpnState == VpnUiState.CONNECTED && !actuallyConnected) {
+            setVpnState(VpnUiState.DISCONNECTED)
+        } else if (vpnState == VpnUiState.DISCONNECTED && actuallyConnected) {
+            setVpnState(VpnUiState.CONNECTED)
         }
     }
 
@@ -318,7 +337,7 @@ class DnsActivity : AppCompatActivity() {
         mainContainer.addView(scrollView)
         rootLayout.addView(mainContainer)
         setContentView(rootLayout)
-        updatePowerButton()
+        setVpnState(vpnState) // اعمال ظاهر اولیه‌ی دکمه
     }
 
     private fun createStatItem(label: String, value: String): LinearLayout {
@@ -346,34 +365,55 @@ class DnsActivity : AppCompatActivity() {
     }
 
     private fun toggleVpn() {
-        if (isVpnConnected) {
-            try {
-                val intent = Intent(this, MyVpnService::class.java).apply {
-                    action = MyVpnService.ACTION_STOP
-                }
-                startService(intent)
-                // آپدیت فوری UI؛ منتظر broadcast نمی‌مونیم چون ممکنه دیر برسه یا نرسه
-                isVpnConnected = false
-                updatePowerButton()
-                Toast.makeText(this, "قطع شد", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "خطا در قطع اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+        when (vpnState) {
+            VpnUiState.CONNECTED -> disconnectVpn()
+            VpnUiState.DISCONNECTED -> connectVpn()
+            VpnUiState.CONNECTING, VpnUiState.DISCONNECTING -> {
+                // وسط یک انتقال هستیم؛ تپ رو نادیده می‌گیریم تا race condition نسازه
+                // (دکمه هم موقع این حالت‌ها غیرفعاله، این صرفاً یک محافظ اضافیه)
             }
-        } else {
-            if (selectedDnsServers.isEmpty()) {
-                Toast.makeText(this, "لطفاً ابتدا یک DNS انتخاب کنید", Toast.LENGTH_SHORT).show()
-                return
+        }
+    }
+
+    private fun connectVpn() {
+        if (selectedDnsServers.isEmpty()) {
+            Toast.makeText(this, "لطفاً ابتدا یک DNS انتخاب کنید", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val vpnIntent = VpnService.prepare(this)
+            if (vpnIntent != null) {
+                @Suppress("DEPRECATION")
+                startActivityForResult(vpnIntent, 1001)
+            } else {
+                startVpn()
             }
-            try {
-                val vpnIntent = VpnService.prepare(this)
-                if (vpnIntent != null) {
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(vpnIntent, 1001)
-                } else {
-                    startVpn()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun disconnectVpn() {
+        setVpnState(VpnUiState.DISCONNECTING)
+        try {
+            val intent = Intent(this, MyVpnService::class.java).apply {
+                action = MyVpnService.ACTION_STOP
+            }
+            startService(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "خطا در قطع اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+            setVpnState(VpnUiState.CONNECTED) // برگردون چون واقعاً تلاش انجام نشد
+            return
+        }
+        confirmJob?.cancel()
+        confirmJob = lifecycleScope.launch {
+            val settled = waitForActualState(expectActive = false, timeoutMs = 4000)
+            if (settled) {
+                setVpnState(VpnUiState.DISCONNECTED)
+            } else {
+                // بعد از ۴ ثانیه هنوز واقعاً وصله -> قطع واقعاً انجام نشد
+                setVpnState(VpnUiState.CONNECTED)
+                Toast.makeText(this@DnsActivity, "قطع اتصال ناموفق بود، دوباره امتحان کنید", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -383,13 +423,14 @@ class DnsActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1001 && resultCode == RESULT_OK) {
             startVpn()
+        } else if (requestCode == 1001) {
+            // کاربر مجوز VPN رو رد کرد
+            setVpnState(VpnUiState.DISCONNECTED)
         }
     }
 
     private fun startVpn() {
-        // فیدبک فوری: تا وقتی broadcast تایید وصل شدن برسه، حالت «در حال اتصال» نشون بده
-        powerIcon.setTextColor(Color.parseColor("#FFD700"))
-        Toast.makeText(this, "در حال اتصال...", Toast.LENGTH_SHORT).show()
+        setVpnState(VpnUiState.CONNECTING)
         val intent = Intent(this, MyVpnService::class.java).apply {
             action = MyVpnService.ACTION_START
             putStringArrayListExtra(
@@ -406,33 +447,62 @@ class DnsActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
-            updatePowerButton()
+            setVpnState(VpnUiState.DISCONNECTED)
+            return
+        }
+        // به‌جای صرفاً منتظر broadcast موندن (که ممکنه گم بشه)، خودمون وضعیت
+        // واقعی VPN رو چک می‌کنیم تا مطمئن بشیم دکمه هیچ‌وقت زرد گیر نمی‌کنه.
+        confirmJob?.cancel()
+        confirmJob = lifecycleScope.launch {
+            val settled = waitForActualState(expectActive = true, timeoutMs = 8000)
+            if (settled) {
+                setVpnState(VpnUiState.CONNECTED)
+            } else {
+                setVpnState(VpnUiState.DISCONNECTED)
+                Toast.makeText(this@DnsActivity, "اتصال ناموفق بود. دوباره امتحان کنید.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    private fun updatePowerButton() {
+    /** هر ۲۵۰ میلی‌ثانیه وضعیت واقعی VPN رو چک می‌کنه تا expectActive بشه یا timeout بخوره. */
+    private suspend fun waitForActualState(expectActive: Boolean, timeoutMs: Int): Boolean {
+        var waited = 0
+        while (waited < timeoutMs) {
+            if (VpnStats.isVpnActive == expectActive) return true
+            delay(250)
+            waited += 250
+        }
+        return VpnStats.isVpnActive == expectActive
+    }
+
+    /**
+     * تنها نقطه‌ی تغییر وضعیت VPN توی UI. هر تغییری باید از اینجا رد بشه؛
+     * جای دیگه‌ای مستقیم vpnState رو ست نمی‌کنه. همین‌جا هم دکمه رو موقع
+     * انتقال (CONNECTING/DISCONNECTING) غیرفعال می‌کنه تا دوبار-تپ زدن
+     * race condition نسازه.
+     */
+    private fun setVpnState(newState: VpnUiState) {
+        vpnState = newState
         runOnUiThread {
-            if (isVpnConnected) {
-                powerIcon.setTextColor(Color.parseColor("#4CAF50"))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.parseColor("#1B3A22"))
-                        setStroke(10, Color.parseColor("#4CAF50"))
-                    }
-                    powerButton.background = shape
-                }
-            } else {
-                powerIcon.setTextColor(Color.parseColor("#666680"))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.parseColor("#1E1E2E"))
-                        setStroke(8, Color.parseColor("#2A2A3E"))
-                    }
-                    powerButton.background = shape
-                }
+            val (bgColor, strokeColor, iconColor, clickable) = when (newState) {
+                VpnUiState.CONNECTED -> Quad("#1B3A22", "#4CAF50", "#4CAF50", true)
+                VpnUiState.DISCONNECTED -> Quad("#1E1E2E", "#2A2A3E", "#666680", true)
+                VpnUiState.CONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
+                VpnUiState.DISCONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
             }
+
+            powerIcon.setTextColor(Color.parseColor(iconColor))
+            powerButton.isClickable = clickable
+            powerButton.alpha = if (clickable) 1f else 0.75f
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val shape = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.parseColor(bgColor))
+                    setStroke(if (newState == VpnUiState.CONNECTED) 10 else 8, Color.parseColor(strokeColor))
+                }
+                powerButton.background = shape
+            }
+
             // یک بانس کوچیک روی هر تغییر حالت، تا کاربر همیشه حس کنه چیزی عوض شد
             powerButton.animate().cancel()
             powerButton.scaleX = 0.88f
@@ -444,6 +514,9 @@ class DnsActivity : AppCompatActivity() {
                 .start()
         }
     }
+
+    private data class Quad(val a: String, val b: String, val c: String, val d: Boolean)
+
 
     private suspend fun syncDnsData() {
         isSyncing = true
@@ -717,20 +790,25 @@ class DnsActivity : AppCompatActivity() {
             view.update(dnsItems.find { it.name == n }!!, n == selectedDnsName)
         }
         updateSelectedDnsStats()
-        if (isVpnConnected) {
+        if (vpnState == VpnUiState.CONNECTED) {
+            // با DNS جدید دوباره وصل شو: اول قطع، بعد از تایید قطع واقعی، وصل با سرور جدید
+            setVpnState(VpnUiState.DISCONNECTING)
             val stopIntent = Intent(this, MyVpnService::class.java).apply {
                 action = MyVpnService.ACTION_STOP
             }
             startService(stopIntent)
-            mainHandler.postDelayed({
+            confirmJob?.cancel()
+            confirmJob = lifecycleScope.launch {
+                waitForActualState(expectActive = false, timeoutMs = 4000)
                 startVpn()
-            }, 500)
+            }
         }
     }
 
     override fun onDestroy() {
         pingJob?.cancel()
         statsJob?.cancel()
+        confirmJob?.cancel()
         try {
             unregisterReceiver(vpnReceiver)
         } catch (_: Exception) {
