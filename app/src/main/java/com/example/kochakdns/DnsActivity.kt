@@ -78,6 +78,9 @@ class DnsActivity : AppCompatActivity() {
     private val dnsItems = mutableListOf<DnsItem>()
     private val dnsItemViews = mutableMapOf<String, DnsItemView>()
     private var previousPings = mutableMapOf<String, Long>()
+    // جیتر مستقیم: مستقل از آیتم‌های لیست DNS محاسبه می‌شه، فقط از روی
+    // پینگ‌های واقعی و متوالی خودِ DNS انتخاب‌شده (فرمول هموارسازی RFC 3550).
+    private var directJitterMs: Double = 0.0
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val vpnReceiver = object : BroadcastReceiver() {
@@ -520,39 +523,56 @@ class DnsActivity : AppCompatActivity() {
 
     private suspend fun syncDnsData() {
         isSyncing = true
-        showLoading()
 
+        // مرحله‌ی ۱: اگه از دور قبل چیزی کش شده، فوری نشونش بده تا کاربر
+        // صفحه‌ی خالی/لودینگ نبینه؛ فقط وقتی هیچ کشی نیست لودینگ کامل نشون بده.
+        val cached = withContext(Dispatchers.IO) { readCachedProfiles() }
+        if (cached != null && cached.isNotEmpty()) {
+            loadDnsFromProfiles(cached)
+        } else {
+            showLoading()
+        }
+
+        // مرحله‌ی ۲: sync زنده در پس‌زمینه
         withContext(Dispatchers.IO) {
             val dnsSyncManager = DnsSyncManager(applicationContext)
             dnsSyncManager.sync()
         }
 
+        // مرحله‌ی ۳: لیست تازه رو بخون و جایگزین همون قبلی کن
         withContext(Dispatchers.IO) {
             try {
-                val dataStore = applicationContext.dnsDataStore
-                val prefs = dataStore.data.first()
-                val json = prefs[stringPreferencesKey("dns_profiles_list")]
-                if (json != null) {
-                    val profiles = DnsProfile.listFromJson(json)
-                    if (profiles.isNotEmpty()) {
-                        mainHandler.post {
-                            loadDnsFromProfiles(profiles)
-                            isSyncing = false
-                            hideLoading()
-                        }
-                        return@withContext
+                val fresh = readCachedProfiles()
+                if (fresh != null && fresh.isNotEmpty()) {
+                    mainHandler.post {
+                        loadDnsFromProfiles(fresh)
+                        isSyncing = false
+                        hideLoading()
                     }
-                }
-                mainHandler.post {
-                    isSyncing = false
-                    showError()
+                } else {
+                    mainHandler.post {
+                        isSyncing = false
+                        // اگه چیزی از قبل (cache) روی صفحه هست، همونو نگه دار؛ فقط
+                        // وقتی واقعاً هیچی نداریم خطای کامل نشون بده.
+                        if (dnsItems.isEmpty()) showError() else hideLoading()
+                    }
                 }
             } catch (e: Exception) {
                 mainHandler.post {
                     isSyncing = false
-                    showError()
+                    if (dnsItems.isEmpty()) showError() else hideLoading()
                 }
             }
+        }
+    }
+
+    private suspend fun readCachedProfiles(): List<DnsProfile>? {
+        return try {
+            val prefsSnapshot = applicationContext.dnsDataStore.data.first()
+            val json = prefsSnapshot[stringPreferencesKey("dns_profiles_list")] ?: return null
+            DnsProfile.listFromJson(json)
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -575,6 +595,7 @@ class DnsActivity : AppCompatActivity() {
             val defaultProfile = profiles.firstOrNull { it.isActive } ?: profiles.first()
             selectedDnsName = defaultProfile.name
             selectedDnsServers = defaultProfile.servers
+            directJitterMs = 0.0
             getSharedPreferences("dns_prefs", MODE_PRIVATE).edit()
                 .putString("selected_dns", defaultProfile.name)
                 .apply()
@@ -635,6 +656,13 @@ class DnsActivity : AppCompatActivity() {
                             )
                             dnsItems[index] = newItem
                             dnsItemViews[name]?.update(newItem, name == selectedDnsName)
+
+                            // جیتر مستقیم فقط از روی نمونه‌های واقعی و متوالی خودِ
+                            // DNS انتخاب‌شده محاسبه می‌شه، نه از روی دیتای لیست.
+                            if (name == selectedDnsName && oldPing > 0 && newPing > 0) {
+                                val diff = kotlin.math.abs(newPing - oldPing).toDouble()
+                                directJitterMs += (diff - directJitterMs) / 16.0
+                            }
                         }
                     }
                     updateSelectedDnsStats()
@@ -665,8 +693,8 @@ class DnsActivity : AppCompatActivity() {
             } else {
                 "-- ms"
             }
-            jitterText.text = if (selectedItem.jitter > 0) {
-                "${selectedItem.jitter} ms"
+            jitterText.text = if (directJitterMs > 0) {
+                "${directJitterMs.toLong()} ms"
             } else {
                 "-- ms"
             }
@@ -679,11 +707,36 @@ class DnsActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * وقتی VPN خودمون وصله، مسیر همون IP سرور DNS از قبل داخل تون گرفته شده،
+     * پس اگه این سوکت پینگ رو protect/bind نکنیم، پکتش هم از تون خودمون رد
+     * می‌شه (برنامه -> تون -> relay ما -> DNS واقعی -> برگشت) و RTT دوبرابر
+     * و کندتر از پینگ واقعی نشون داده می‌شه. با bindSocket به شبکه‌ی زیرین
+     * (وای‌فای/دیتا)، این سوکت کاملاً از تون خودمون عبور می‌کنه و RTT واقعیه.
+     */
+    private fun getUnderlyingNetwork(): android.net.Network? {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            cm.allNetworks.firstOrNull { net ->
+                val caps = cm.getNetworkCapabilities(net) ?: return@firstOrNull false
+                !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) &&
+                    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private suspend fun pingDns(address: String): Long {
         return withContext(Dispatchers.IO) {
             val start = System.currentTimeMillis()
             try {
                 val socket = DatagramSocket()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    getUnderlyingNetwork()?.let { net ->
+                        try { net.bindSocket(socket) } catch (_: Exception) {}
+                    }
+                }
                 socket.soTimeout = 3000
                 val data = byteArrayOf(
                     0x00, 0x01,
@@ -783,6 +836,7 @@ class DnsActivity : AppCompatActivity() {
         val item = dnsItems.find { it.name == name } ?: return
         selectedDnsName = name
         selectedDnsServers = item.servers
+        directJitterMs = 0.0 // جیتر مال سرور قبلی بود، برای این یکی از صفر شروع می‌شه
         getSharedPreferences("dns_prefs", MODE_PRIVATE).edit()
             .putString("selected_dns", name)
             .apply()
