@@ -14,12 +14,10 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
@@ -36,30 +34,38 @@ class DnsSyncManager(private val context: Context) {
 
     companion object {
         private const val BASE_URL = "https://kochakdns-backend.amir26076.workers.dev"
+        private const val BASE_HOST = "kochakdns-backend.amir26076.workers.dev"
         private var accessToken: String? = null
 
         fun setAccessToken(token: String?) {
             accessToken = token
         }
 
+        // DNS-over-HTTPS resolvers, queried by literal IP so the request itself
+        // never needs a (poisonable) DNS lookup. Cloudflare first, Google as fallback.
         private val DOH_ENDPOINTS = listOf(
             "https://1.1.1.1/dns-query",
             "https://8.8.8.8/resolve"
         )
 
+        // Cache resolved IPs briefly in memory so we don't hit DoH on every request.
         private val dohCache = mutableMapOf<String, Pair<String, Long>>()
         private const val DOH_CACHE_TTL_MS = 5 * 60 * 1000L // 5 minutes
     }
 
     private val dataStore = context.dnsDataStore
     private val DNS_LIST_KEY = stringPreferencesKey("dns_profiles_list")
-    private val SELECTED_PROFILE_KEY = stringPreferencesKey("selected_profile_name")
     private val LAST_SYNC_KEY = longPreferencesKey("last_sync_time")
 
+    // ------------------------------------------------------------
+    // Custom Dns for OkHttp: resolves hostnames via DoH instead of
+    // the (potentially poisoned/hijacked) system/ISP DNS resolver.
+    // ------------------------------------------------------------
     private inner class DohDns : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             val ip = resolveViaDoH(hostname)
                 ?: throw UnknownHostException("امکان resolve امن دامنه $hostname وجود نداشت (DoH ناموفق بود).")
+            // Parsing a literal IP string does not trigger a network DNS lookup.
             return listOf(InetAddress.getByName(ip))
         }
     }
@@ -73,21 +79,18 @@ class DnsSyncManager(private val context: Context) {
             .build()
     }
 
-    /**
-     * سینک و دریافت تمام پروفایل‌های DNS از سرور
-     */
-    suspend fun syncProfiles(
+    suspend fun sync(
         onSuccess: ((List<DnsProfile>) -> Unit)? = null,
         onError: ((String) -> Unit)? = null
     ) {
         try {
             val profiles = withContext(Dispatchers.IO) {
-                fetchProfilesFromServer()
+                fetchListFromServer()
             }
             saveProfiles(profiles)
 
             withContext(Dispatchers.Main) {
-                showToast("✓ لیست سرورهای DNS با موفقیت بروزرسانی شد", false)
+                showToast("✓ لیست DNS با موفقیت بروزرسانی شد (${profiles.size} پروفایل)", false)
             }
             onSuccess?.invoke(profiles)
         } catch (e: Exception) {
@@ -100,7 +103,7 @@ class DnsSyncManager(private val context: Context) {
     }
 
     // ------------------------------------------------------------
-    // DNS-over-HTTPS resolution
+    // DNS-over-HTTPS resolution (bypasses system/ISP DNS entirely)
     // ------------------------------------------------------------
     private fun resolveViaDoH(hostname: String): String? {
         dohCache[hostname]?.let { (ip, ts) ->
@@ -122,6 +125,7 @@ class DnsSyncManager(private val context: Context) {
     }
 
     private fun queryDoh(endpoint: String, hostname: String): String? {
+        // endpoint host is a literal IP (1.1.1.1 / 8.8.8.8) -> no DNS lookup needed here.
         val url = URL("$endpoint?name=$hostname&type=A")
         val conn = url.openConnection() as HttpsURLConnection
         try {
@@ -150,9 +154,11 @@ class DnsSyncManager(private val context: Context) {
     }
 
     // ------------------------------------------------------------
-    // API Request and Parsing
+    // Actual API request, routed through the DoH-resolved IP while
+    // still using the correct hostname for TLS SNI / cert checks
+    // (OkHttp handles this automatically via the custom Dns above).
     // ------------------------------------------------------------
-    private fun fetchProfilesFromServer(): List<DnsProfile> {
+    private fun fetchListFromServer(): List<DnsProfile> {
         val requestBuilder = Request.Builder()
             .url("$BASE_URL/api/dns/list")
             .get()
@@ -172,7 +178,7 @@ class DnsSyncManager(private val context: Context) {
                 }
                 throw when (response.code) {
                     401 -> Exception("خطای احراز هویت: توکن دسترسی نامعتبر یا منقضی شده است.")
-                    403, 503 -> Exception("دسترسی رد شد. لطفاً بررسی کنید که آیا به فیلترشکن نیاز است یا خیر.")
+                    403, 503 -> Exception("دسترسی رد شد. لطفاً بررسی کنید که آیا به فیلترشکن نیاز است یا درخواست محدود شده است.")
                     else -> Exception("خطای سرور (کد ${response.code}): ${if (errorBody.isNotBlank()) errorBody else "پاسخ نامعتبر"}")
                 }
             }
@@ -184,32 +190,29 @@ class DnsSyncManager(private val context: Context) {
             if (trimmedResponse.startsWith("<!DOCTYPE", ignoreCase = true) ||
                 trimmedResponse.startsWith("<html", ignoreCase = true)
             ) {
-                throw IOException("سرور پاسخ نامعتبر (HTML) برگرداند. احتمالاً دسترسی مسدود شده است.")
+                throw IOException("سرور پاسخ نامعتبر (HTML) برگرداند. احتمالاً دسترسی توسط شبکه یا فایروال مسدود شده است.")
             }
 
-            return parseProfilesList(responseBody)
+            return parseListResponse(responseBody)
         }
     }
 
-    private fun parseProfilesList(jsonString: String): List<DnsProfile> {
+    private fun parseListResponse(jsonString: String): List<DnsProfile> {
         try {
             val root = JSONObject(jsonString)
-
             if (!root.optBoolean("ok", false)) {
                 throw Exception("پاسخ سرور نامعتبر است (وضعیت ok ناموفق بود).")
             }
 
-            val dataArray = root.optJSONArray("data")
-                ?: throw Exception("لیست داده‌های DNS در پاسخ سرور یافت نشد.")
-
-            val profilesList = mutableListOf<DnsProfile>()
+            val activeName = root.optString("active_profile", null.toString()).takeIf { it.isNotBlank() && it != "null" }
+            val dataArray = root.optJSONArray("data") ?: throw Exception("لیست DNS در پاسخ سرور وجود ندارد.")
+            val profiles = mutableListOf<DnsProfile>()
 
             for (i in 0 until dataArray.length()) {
-                val item = dataArray.getJSONObject(i)
-                val dns = item.optJSONObject("dns")
+                val p = dataArray.getJSONObject(i)
+                val dns = p.optJSONObject("dns")
                 val servers = mutableListOf<DnsServer>()
-                val serversArray = item.optJSONArray("servers")
-
+                val serversArray = p.optJSONArray("servers")
                 if (serversArray != null) {
                     for (j in 0 until serversArray.length()) {
                         val s = serversArray.getJSONObject(j)
@@ -223,23 +226,26 @@ class DnsSyncManager(private val context: Context) {
                         )
                     }
                 }
-
-                val profile = DnsProfile(
-                    name = item.optString("name"),
-                    enabled = item.optBoolean("enabled"),
-                    ipv4Primary = dns?.optString("ipv4_primary")?.takeIf { it.isNotEmpty() && it != "null" },
-                    ipv6Primary = dns?.optString("ipv6_primary")?.takeIf { it.isNotEmpty() && it != "null" },
-                    ipv4Secondary = dns?.optString("ipv4_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
-                    ipv6Secondary = dns?.optString("ipv6_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
-                    servers = servers,
-                    updatedAt = item.optString("updated_at").takeIf { it.isNotEmpty() && it != "null" },
-                    isActive = item.optBoolean("is_active", false)
+                val name = p.optString("name")
+                profiles.add(
+                    DnsProfile(
+                        name = name,
+                        enabled = p.optBoolean("enabled"),
+                        ipv4Primary = dns?.optString("ipv4_primary")?.takeIf { it.isNotEmpty() && it != "null" },
+                        ipv6Primary = dns?.optString("ipv6_primary")?.takeIf { it.isNotEmpty() && it != "null" },
+                        ipv4Secondary = dns?.optString("ipv4_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
+                        ipv6Secondary = dns?.optString("ipv6_secondary")?.takeIf { it.isNotEmpty() && it != "null" },
+                        servers = servers,
+                        updatedAt = p.optString("updated_at").takeIf { it.isNotEmpty() && it != "null" },
+                        isActive = p.optBoolean("is_active", name == activeName)
+                    )
                 )
-
-                profilesList.add(profile)
             }
 
-            return profilesList
+            if (profiles.isEmpty()) {
+                throw Exception("هیچ پروفایل فعالی روی سرور یافت نشد.")
+            }
+            return profiles
         } catch (e: JSONException) {
             throw Exception("خطا در تحلیل ساختار JSON دریافتی از سرور.")
         }
@@ -248,69 +254,16 @@ class DnsSyncManager(private val context: Context) {
     private fun parseErrorMessage(e: Exception): String {
         return when (e) {
             is UnknownHostException -> "خطای شبکه: امکان resolve امن آدرس سرور وجود نداشت. لطفاً اتصال اینترنت یا فیلترشکن خود را بررسی کنید."
-            is SocketTimeoutException -> "خطای تایم‌آوت: سرور پاسخگویی به موقع نداشت."
+            is SocketTimeoutException -> "خطای تایم‌آوت: سرور پاسخگویی به موقع نداشت. لطفاً فیلترشکن خود را بررسی کنید."
             is IOException -> e.message ?: "خطای ارتباط با شبکه رخ داد."
             else -> e.message ?: "خطای ناشناخته رخ داد."
         }
     }
 
-    // ------------------------------------------------------------
-    // Local DataStore Management
-    // ------------------------------------------------------------
     private suspend fun saveProfiles(profiles: List<DnsProfile>) {
-        val jsonArray = JSONArray()
-        profiles.forEach { profile ->
-            jsonArray.put(JSONObject(profile.toJson().toString()))
-        }
-
         dataStore.edit { prefs ->
-            prefs[DNS_LIST_KEY] = jsonArray.toString()
+            prefs[DNS_LIST_KEY] = DnsProfile.listToJson(profiles)
             prefs[LAST_SYNC_KEY] = System.currentTimeMillis()
-        }
-    }
-
-    /**
-     * دریافت لیست تمام پروفایل‌های ذخیره‌شده
-     */
-    suspend fun getSavedProfiles(): List<DnsProfile> {
-        val prefs = dataStore.data.first()
-        val jsonString = prefs[DNS_LIST_KEY] ?: return emptyList()
-
-        return try {
-            val jsonArray = JSONArray(jsonString)
-            val list = mutableListOf<DnsProfile>()
-            for (i in 0 until jsonArray.length()) {
-                val item = jsonArray.getJSONObject(i)
-                list.add(DnsProfile.fromJson(item))
-            }
-            list
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    /**
-     * ذخیره کردن پروفایل انتخابی کاربر
-     */
-    suspend fun selectProfile(profileName: String) {
-        dataStore.edit { prefs ->
-            prefs[SELECTED_PROFILE_KEY] = profileName
-        }
-    }
-
-    /**
-     * دریافت پروفایل فعلی که کاربر انتخاب کرده است
-     */
-    suspend fun getSelectedProfile(): DnsProfile? {
-        val prefs = dataStore.data.first()
-        val selectedName = prefs[SELECTED_PROFILE_KEY]
-        val allProfiles = getSavedProfiles()
-
-        return if (selectedName != null) {
-            allProfiles.find { it.name == selectedName } ?: allProfiles.firstOrNull()
-        } else {
-            // اگر کاربر چیزی انتخاب نکرده بود، پروفایلی که روی سرور active است یا اولی را برمی‌گرداند
-            allProfiles.find { it.isActive } ?: allProfiles.firstOrNull()
         }
     }
 
