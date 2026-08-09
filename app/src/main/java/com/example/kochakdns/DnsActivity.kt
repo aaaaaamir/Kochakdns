@@ -25,12 +25,11 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.doOnPreDraw
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -629,46 +628,50 @@ class DnsActivity : AppCompatActivity() {
         pingJob?.cancel()
         pingJob = lifecycleScope.launch(Dispatchers.IO) {
             while (isActive) {
-                val itemsToPing = dnsItems.toList()
-                val pingResults = itemsToPing.map { item ->
-                    async {
+                // وقتی متصلیم، پینگ‌گیری کاملاً pause می‌شه (نه فقط پایین‌تر
+                // می‌ره) — آخرین مقداری که قبل از وصل شدن نشون داده بود همون‌جا می‌مونه.
+                if (vpnState != VpnUiState.CONNECTED) {
+                    // یکی‌یکی و پشت‌سرهم بدون مکث پینگ می‌گیریم؛ فقط وقتی کل
+                    // صف تموم شد، ۵ ثانیه صبر می‌کنیم و از اول شروع می‌کنیم.
+                    val itemsToPing = dnsItems.toList()
+                    for (item in itemsToPing) {
+                        if (!isActive) break
+                        if (vpnState == VpnUiState.CONNECTED) break // اگه وسط صف وصل شد، صف رو نگه دار
+
                         val primaryIpv4 = item.servers.firstOrNull {
                             it.family == "ipv4" && it.role == "primary"
                         }?.address
-                        if (primaryIpv4 != null) {
-                            val ping = pingDns(primaryIpv4)
-                            Pair(item.name, ping)
-                        } else {
-                            Pair(item.name, -1L)
-                        }
-                    }
-                }.awaitAll()
-                mainHandler.post {
-                    pingResults.forEach { (name, newPing) ->
-                        val index = dnsItems.indexOfFirst { it.name == name }
-                        if (index >= 0) {
-                            val oldItem = dnsItems[index]
-                            val oldPing = previousPings[name] ?: -1
-                            previousPings[name] = newPing
-                            val newItem = oldItem.copy(
-                                ping = newPing,
-                                previousPing = oldPing
-                            )
-                            dnsItems[index] = newItem
-                            dnsItemViews[name]?.update(newItem, name == selectedDnsName)
+                        val newPing = if (primaryIpv4 != null) pingDns(primaryIpv4) else -1L
 
-                            // جیتر مستقیم فقط از روی نمونه‌های واقعی و متوالی خودِ
-                            // DNS انتخاب‌شده محاسبه می‌شه، نه از روی دیتای لیست.
-                            if (name == selectedDnsName && oldPing > 0 && newPing > 0) {
-                                val diff = kotlin.math.abs(newPing - oldPing).toDouble()
-                                directJitterMs += (diff - directJitterMs) / 16.0
+                        mainHandler.post {
+                            val index = dnsItems.indexOfFirst { it.name == item.name }
+                            if (index >= 0) {
+                                val oldItem = dnsItems[index]
+                                val oldPing = previousPings[item.name] ?: -1
+                                previousPings[item.name] = newPing
+                                val newItem = oldItem.copy(
+                                    ping = newPing,
+                                    previousPing = oldPing
+                                )
+                                dnsItems[index] = newItem
+                                dnsItemViews[item.name]?.update(newItem, item.name == selectedDnsName)
+
+                                // جیتر مستقیم فقط از روی نمونه‌های واقعی و متوالی خودِ
+                                // DNS انتخاب‌شده محاسبه می‌شه، نه از روی دیتای لیست.
+                                if (item.name == selectedDnsName && oldPing > 0 && newPing > 0) {
+                                    val diff = kotlin.math.abs(newPing - oldPing).toDouble()
+                                    directJitterMs += (diff - directJitterMs) / 16.0
+                                }
+
+                                updateSelectedDnsStats()
+                                sortDnsList()
                             }
                         }
                     }
-                    updateSelectedDnsStats()
-                    sortDnsList()
+                    delay(5000) // بعد از این‌که کل صف پینگ گرفته شد
+                } else {
+                    delay(2000)
                 }
-                delay(2000)
             }
         }
     }
@@ -677,10 +680,36 @@ class DnsActivity : AppCompatActivity() {
         val sorted = dnsItems.sortedWith(compareBy<DnsItem> {
             if (it.ping < 0) Long.MAX_VALUE else it.ping
         })
+
+        // تکنیک FLIP: قبل از جابه‌جایی، موقعیت فعلی (top) هر کارت رو ثبت می‌کنیم
+        val oldTops = mutableMapOf<String, Int>()
+        dnsItemViews.forEach { (name, itemView) ->
+            if (itemView.view.parent != null) oldTops[name] = itemView.view.top
+        }
+
         dnsListContainer.removeAllViews()
         sorted.forEach { item ->
             dnsItemViews[item.name]?.let { view ->
                 dnsListContainer.addView(view.view)
+            }
+        }
+
+        // بعد از این‌که layout جدید محاسبه شد، هر کارت رو از موقعیت قبلی‌اش
+        // با یک انیمیشن نرم به موقعیت جدیدش می‌بریم (به‌جای پرش ناگهانی)
+        dnsListContainer.doOnPreDraw {
+            sorted.forEach { item ->
+                val itemView = dnsItemViews[item.name] ?: return@forEach
+                val oldTop = oldTops[item.name] ?: return@forEach
+                val newTop = itemView.view.top
+                val delta = (oldTop - newTop).toFloat()
+                if (delta != 0f) {
+                    itemView.view.translationY = delta
+                    itemView.view.animate()
+                        .translationY(0f)
+                        .setDuration(350)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                        .start()
+                }
             }
         }
     }
@@ -729,7 +758,6 @@ class DnsActivity : AppCompatActivity() {
 
     private suspend fun pingDns(address: String): Long {
         return withContext(Dispatchers.IO) {
-            val start = System.currentTimeMillis()
             try {
                 val socket = DatagramSocket()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -737,7 +765,7 @@ class DnsActivity : AppCompatActivity() {
                         try { net.bindSocket(socket) } catch (_: Exception) {}
                     }
                 }
-                socket.soTimeout = 3000
+                socket.soTimeout = 500
                 val data = byteArrayOf(
                     0x00, 0x01,
                     0x00, 0x00,
@@ -755,12 +783,17 @@ class DnsActivity : AppCompatActivity() {
                     InetAddress.getByName(address),
                     53
                 )
+                // تایمر رو دقیقاً همین‌جا شروع می‌کنیم، نه قبل از ساخت سوکت —
+                // اون overhead ساخت/bind سوکت جزو تاخیر شبکه نیست و نباید
+                // توی عدد پینگ حساب بشه (باعث بالاتر دیده شدن از پینگ واقعی می‌شد).
+                val start = System.nanoTime()
                 socket.send(packet)
                 val buffer = ByteArray(512)
                 val response = DatagramPacket(buffer, buffer.size)
                 socket.receive(response)
+                val elapsedMs = (System.nanoTime() - start) / 1_000_000
                 socket.close()
-                System.currentTimeMillis() - start
+                elapsedMs
             } catch (e: Exception) {
                 -1L
             }
