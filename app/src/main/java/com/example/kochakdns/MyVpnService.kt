@@ -11,12 +11,23 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.InetAddress
-import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 
 class MyVpnService : VpnService() {
 
@@ -28,15 +39,23 @@ class MyVpnService : VpnService() {
         const val EXTRA_DNS_SERVERS = "dns_servers"
         const val EXTRA_DNS_NAME = "dns_name"
         private const val TUN_ADDRESS = "10.8.0.1"
+        // آدرس محلی ULA برای رابط تون در حالت IPv6؛ فقط برای خود دستگاه معتبره، مسیریابی نمی‌شه
+        private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
+        // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
+        private const val MAX_CONCURRENT_RELAYS = 12
     }
 
-    private var vpnThread: Thread? = null
-    private var isCancelled = false
+    // یک CoroutineScope مستقل با SupervisorJob: خطای یک relay بقیه رو نمی‌کشه،
+    // و با cancel() کل کار به‌طور تمیز و قطعی متوقف می‌شه (به‌جای Thread.interrupt
+    // که تضمینی نیست فوراً اثر کنه).
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private val relayPermits = Semaphore(MAX_CONCURRENT_RELAYS)
+    private val outputMutex = Mutex()
+
+    private var readerJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsUpdateHandler: Handler? = null
-    // هر پرس‌وجوی DNS روی یک ترد کوتاه‌عمر جدا relay می‌شه تا خواندن پکت‌های
-    // بعدی از تون بلاک نشه؛ تعداد ترد همزمان رو محدود می‌کنیم که کنترل‌شده بمونه.
-    private val relayExecutor = Executors.newFixedThreadPool(8)
 
     override fun onCreate() {
         super.onCreate()
@@ -57,19 +76,29 @@ class MyVpnService : VpnService() {
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
-        val validDns = dnsServers.filter { it.isNotBlank() && isIpv4(it) }
-        if (validDns.isEmpty()) { stopSelf(); return }
+        val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }
+        val validV6 = dnsServers.filter { it.isNotBlank() && isIpv6(it) }
+        if (validV4.isEmpty() && validV6.isEmpty()) { stopSelf(); return }
 
         startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
-            // فقط مسیر خودِ سرورهای DNS رو می‌گیریم، نه کل اینترنت (0.0.0.0/0).
-            // این یعنی فقط پرس‌وجوهای DNS وارد تون می‌شن، بقیه‌ی ترافیک هر اپی
-            // از مسیر عادی شبکه رد می‌شه و دست‌نخورده باقی می‌مونه.
-            validDns.take(4).forEach { dns ->
+            if (validV6.isNotEmpty()) {
+                try { addAddress(TUN_ADDRESS_V6, 128) } catch (_: Exception) {}
+            }
+            // فقط مسیر خودِ سرورهای DNS رو می‌گیریم (چه v4 چه v6)، نه کل اینترنت.
+            // یعنی فقط پرس‌وجوهای DNS وارد تون می‌شن، بقیه‌ی ترافیک هر اپی از مسیر
+            // عادی شبکه رد می‌شه و دست‌نخورده باقی می‌مونه.
+            validV4.take(4).forEach { dns ->
                 try {
                     addRoute(dns, 32)
+                    addDnsServer(dns)
+                } catch (_: Exception) {}
+            }
+            validV6.take(4).forEach { dns ->
+                try {
+                    addRoute(dns, 128)
                     addDnsServer(dns)
                 } catch (_: Exception) {}
             }
@@ -86,12 +115,11 @@ class MyVpnService : VpnService() {
             VpnStats.totalBytesReceived.set(0)
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
-            isCancelled = false
-            vpnThread = Thread { processPackets() }.apply { name = "VpnThread"; start() }
+            readerJob = serviceScope.launch { processPackets() }
             statsUpdateHandler = Handler(Looper.getMainLooper())
             statsUpdateHandler?.post(object : Runnable {
                 override fun run() {
-                    if (!isCancelled) { updateNotification(); statsUpdateHandler?.postDelayed(this, 2000) }
+                    if (VpnStats.isVpnActive) { updateNotification(); statsUpdateHandler?.postDelayed(this, 2000) }
                 }
             })
             sendBroadcast(Intent("VPN_STARTED"))
@@ -105,37 +133,65 @@ class MyVpnService : VpnService() {
     // می‌خونه از tun، فقط پکت‌های UDP روی پورت 53 (DNS) رو تشخیص می‌ده
     // و برای relay واقعی می‌فرسته. بقیه‌ی پروتکل‌ها اصلاً به این تون
     // نمی‌رسن چون route فقط برای IP سرورهای DNS تعریف شده.
+    // خواندن fd مسدودکننده‌ست، برای همین توی Dispatchers.IO اجرا می‌شه.
     // ------------------------------------------------------------
-    private fun processPackets() {
-        val vpnInterface = this.vpnInterface ?: return
-        val input = FileInputStream(vpnInterface.fileDescriptor)
-        val output = FileOutputStream(vpnInterface.fileDescriptor)
+    private suspend fun processPackets() = withContext(Dispatchers.IO) {
+        val vpnIface = vpnInterface ?: return@withContext
+        val input = FileInputStream(vpnIface.fileDescriptor)
+        val output = FileOutputStream(vpnIface.fileDescriptor)
         val packet = ByteArray(32767)
 
-        while (!isCancelled) {
-            try {
-                val length = input.read(packet)
+        try {
+            while (VpnStats.isVpnActive) {
+                val length = try {
+                    input.read(packet)
+                } catch (_: Exception) {
+                    break // fd بسته شده یا سرویس داره متوقف می‌شه
+                }
                 if (length <= 0) continue
 
                 val data = packet.copyOf(length)
-                if (isIpv4Udp53(data)) {
-                    VpnStats.totalPacketsSent.incrementAndGet()
-                    VpnStats.totalBytesSent.addAndGet(length.toLong())
-                    relayExecutor.execute { relayDnsQuery(data, output) }
-                } else {
-                    // پروتکل‌های دیگه (که عملاً نباید زیاد پیش بیان چون route
-                    // محدود به IP سرورهای DNS هست) رو نادیده می‌گیریم.
-                    VpnStats.totalPacketsLost.incrementAndGet()
+                when {
+                    isIpv4Udp53(data) -> {
+                        VpnStats.totalPacketsSent.incrementAndGet()
+                        VpnStats.totalBytesSent.addAndGet(length.toLong())
+                        launchRelay { relayDnsQueryV4(data, output) }
+                    }
+                    isIpv6Udp53(data) -> {
+                        VpnStats.totalPacketsSent.incrementAndGet()
+                        VpnStats.totalBytesSent.addAndGet(length.toLong())
+                        launchRelay { relayDnsQueryV6(data, output) }
+                    }
+                    else -> {
+                        // پروتکل‌های دیگه (که عملاً نباید زیاد پیش بیان چون route
+                        // محدود به IP سرورهای DNS هست) رو نادیده می‌گیریم.
+                        VpnStats.totalPacketsLost.incrementAndGet()
+                    }
                 }
-            } catch (_: Exception) {
-                if (!isCancelled) break
             }
+        } finally {
+            try { input.close() } catch (_: Exception) {}
+            try { output.close() } catch (_: Exception) {}
         }
-        try { input.close() } catch (_: Exception) {}
-        try { output.close() } catch (_: Exception) {}
     }
 
-    private fun relayDnsQuery(ipPacket: ByteArray, output: FileOutputStream) {
+    /** هر relay رو به‌عنوان یک کوروتین مستقل اجرا می‌کنه، با سقف تعداد هم‌زمان. */
+    private fun launchRelay(block: suspend () -> Unit) {
+        serviceScope.launch {
+            if (!relayPermits.tryAcquire()) {
+                VpnStats.totalPacketsLost.incrementAndGet()
+                return@launch
+            }
+            try {
+                block()
+            } finally {
+                relayPermits.release()
+            }
+        }
+    }
+
+    private suspend fun relayDnsQueryV4(ipPacket: ByteArray, output: FileOutputStream) {
+
         try {
             val ihl = (ipPacket[0].toInt() and 0x0F) * 4
             val dstIp = InetAddress.getByAddress(ipPacket.copyOfRange(16, 20))
@@ -148,13 +204,16 @@ class MyVpnService : VpnService() {
             protect(socket) // خیلی مهم: جلوگیری از این‌که این سوکت خودش دوباره وارد تون بشه (حلقه‌ی بی‌نهایت)
             socket.soTimeout = 5000
 
-            val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
-            socket.send(request)
-
-            val responseBuf = ByteArray(1500)
-            val responsePacket = DatagramPacket(responseBuf, responseBuf.size)
-            socket.receive(responsePacket)
-            socket.close()
+            val responsePacket = try {
+                val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
+                socket.send(request)
+                val responseBuf = ByteArray(1500)
+                val resp = DatagramPacket(responseBuf, responseBuf.size)
+                socket.receive(resp)
+                resp
+            } finally {
+                socket.close()
+            }
 
             val replyIpPacket = buildIpv4UdpPacket(
                 srcIp = dstIp,           // پاسخ از طرف خودِ سرور DNS واقعی میاد
@@ -164,13 +223,55 @@ class MyVpnService : VpnService() {
                 payload = responsePacket.data.copyOfRange(0, responsePacket.length)
             )
 
-            synchronized(output) {
+            outputMutex.withLock {
                 output.write(replyIpPacket)
                 output.flush()
             }
             VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
         } catch (_: Exception) {
-            // تایم‌اوت یا خطای شبکه روی یک کوئری؛ صرفاً همون یک کوئری از دست می‌ره
+            // تایم‌اوت یا خطای شبکه روی یک کوئری؛ همون یک کوئری از دست می‌ره، ولی شمارش می‌شه
+            VpnStats.totalPacketsLost.incrementAndGet()
+        }
+    }
+
+    private suspend fun relayDnsQueryV6(ipPacket: ByteArray, output: FileOutputStream) {
+        try {
+            val dstIp = InetAddress.getByAddress(ipPacket.copyOfRange(24, 40)) as Inet6Address
+            val srcIp = InetAddress.getByAddress(ipPacket.copyOfRange(8, 24)) as Inet6Address
+            val srcPort = ((ipPacket[40].toInt() and 0xFF) shl 8) or (ipPacket[41].toInt() and 0xFF)
+            val udpLength = ((ipPacket[44].toInt() and 0xFF) shl 8) or (ipPacket[45].toInt() and 0xFF)
+            val dnsPayload = ipPacket.copyOfRange(48, 40 + udpLength)
+
+            val socket = DatagramSocket()
+            protect(socket)
+            socket.soTimeout = 5000
+
+            val responsePacket = try {
+                val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
+                socket.send(request)
+                val responseBuf = ByteArray(1500)
+                val resp = DatagramPacket(responseBuf, responseBuf.size)
+                socket.receive(resp)
+                resp
+            } finally {
+                socket.close()
+            }
+
+            val replyIpPacket = buildIpv6UdpPacket(
+                srcIp = dstIp,
+                dstIp = srcIp,
+                srcPort = 53,
+                dstPort = srcPort,
+                payload = responsePacket.data.copyOfRange(0, responsePacket.length)
+            )
+
+            outputMutex.withLock {
+                output.write(replyIpPacket)
+                output.flush()
+            }
+            VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
+        } catch (_: Exception) {
+            VpnStats.totalPacketsLost.incrementAndGet()
         }
     }
 
@@ -184,6 +285,27 @@ class MyVpnService : VpnService() {
         if (data.size < ihl + 8) return false
         val dstPort = ((data[ihl + 2].toInt() and 0xFF) shl 8) or (data[ihl + 3].toInt() and 0xFF)
         return dstPort == 53
+    }
+
+    // فرض ساده: بدون extension header (رایج‌ترین حالت برای کوئری DNS)
+    // یعنی next header مستقیم پروتکل لایه‌ی بالاتره.
+    private fun isIpv6Udp53(data: ByteArray): Boolean {
+        if (data.size < 48) return false // 40 هدر ثابت + 8 هدر UDP حداقل
+        val version = (data[0].toInt() and 0xF0) ushr 4
+        if (version != 6) return false
+        val nextHeader = data[6].toInt() and 0xFF
+        if (nextHeader != 17) return false // UDP
+        val dstPort = ((data[42].toInt() and 0xFF) shl 8) or (data[43].toInt() and 0xFF)
+        return dstPort == 53
+    }
+
+    private fun isIpv6(address: String): Boolean {
+        if (!address.contains(":")) return false
+        return try {
+            InetAddress.getByName(address) is Inet6Address
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun isIpv4(address: String): Boolean {
@@ -235,6 +357,59 @@ class MyVpnService : VpnService() {
         return packet
     }
 
+    // برخلاف IPv4، توی IPv6 چک‌سام UDP اجباریه (نمی‌شه صفر گذاشت)، پس باید
+    // با pseudo-header (طبق RFC 2460) محاسبه بشه.
+    private fun buildIpv6UdpPacket(
+        srcIp: Inet6Address,
+        dstIp: Inet6Address,
+        srcPort: Int,
+        dstPort: Int,
+        payload: ByteArray
+    ): ByteArray {
+        val udpLength = 8 + payload.size
+        val totalLength = 40 + udpLength
+        val packet = ByteArray(totalLength)
+
+        // --- IPv6 fixed header (40 بایت) ---
+        packet[0] = 0x60 // version=6, traffic class/flow label = 0
+        packet[1] = 0; packet[2] = 0; packet[3] = 0
+        packet[4] = ((udpLength shr 8) and 0xFF).toByte() // payload length (بدون احتساب هدر ثابت)
+        packet[5] = (udpLength and 0xFF).toByte()
+        packet[6] = 17 // next header = UDP
+        packet[7] = 64 // hop limit
+        System.arraycopy(srcIp.address, 0, packet, 8, 16)
+        System.arraycopy(dstIp.address, 0, packet, 24, 16)
+
+        // --- UDP header ---
+        val udpOffset = 40
+        packet[udpOffset] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 1] = (srcPort and 0xFF).toByte()
+        packet[udpOffset + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 3] = (dstPort and 0xFF).toByte()
+        packet[udpOffset + 4] = ((udpLength shr 8) and 0xFF).toByte()
+        packet[udpOffset + 5] = (udpLength and 0xFF).toByte()
+        packet[udpOffset + 6] = 0; packet[udpOffset + 7] = 0 // checksum placeholder
+        System.arraycopy(payload, 0, packet, udpOffset + 8, payload.size)
+
+        // --- pseudo-header + UDP segment برای محاسبه‌ی checksum ---
+        val pseudo = ByteArray(40 + udpLength)
+        System.arraycopy(srcIp.address, 0, pseudo, 0, 16)
+        System.arraycopy(dstIp.address, 0, pseudo, 16, 16)
+        pseudo[32] = 0; pseudo[33] = 0
+        pseudo[34] = ((udpLength shr 8) and 0xFF).toByte()
+        pseudo[35] = (udpLength and 0xFF).toByte()
+        pseudo[36] = 0; pseudo[37] = 0; pseudo[38] = 0
+        pseudo[39] = 17 // next header = UDP
+        System.arraycopy(packet, udpOffset, pseudo, 40, udpLength)
+
+        var udpChecksum = checksum(pseudo, 0, pseudo.size)
+        if (udpChecksum == 0) udpChecksum = 0xFFFF // طبق RFC، صفر مجاز نیست
+        packet[udpOffset + 6] = ((udpChecksum shr 8) and 0xFF).toByte()
+        packet[udpOffset + 7] = (udpChecksum and 0xFF).toByte()
+
+        return packet
+    }
+
     private fun checksum(data: ByteArray, offset: Int, length: Int): Int {
         var sum = 0
         var i = offset
@@ -252,10 +427,9 @@ class MyVpnService : VpnService() {
     }
 
     private fun stopVpn() {
-        isCancelled = true
         VpnStats.isVpnActive = false
-        vpnThread?.interrupt()
-        vpnThread = null
+        readerJob?.cancel()
+        readerJob = null
         try { vpnInterface?.close() } catch (_: Exception) {}
         vpnInterface = null
         statsUpdateHandler?.removeCallbacksAndMessages(null)
@@ -266,7 +440,7 @@ class MyVpnService : VpnService() {
 
     override fun onDestroy() {
         stopVpn()
-        relayExecutor.shutdownNow()
+        serviceJob.cancel() // هر relay در حال اجرا رو هم قطعی متوقف می‌کنه
         super.onDestroy()
     }
 
