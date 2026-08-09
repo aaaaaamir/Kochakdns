@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
@@ -24,21 +25,22 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import kotlin.math.abs
 
-
+// ==================== Main Activity ====================
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -63,13 +65,10 @@ class DnsActivity : AppCompatActivity() {
     private var isVpnConnected = false
     private var selectedDnsName: String? = null
     private var selectedDnsServers: List<DnsServer> = emptyList()
-    
     private val dnsItems = mutableListOf<DnsItem>()
     private val dnsItemViews = mutableMapOf<String, DnsItemView>()
     private var previousPings = mutableMapOf<String, Long>()
-    
     private val mainHandler = Handler(Looper.getMainLooper())
-    private lateinit var dnsSyncManager: DnsSyncManager
 
     private val vpnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -89,11 +88,10 @@ class DnsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
-        
-        dnsSyncManager = DnsSyncManager(applicationContext)
         buildUI()
         setupVpnReceiver()
-
+        val prefs = getSharedPreferences("dns_prefs", MODE_PRIVATE)
+        selectedDnsName = prefs.getString("selected_dns", null)
         lifecycleScope.launch {
             syncDnsData()
             startPingLoop()
@@ -137,9 +135,9 @@ class DnsActivity : AppCompatActivity() {
             )
         }
         activeProfileNameText = TextView(this).apply {
-            text = "در حال بارگذاری..."
+            text = "پروفایل فعال"
             setTextColor(Color.parseColor("#FFD700"))
-            textSize = 16f
+            textSize = 14f
             setTypeface(null, Typeface.BOLD)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -149,7 +147,6 @@ class DnsActivity : AppCompatActivity() {
             }
         }
         header.addView(activeProfileNameText)
-
         statusIndicator = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(120, 120).apply {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -164,10 +161,9 @@ class DnsActivity : AppCompatActivity() {
             )
         }
         statusIndicator.addView(loadingSpinner)
-
         retryButton = Button(this).apply {
             text = "↻"
-            textSize = 20f
+            textSize = 24f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#D32F2F"))
             visibility = View.GONE
@@ -180,16 +176,15 @@ class DnsActivity : AppCompatActivity() {
         statusIndicator.addView(retryButton)
         header.addView(statusIndicator)
         mainContainer.addView(header)
-
         powerButton = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = true
             setOnClickListener { toggleVpn() }
-            layoutParams = LinearLayout.LayoutParams(440, 440).apply {
+            layoutParams = LinearLayout.LayoutParams(480, 480).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = 64
+                topMargin = 80
                 bottomMargin = 32
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -199,6 +194,7 @@ class DnsActivity : AppCompatActivity() {
                     setStroke(8, Color.parseColor("#2A2A3E"))
                 }
                 background = shape
+                // ریپل لمسی گرد، هم‌شکل با خود دکمه، تا کاربر همیشه ببینه تپش ثبت شده
                 val rippleMask = android.graphics.drawable.GradientDrawable().apply {
                     this.shape = android.graphics.drawable.GradientDrawable.OVAL
                     setColor(Color.WHITE)
@@ -212,13 +208,12 @@ class DnsActivity : AppCompatActivity() {
         }
         powerIcon = TextView(this).apply {
             text = "⏻"
-            textSize = 100f
+            textSize = 120f
             setTextColor(Color.parseColor("#666680"))
             gravity = Gravity.CENTER
         }
         powerButton.addView(powerIcon)
         mainContainer.addView(powerButton)
-
         val statsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -243,13 +238,12 @@ class DnsActivity : AppCompatActivity() {
         jitterText = TextView(this).apply {
             text = "-- ms"
             setTextColor(Color.parseColor("#FFD700"))
-            textSize = 18f
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         }
         jitterContainer.addView(jitterLabel)
         jitterContainer.addView(jitterText)
-
         val pingContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -264,17 +258,15 @@ class DnsActivity : AppCompatActivity() {
         lastPingText = TextView(this).apply {
             text = "-- ms"
             setTextColor(Color.parseColor("#4CAF50"))
-            textSize = 18f
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         }
         pingContainer.addView(pingLabel)
         pingContainer.addView(lastPingText)
-
         statsRow.addView(jitterContainer)
         statsRow.addView(pingContainer)
         mainContainer.addView(statsRow)
-
         statsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -294,11 +286,10 @@ class DnsActivity : AppCompatActivity() {
         statsLayout.addView(bytesSentText)
         statsLayout.addView(bytesReceivedText)
         mainContainer.addView(statsLayout)
-
         val listHeader = TextView(this).apply {
-            text = "📡 لیست سرورهای DNS"
+            text = "📡 لیست DNS"
             setTextColor(Color.WHITE)
-            textSize = 16f
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -308,7 +299,6 @@ class DnsActivity : AppCompatActivity() {
             }
         }
         mainContainer.addView(listHeader)
-
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -318,6 +308,7 @@ class DnsActivity : AppCompatActivity() {
         }
         dnsListContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            // اصلاح خطا: استفاده از FrameLayout.LayoutParams به جای ScrollView.LayoutParams
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
@@ -344,7 +335,7 @@ class DnsActivity : AppCompatActivity() {
             val valueView = TextView(context).apply {
                 text = value
                 setTextColor(Color.WHITE)
-                textSize = 11f
+                textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 gravity = Gravity.CENTER
                 tag = "value"
@@ -361,9 +352,10 @@ class DnsActivity : AppCompatActivity() {
                     action = MyVpnService.ACTION_STOP
                 }
                 startService(intent)
+                // آپدیت فوری UI؛ منتظر broadcast نمی‌مونیم چون ممکنه دیر برسه یا نرسه
                 isVpnConnected = false
                 updatePowerButton()
-                Toast.makeText(this, "ارتباط قطع شد", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "قطع شد", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "خطا در قطع اتصال: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -395,6 +387,7 @@ class DnsActivity : AppCompatActivity() {
     }
 
     private fun startVpn() {
+        // فیدبک فوری: تا وقتی broadcast تایید وصل شدن برسه، حالت «در حال اتصال» نشون بده
         powerIcon.setTextColor(Color.parseColor("#FFD700"))
         Toast.makeText(this, "در حال اتصال...", Toast.LENGTH_SHORT).show()
         val intent = Intent(this, MyVpnService::class.java).apply {
@@ -440,6 +433,7 @@ class DnsActivity : AppCompatActivity() {
                     powerButton.background = shape
                 }
             }
+            // یک بانس کوچیک روی هر تغییر حالت، تا کاربر همیشه حس کنه چیزی عوض شد
             powerButton.animate().cancel()
             powerButton.scaleX = 0.88f
             powerButton.scaleY = 0.88f
@@ -451,83 +445,72 @@ class DnsActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * همگام‌سازی و دریافت تمام پروفایل‌های DNS
-     */
     private suspend fun syncDnsData() {
         isSyncing = true
         showLoading()
 
-        dnsSyncManager.syncProfiles(
-            onSuccess = { profiles ->
-                lifecycleScope.launch(Dispatchers.Main) {
+        withContext(Dispatchers.IO) {
+            val dnsSyncManager = DnsSyncManager(applicationContext)
+            dnsSyncManager.sync()
+        }
+
+        withContext(Dispatchers.IO) {
+            try {
+                val dataStore = applicationContext.dnsDataStore
+                val prefs = dataStore.data.first()
+                val json = prefs[stringPreferencesKey("dns_profiles_list")]
+                if (json != null) {
+                    val profiles = DnsProfile.listFromJson(json)
                     if (profiles.isNotEmpty()) {
-                        loadDnsProfiles(profiles)
-                    } else {
-                        loadCachedProfiles()
+                        mainHandler.post {
+                            loadDnsFromProfiles(profiles)
+                            isSyncing = false
+                            hideLoading()
+                        }
+                        return@withContext
                     }
-                    isSyncing = false
-                    hideLoading()
                 }
-            },
-            onError = {
-                lifecycleScope.launch(Dispatchers.Main) {
-                    loadCachedProfiles()
+                mainHandler.post {
                     isSyncing = false
-                    hideLoading()
+                    showError()
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    isSyncing = false
+                    showError()
                 }
             }
-        )
-    }
-
-    private suspend fun loadCachedProfiles() {
-        val cachedProfiles = dnsSyncManager.getSavedProfiles()
-        if (cachedProfiles.isNotEmpty()) {
-            loadDnsProfiles(cachedProfiles)
-        } else {
-            showError()
         }
     }
 
-    private suspend fun loadDnsProfiles(profiles: List<DnsProfile>) {
+    private fun loadDnsFromProfiles(profiles: List<DnsProfile>) {
         dnsItems.clear()
         previousPings.clear()
-
         profiles.forEach { profile ->
-            // استخراج آدرس سرورها (اگر لیست servers خالی بود از فیلدهای ipv4/ipv6 دستی می‌سازیم)
-            val serversList = if (profile.servers.isNotEmpty()) {
-                profile.servers
-            } else {
-                val list = mutableListOf<DnsServer>()
-                profile.ipv4Primary?.let { list.add(DnsServer("primary", 1, "ipv4", it)) }
-                profile.ipv4Secondary?.let { list.add(DnsServer("secondary", 2, "ipv4", it)) }
-                profile.ipv6Primary?.let { list.add(DnsServer("primary", 1, "ipv6", it)) }
-                profile.ipv6Secondary?.let { list.add(DnsServer("secondary", 2, "ipv6", it)) }
-                list
-            }
-
             dnsItems.add(
                 DnsItem(
                     name = profile.name,
-                    servers = serversList
+                    servers = profile.servers
                 )
             )
         }
 
-        // بازیابی پروفایل انتخابی کاربر
-        val selectedProfile = dnsSyncManager.getSelectedProfile()
-        if (selectedProfile != null) {
-            selectedDnsName = selectedProfile.name
-            selectedDnsServers = dnsItems.find { it.name == selectedProfile.name }?.servers ?: emptyList()
-        } else if (dnsItems.isNotEmpty()) {
-            selectedDnsName = dnsItems.first().name
-            selectedDnsServers = dnsItems.first().servers
-            dnsSyncManager.selectProfile(selectedDnsName!!)
+        // اگه کاربر قبلاً یک DNS رو انتخاب کرده و هنوز توی لیست جدید هست، همونو نگه دار.
+        // وگرنه، پروفایلی که سرور به‌عنوان فعال علامت زده (یا در نبودش، اولین آیتم) انتخاب بشه.
+        val stillExists = selectedDnsName != null && profiles.any { it.name == selectedDnsName }
+        if (!stillExists) {
+            val defaultProfile = profiles.firstOrNull { it.isActive } ?: profiles.first()
+            selectedDnsName = defaultProfile.name
+            selectedDnsServers = defaultProfile.servers
+            getSharedPreferences("dns_prefs", MODE_PRIVATE).edit()
+                .putString("selected_dns", defaultProfile.name)
+                .apply()
+        } else {
+            selectedDnsServers = profiles.first { it.name == selectedDnsName }.servers
         }
 
-        activeProfileNameText.text = "فعال: ${selectedDnsName ?: "انتخاب نشده"}"
+        activeProfileNameText.text = if (profiles.size == 1) "پروفایل DNS" else "انتخاب DNS (${profiles.size} پروفایل)"
         rebuildDnsList()
-
         if (pingJob == null || pingJob?.isActive == false) {
             startPingLoop()
         }
@@ -537,12 +520,13 @@ class DnsActivity : AppCompatActivity() {
         runOnUiThread {
             dnsListContainer.removeAllViews()
             dnsItemViews.clear()
-
-            dnsItems.forEach { item ->
+            val sorted = dnsItems.sortedWith(compareBy<DnsItem> {
+                if (it.ping < 0) Long.MAX_VALUE else it.ping
+            })
+            sorted.forEach { item ->
                 val itemView = DnsItemView(this, item)
                 dnsItemViews[item.name] = itemView
                 dnsListContainer.addView(itemView.view)
-                itemView.update(item, item.name == selectedDnsName)
             }
         }
     }
@@ -555,9 +539,8 @@ class DnsActivity : AppCompatActivity() {
                 val pingResults = itemsToPing.map { item ->
                     async {
                         val primaryIpv4 = item.servers.firstOrNull {
-                            it.family == "ipv4" && (it.role == "primary" || it.priority == 1)
-                        }?.address ?: item.servers.firstOrNull()?.address
-
+                            it.family == "ipv4" && it.role == "primary"
+                        }?.address
                         if (primaryIpv4 != null) {
                             val ping = pingDns(primaryIpv4)
                             Pair(item.name, ping)
@@ -566,21 +549,16 @@ class DnsActivity : AppCompatActivity() {
                         }
                     }
                 }.awaitAll()
-
                 mainHandler.post {
                     pingResults.forEach { (name, newPing) ->
                         val index = dnsItems.indexOfFirst { it.name == name }
                         if (index >= 0) {
                             val oldItem = dnsItems[index]
-                            val oldPing = previousPings[name] ?: -1L
+                            val oldPing = previousPings[name] ?: -1
                             previousPings[name] = newPing
-                            
-                            val jitter = if (oldPing > 0 && newPing > 0) abs(newPing - oldPing) else 0L
-
                             val newItem = oldItem.copy(
                                 ping = newPing,
-                                previousPing = oldPing,
-                                jitter = jitter
+                                previousPing = oldPing
                             )
                             dnsItems[index] = newItem
                             dnsItemViews[name]?.update(newItem, name == selectedDnsName)
@@ -589,7 +567,7 @@ class DnsActivity : AppCompatActivity() {
                     updateSelectedDnsStats()
                     sortDnsList()
                 }
-                delay(3000)
+                delay(2000)
             }
         }
     }
@@ -609,9 +587,16 @@ class DnsActivity : AppCompatActivity() {
     private fun updateSelectedDnsStats() {
         val selectedItem = dnsItems.find { it.name == selectedDnsName }
         if (selectedItem != null) {
-            lastPingText.text = if (selectedItem.ping > 0) "${selectedItem.ping} ms" else "-- ms"
-            jitterText.text = if (selectedItem.jitter > 0) "${selectedItem.jitter} ms" else "-- ms"
-
+            lastPingText.text = if (selectedItem.ping > 0) {
+                "${selectedItem.ping} ms"
+            } else {
+                "-- ms"
+            }
+            jitterText.text = if (selectedItem.jitter > 0) {
+                "${selectedItem.jitter} ms"
+            } else {
+                "-- ms"
+            }
             when {
                 selectedItem.ping < 0 -> lastPingText.setTextColor(Color.parseColor("#666666"))
                 selectedItem.ping < 50 -> lastPingText.setTextColor(Color.parseColor("#4CAF50"))
@@ -626,10 +611,17 @@ class DnsActivity : AppCompatActivity() {
             val start = System.currentTimeMillis()
             try {
                 val socket = DatagramSocket()
-                socket.soTimeout = 2500
+                socket.soTimeout = 3000
                 val data = byteArrayOf(
-                    0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01
+                    0x00, 0x01,
+                    0x00, 0x00,
+                    0x00, 0x01,
+                    0x00, 0x00,
+                    0x00, 0x00,
+                    0x00, 0x00,
+                    0x00,
+                    0x00, 0x02,
+                    0x00, 0x01
                 )
                 val packet = DatagramPacket(
                     data,
@@ -710,35 +702,21 @@ class DnsActivity : AppCompatActivity() {
             loadingSpinner.clearAnimation()
             loadingSpinner.visibility = View.GONE
             retryButton.visibility = View.VISIBLE
-            Toast.makeText(this, "خطا در دریافت لیست DNS. دکمه ↻ را بزنید.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "خطا در دریافت DNS. دکمه ↻ را بزنید.", Toast.LENGTH_LONG).show()
         }
     }
 
-    /**
-     * انتخاب یک DNS توسط کاربر
-     */
     private fun selectDns(name: String) {
         val item = dnsItems.find { it.name == name } ?: return
         selectedDnsName = name
         selectedDnsServers = item.servers
-
-        activeProfileNameText.text = "فعال: $name"
-
-        // ذخیره در DataStore
-        lifecycleScope.launch {
-            dnsSyncManager.selectProfile(name)
-        }
-
-        // بروزرسانی UI لیست
+        getSharedPreferences("dns_prefs", MODE_PRIVATE).edit()
+            .putString("selected_dns", name)
+            .apply()
         dnsItemViews.forEach { (n, view) ->
-            dnsItems.find { it.name == n }?.let { dnsItem ->
-                view.update(dnsItem, n == selectedDnsName)
-            }
+            view.update(dnsItems.find { it.name == n }!!, n == selectedDnsName)
         }
-
         updateSelectedDnsStats()
-
-        // اگر VPN متصل بود، مجدداً با DNS جدید متصل شود
         if (isVpnConnected) {
             val stopIntent = Intent(this, MyVpnService::class.java).apply {
                 action = MyVpnService.ACTION_STOP
@@ -797,7 +775,7 @@ class DnsActivity : AppCompatActivity() {
             nameText = TextView(context).apply {
                 text = initial.name
                 setTextColor(Color.WHITE)
-                textSize = 15f
+                textSize = 16f
                 setTypeface(null, Typeface.BOLD)
             }
             pingText = TextView(context).apply {
@@ -807,7 +785,6 @@ class DnsActivity : AppCompatActivity() {
             }
             infoContainer.addView(nameText)
             infoContainer.addView(pingText)
-
             selectButton = TextView(context).apply {
                 text = "انتخاب"
                 setTextColor(Color.WHITE)
@@ -845,7 +822,7 @@ class DnsActivity : AppCompatActivity() {
             if (isSelected) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val shape = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.parseColor("#1B3A22"))
+                        setColor(Color.parseColor("#2E7D32"))
                         cornerRadius = 24f
                         setStroke(3, Color.parseColor("#4CAF50"))
                     }
@@ -863,7 +840,7 @@ class DnsActivity : AppCompatActivity() {
                     view.background = shape
                 }
                 selectButton.text = "انتخاب"
-                selectButton.setBackgroundColor(Color.parseColor("#2A2A3E"))
+                selectButton.setBackgroundColor(Color.parseColor("#4CAF50"))
             }
         }
     }
