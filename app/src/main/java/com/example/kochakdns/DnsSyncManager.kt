@@ -33,8 +33,8 @@ val Context.dnsDataStore: DataStore<Preferences> by preferencesDataStore(name = 
 class DnsSyncManager(private val context: Context) {
 
     companion object {
-        private const val BASE_URL = "https://kochakdns-backend.amir26076.workers.dev"
-        private const val BASE_HOST = "kochakdns-backend.amir26076.workers.dev"
+        private const val BASE_URL = "https://kodns.ir"
+        private const val BASE_HOST = "kodns.ir"
         private var accessToken: String? = null
 
         fun setAccessToken(token: String?) {
