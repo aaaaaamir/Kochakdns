@@ -4,7 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.net.VpnService
 import android.os.Build
@@ -49,11 +52,61 @@ import java.net.InetAddress
  */
 enum class VpnUiState { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING }
 
+/**
+ * آیکون پاور، مستقیم با Canvas کشیده می‌شه — دیگه فایل drawable جدا لازم
+ * نیست، همه‌چیز همین‌جا توی خودِ DnsActivity.kt کنار همدیگه‌ست.
+ * سبک: خطی (stroke)، سفید، گوشه‌ها و سرِ خط‌ها گرد — دقیقاً شبیه آیکون
+ * "power" از ست آیکون Lucide.
+ *
+ * اگه بعداً خواستی نسخه‌ی رسمی SVG رو جایگزین کنی (مثلاً یک انیمیشنش رو
+ * بسازی)، این دستور رو توی ترمینال بزن تا فایل اصلی Lucide دانلود بشه:
+ *
+ *   curl -o app/src/main/res/drawable/ic_power.svg \
+ *     https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/power.svg
+ *
+ * توجه: فایل svg مستقیم قابل استفاده به‌عنوان drawable اندروید نیست؛ باید
+ * تبدیلش کنی به vector XML — ساده‌ترین راه توی Android Studio:
+ * راست‌کلیک روی پوشه‌ی drawable → New → Vector Asset → Local file →
+ * همین svg رو انتخاب کن. بعدش کافیه توی کد این کلاس رو با یک ImageView که
+ * به R.drawable.ic_power اشاره می‌کنه عوض کنی.
+ */
+class PowerIconView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        color = Color.WHITE
+    }
+
+    fun setIconColor(color: Int) {
+        paint.color = color
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val size = minOf(width, height).toFloat()
+        if (size <= 0) return
+        paint.strokeWidth = size * 0.09f
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = size * 0.32f
+
+        // خط عمودی بالا (دسته‌ی کلید)
+        canvas.drawLine(cx, cy - r * 1.15f, cx, cy - r * 0.15f, paint)
+
+        // کمان دایره با یک شکاف بالا (نماد استاندارد پاور)
+        val rectF = RectF(cx - r, cy - r, cx + r, cy + r)
+        canvas.drawArc(rectF, -55f, 290f, false, paint)
+    }
+}
+
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
     private lateinit var powerButton: LinearLayout
-    private lateinit var powerIcon: TextView
+    private lateinit var powerIcon: PowerIconView
+    private lateinit var powerButtonShape: android.graphics.drawable.GradientDrawable
     private lateinit var jitterText: TextView
     private lateinit var lastPingText: TextView
     private lateinit var statsLayout: LinearLayout
@@ -65,7 +118,6 @@ class DnsActivity : AppCompatActivity() {
     private lateinit var statusIndicator: FrameLayout
     private lateinit var retryButton: Button
     private lateinit var loadingSpinner: ProgressBar
-    private lateinit var activeProfileNameText: TextView
 
     private var pingJob: Job? = null
     private var statsJob: Job? = null
@@ -155,19 +207,6 @@ class DnsActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        activeProfileNameText = TextView(this).apply {
-            text = "پروفایل فعال"
-            setTextColor(Color.parseColor("#FFD700"))
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER
-            }
-        }
-        header.addView(activeProfileNameText)
         statusIndicator = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(120, 120).apply {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -209,12 +248,12 @@ class DnsActivity : AppCompatActivity() {
                 bottomMargin = 32
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val shape = android.graphics.drawable.GradientDrawable().apply {
+                powerButtonShape = android.graphics.drawable.GradientDrawable().apply {
                     shape = android.graphics.drawable.GradientDrawable.OVAL
                     setColor(Color.parseColor("#1E1E2E"))
                     setStroke(8, Color.parseColor("#2A2A3E"))
                 }
-                background = shape
+                background = powerButtonShape
                 // ریپل لمسی گرد، هم‌شکل با خود دکمه، تا کاربر همیشه ببینه تپش ثبت شده
                 val rippleMask = android.graphics.drawable.GradientDrawable().apply {
                     this.shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -227,11 +266,9 @@ class DnsActivity : AppCompatActivity() {
                 )
             }
         }
-        powerIcon = TextView(this).apply {
-            text = "⏻"
-            textSize = 120f
-            setTextColor(Color.parseColor("#666680"))
-            gravity = Gravity.CENTER
+        powerIcon = PowerIconView(this).apply {
+            setIconColor(Color.parseColor("#666680"))
+            layoutParams = LinearLayout.LayoutParams(160, 160)
         }
         powerButton.addView(powerIcon)
         mainContainer.addView(powerButton)
@@ -298,8 +335,8 @@ class DnsActivity : AppCompatActivity() {
                 bottomMargin = 32
             }
         }
-        packetsSentText = createStatItem("📦 ارسالی", "0")
-        packetsLostText = createStatItem("❌ گم‌شده", "0")
+        packetsSentText = createStatItem("ارسالی", "0")
+        packetsLostText = createStatItem("گم‌شده", "0")
         bytesSentText = createStatItem("↑ ارسال", "0 B")
         bytesReceivedText = createStatItem("↓ دریافت", "0 B")
         statsLayout.addView(packetsSentText)
@@ -308,7 +345,7 @@ class DnsActivity : AppCompatActivity() {
         statsLayout.addView(bytesReceivedText)
         mainContainer.addView(statsLayout)
         val listHeader = TextView(this).apply {
-            text = "📡 لیست DNS"
+            text = "لیست DNS"
             setTextColor(Color.WHITE)
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
@@ -483,6 +520,12 @@ class DnsActivity : AppCompatActivity() {
      * انتقال (CONNECTING/DISCONNECTING) غیرفعال می‌کنه تا دوبار-تپ زدن
      * race condition نسازه.
      */
+    private var powerBgColor = Color.parseColor("#1E1E2E")
+    private var powerStrokeColor = Color.parseColor("#2A2A3E")
+    private var powerIconColor = Color.parseColor("#666680")
+    private var breathingAnimator: android.animation.ValueAnimator? = null
+    private var powerColorAnimator: android.animation.ValueAnimator? = null
+
     private fun setVpnState(newState: VpnUiState) {
         vpnState = newState
         runOnUiThread {
@@ -492,18 +535,14 @@ class DnsActivity : AppCompatActivity() {
                 VpnUiState.CONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
                 VpnUiState.DISCONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
             }
+            val strokeWidth = if (newState == VpnUiState.CONNECTED) 10 else 8
+            animatePowerButtonColors(Color.parseColor(bgColor), Color.parseColor(strokeColor), Color.parseColor(iconColor), strokeWidth)
 
-            powerIcon.setTextColor(Color.parseColor(iconColor))
             powerButton.isClickable = clickable
             powerButton.alpha = if (clickable) 1f else 0.75f
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val shape = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(Color.parseColor(bgColor))
-                    setStroke(if (newState == VpnUiState.CONNECTED) 10 else 8, Color.parseColor(strokeColor))
-                }
-                powerButton.background = shape
-            }
+
+            // نفس‌کشیدن ملایم فقط وقتی خاموش و آماده‌ی اتصاله معنا داره
+            if (newState == VpnUiState.DISCONNECTED) startPowerIconBreathing() else stopPowerIconBreathing()
 
             // یک بانس کوچیک روی هر تغییر حالت، تا کاربر همیشه حس کنه چیزی عوض شد
             powerButton.animate().cancel()
@@ -515,6 +554,53 @@ class DnsActivity : AppCompatActivity() {
                 .setInterpolator(android.view.animation.OvershootInterpolator(2.5f))
                 .start()
         }
+    }
+
+    /** رنگ پس‌زمینه، حاشیه، و آیکون رو به‌جای پرش ناگهانی، نرم به رنگ جدید محو می‌کنه. */
+    private fun animatePowerButtonColors(targetBg: Int, targetStroke: Int, targetIcon: Int, strokeWidthPx: Int) {
+        val fromBg = powerBgColor
+        val fromStroke = powerStrokeColor
+        val fromIcon = powerIconColor
+        val evaluator = android.animation.ArgbEvaluator()
+
+        powerColorAnimator?.cancel()
+        powerColorAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 320
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                powerButtonShape.setColor(evaluator.evaluate(f, fromBg, targetBg) as Int)
+                powerButtonShape.setStroke(strokeWidthPx, evaluator.evaluate(f, fromStroke, targetStroke) as Int)
+                powerIcon.setIconColor(evaluator.evaluate(f, fromIcon, targetIcon) as Int)
+            }
+            start()
+        }
+        powerBgColor = targetBg
+        powerStrokeColor = targetStroke
+        powerIconColor = targetIcon
+    }
+
+    /** یک نفس‌کشیدن خیلی ملایم روی خودِ آیکون، فقط وقتی آماده‌ی اتصاله (حالت خاموش). */
+    private fun startPowerIconBreathing() {
+        if (breathingAnimator?.isRunning == true) return
+        breathingAnimator = android.animation.ValueAnimator.ofFloat(1f, 1.06f).apply {
+            duration = 1600
+            repeatMode = android.animation.ValueAnimator.REVERSE
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            addUpdateListener {
+                val scale = it.animatedValue as Float
+                powerIcon.scaleX = scale
+                powerIcon.scaleY = scale
+            }
+            start()
+        }
+    }
+
+    private fun stopPowerIconBreathing() {
+        breathingAnimator?.cancel()
+        breathingAnimator = null
+        powerIcon.scaleX = 1f
+        powerIcon.scaleY = 1f
     }
 
     private data class Quad(val a: String, val b: String, val c: String, val d: Boolean)
@@ -602,7 +688,6 @@ class DnsActivity : AppCompatActivity() {
             selectedDnsServers = profiles.first { it.name == selectedDnsName }.servers
         }
 
-        activeProfileNameText.text = if (profiles.size == 1) "پروفایل DNS" else "انتخاب DNS (${profiles.size} پروفایل)"
         rebuildDnsList()
         if (pingJob == null || pingJob?.isActive == false) {
             startPingLoop()
@@ -638,10 +723,7 @@ class DnsActivity : AppCompatActivity() {
                         if (!isActive) break
                         if (vpnState == VpnUiState.CONNECTED) break // اگه وسط صف وصل شد، صف رو نگه دار
 
-                        val primaryIpv4 = item.servers.firstOrNull {
-                            it.family == "ipv4" && it.role == "primary"
-                        }?.address
-                        val newPing = if (primaryIpv4 != null) pingDns(primaryIpv4) else -1L
+                        val newPing = pingDnsWithFallback(item.servers)
 
                         mainHandler.post {
                             val index = dnsItems.indexOfFirst { it.name == item.name }
@@ -743,17 +825,63 @@ class DnsActivity : AppCompatActivity() {
      * و کندتر از پینگ واقعی نشون داده می‌شه. با bindSocket به شبکه‌ی زیرین
      * (وای‌فای/دیتا)، این سوکت کاملاً از تون خودمون عبور می‌کنه و RTT واقعیه.
      */
+    // کش می‌کنیم تا هم هر پینگ مجبور به یک IPC جدید به ConnectivityManager نباشه،
+    // هم مهم‌تر: انتخاب شبکه هر بار عوض نشه (که باعث پینگ‌های ناپایدار می‌شد).
+    private var cachedUnderlyingNetwork: android.net.Network? = null
+    private var cachedNetworkTimestamp = 0L
+
     private fun getUnderlyingNetwork(): android.net.Network? {
+        val now = System.currentTimeMillis()
+        if (cachedUnderlyingNetwork != null && now - cachedNetworkTimestamp < 15000) {
+            return cachedUnderlyingNetwork
+        }
         return try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            cm.allNetworks.firstOrNull { net ->
-                val caps = cm.getNetworkCapabilities(net) ?: return@firstOrNull false
-                !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) &&
-                    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            val candidates = cm.allNetworks.mapNotNull { net ->
+                val caps = cm.getNetworkCapabilities(net) ?: return@mapNotNull null
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) ||
+                    !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                ) return@mapNotNull null
+                net to caps
             }
+            // ترتیب ترجیح ثابت: وای‌فای > اترنت > موبایل دیتا > هر چیز دیگه.
+            // قبلاً firstOrNull بدون اولویت بود و ترتیب allNetworks تضمین‌شده
+            // نیست، پس بین وای‌فای و دیتا به‌طور نامنظم جابه‌جا می‌شد و باعث
+            // می‌شد پینگ بعضی DNSها هر دور تصادفی بالاتر دیده بشه.
+            val chosen = candidates.firstOrNull { (_, c) -> c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) }
+                ?: candidates.firstOrNull { (_, c) -> c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) }
+                ?: candidates.firstOrNull { (_, c) -> c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) }
+                ?: candidates.firstOrNull()
+            cachedUnderlyingNetwork = chosen?.first
+            cachedNetworkTimestamp = now
+            cachedUnderlyingNetwork
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * دقیقاً همون ترتیبی که یک resolver واقعی امتحان می‌کنه: اول primary
+     * IPv4، اگه جواب نداد/تایم‌اوت شد primary IPv6، بعد secondary IPv4،
+     * بعد secondary IPv6. به محض اولین جواب موفق، همون رو برمی‌گردونه —
+     * یعنی عددی که نشون داده می‌شه دقیقاً همون چیزیه که کاربر در عمل
+     * تجربه می‌کنه، نه یک میانگین تئوریک از چند سرور که واقعاً همزمان
+     * استفاده نمی‌شن.
+     */
+    private suspend fun pingDnsWithFallback(servers: List<DnsServer>): Long {
+        val order = listOf(
+            "ipv4" to "primary",
+            "ipv6" to "primary",
+            "ipv4" to "secondary",
+            "ipv6" to "secondary"
+        )
+        for ((family, role) in order) {
+            val address = servers.firstOrNull { it.family == family && it.role == role }?.address
+                ?: continue
+            val ping = pingDns(address)
+            if (ping > 0) return ping // این یکی جواب داد، دیگه لازم نیست بقیه رو امتحان کنیم
+        }
+        return -1L
     }
 
     private suspend fun pingDns(address: String): Long {
@@ -762,7 +890,11 @@ class DnsActivity : AppCompatActivity() {
                 val socket = DatagramSocket()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     getUnderlyingNetwork()?.let { net ->
-                        try { net.bindSocket(socket) } catch (_: Exception) {}
+                        try {
+                            net.bindSocket(socket)
+                        } catch (_: Exception) {
+                            cachedUnderlyingNetwork = null // شبکه‌ی کش‌شده احتمالاً مرده، دفعه‌ی بعد دوباره پیدا کن
+                        }
                     }
                 }
                 socket.soTimeout = 500
@@ -907,27 +1039,43 @@ class DnsActivity : AppCompatActivity() {
         val view: LinearLayout
         private val nameText: TextView
         private val pingText: TextView
-        private val selectButton: TextView
+        private val loadingDots: LinearLayout
+        private val selectionDot: View
+        private var cardBgColor = Color.parseColor("#1E1E2E")
+        private var cardStrokeColor = Color.parseColor("#2A2A3E")
+        private var cardColorAnimator: android.animation.ValueAnimator? = null
+        private val cardShape: android.graphics.drawable.GradientDrawable
 
         init {
+            cardShape = android.graphics.drawable.GradientDrawable().apply {
+                setColor(cardBgColor)
+                cornerRadius = 24f
+                setStroke(2, cardStrokeColor)
+            }
             view = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(32, 24, 32, 24)
-                setBackgroundColor(Color.parseColor("#1E1E2E"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     bottomMargin = 16
                 }
+                background = cardShape
+                isClickable = true
+                isFocusable = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.parseColor("#1E1E2E"))
+                    val rippleMask = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                         cornerRadius = 24f
-                        setStroke(2, Color.parseColor("#2A2A3E"))
+                        setColor(Color.WHITE)
                     }
-                    background = shape
+                    foreground = android.graphics.drawable.RippleDrawable(
+                        android.content.res.ColorStateList.valueOf(Color.parseColor("#22FFFFFF")),
+                        null,
+                        rippleMask
+                    )
                 }
                 setOnClickListener {
                     selectDns(initial.name)
@@ -944,69 +1092,130 @@ class DnsActivity : AppCompatActivity() {
                 setTypeface(null, Typeface.BOLD)
             }
             pingText = TextView(context).apply {
-                text = if (initial.ping > 0) "${initial.ping} ms" else "در حال پینگ..."
+                text = if (initial.ping > 0) "${initial.ping} ms" else ""
                 setTextColor(Color.parseColor("#888888"))
                 textSize = 12f
+                visibility = if (initial.ping > 0) View.VISIBLE else View.GONE
+            }
+            loadingDots = buildLoadingDots(context).apply {
+                visibility = if (initial.ping > 0) View.GONE else View.VISIBLE
             }
             infoContainer.addView(nameText)
             infoContainer.addView(pingText)
-            selectButton = TextView(context).apply {
-                text = "انتخاب"
-                setTextColor(Color.WHITE)
-                textSize = 12f
-                setPadding(24, 12, 24, 12)
-                setBackgroundColor(Color.parseColor("#4CAF50"))
+            infoContainer.addView(loadingDots)
+
+            // به‌جای دکمه‌ی متنی سبز «انتخاب»، یک نشانگر دایره‌ای مینیمال:
+            // خالی وقتی انتخاب نشده، پر و روشن وقتی انتخاب شده. کل کارت هم
+            // خودش کلیک‌پذیره، این فقط یک نشانه‌ی بصریه نه دکمه‌ی جدا.
+            selectionDot = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(28, 28)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.parseColor("#4CAF50"))
-                        cornerRadius = 16f
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(Color.TRANSPARENT)
+                        setStroke(2, Color.parseColor("#555566"))
                     }
-                    background = shape
-                }
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                setOnClickListener {
-                    selectDns(initial.name)
                 }
             }
             view.addView(infoContainer)
-            view.addView(selectButton)
+            view.addView(selectionDot)
+        }
+
+        private fun buildLoadingDots(context: Context): LinearLayout {
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 6 }
+            }
+            for (i in 0 until 3) {
+                val dot = View(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(10, 10).apply {
+                        if (i < 2) marginEnd = 8
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL
+                            setColor(Color.parseColor("#666680"))
+                        }
+                    }
+                }
+                container.addView(dot)
+                android.animation.ValueAnimator.ofFloat(0.5f, 1f).apply {
+                    duration = 500
+                    repeatMode = android.animation.ValueAnimator.REVERSE
+                    repeatCount = android.animation.ValueAnimator.INFINITE
+                    startDelay = i * 150L
+                    interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                    addUpdateListener {
+                        val scale = it.animatedValue as Float
+                        dot.scaleX = scale
+                        dot.scaleY = scale
+                        dot.alpha = 0.4f + scale * 0.6f
+                    }
+                    start()
+                }
+            }
+            return container
         }
 
         fun update(item: DnsItem, isSelected: Boolean) {
             nameText.text = item.name
-            pingText.text = if (item.ping > 0) "${item.ping} ms" else "در حال پینگ..."
+            if (item.ping > 0) {
+                pingText.text = "${item.ping} ms"
+                pingText.visibility = View.VISIBLE
+                loadingDots.visibility = View.GONE
+            } else {
+                pingText.visibility = View.GONE
+                loadingDots.visibility = View.VISIBLE
+            }
             when {
                 item.ping < 0 -> pingText.setTextColor(Color.parseColor("#666666"))
                 item.ping < 50 -> pingText.setTextColor(Color.parseColor("#4CAF50"))
                 item.ping < 100 -> pingText.setTextColor(Color.parseColor("#FFC107"))
                 else -> pingText.setTextColor(Color.parseColor("#F44336"))
             }
-            if (isSelected) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.parseColor("#2E7D32"))
-                        cornerRadius = 24f
-                        setStroke(3, Color.parseColor("#4CAF50"))
+
+            // به‌جای سبز شدن، کارت انتخاب‌شده فقط کمی از بقیه سفیدتر می‌شه؛
+            // تغییر رنگ هم نرمه، نه پرش ناگهانی.
+            val targetBg = if (isSelected) Color.parseColor("#2C2C3E") else Color.parseColor("#1E1E2E")
+            val targetStroke = if (isSelected) Color.parseColor("#4A4A60") else Color.parseColor("#2A2A3E")
+            animateCardColors(targetBg, targetStroke)
+
+            val dotTargetColor = if (isSelected) Color.WHITE else Color.TRANSPARENT
+            val dotTargetStroke = if (isSelected) Color.WHITE else Color.parseColor("#555566")
+            (selectionDot.background as? android.graphics.drawable.GradientDrawable)?.let { dotShape ->
+                val evaluator = android.animation.ArgbEvaluator()
+                android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 250
+                    addUpdateListener { anim ->
+                        val f = anim.animatedValue as Float
+                        dotShape.setColor(evaluator.evaluate(f, (dotShape.color?.defaultColor ?: Color.TRANSPARENT), dotTargetColor) as Int)
+                        dotShape.setStroke(2, evaluator.evaluate(f, cardStrokeColor, dotTargetStroke) as Int)
                     }
-                    view.background = shape
+                    start()
                 }
-                selectButton.text = "✓ فعال"
-                selectButton.setBackgroundColor(Color.parseColor("#388E3C"))
-            } else {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val shape = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.parseColor("#1E1E2E"))
-                        cornerRadius = 24f
-                        setStroke(2, Color.parseColor("#2A2A3E"))
-                    }
-                    view.background = shape
-                }
-                selectButton.text = "انتخاب"
-                selectButton.setBackgroundColor(Color.parseColor("#4CAF50"))
             }
+        }
+
+        private fun animateCardColors(targetBg: Int, targetStroke: Int) {
+            val fromBg = cardBgColor
+            val fromStroke = cardStrokeColor
+            val evaluator = android.animation.ArgbEvaluator()
+            cardColorAnimator?.cancel()
+            cardColorAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 280
+                addUpdateListener { anim ->
+                    val f = anim.animatedValue as Float
+                    cardShape.setColor(evaluator.evaluate(f, fromBg, targetBg) as Int)
+                    cardShape.setStroke(2, evaluator.evaluate(f, fromStroke, targetStroke) as Int)
+                }
+                start()
+            }
+            cardBgColor = targetBg
+            cardStrokeColor = targetStroke
         }
     }
 }
