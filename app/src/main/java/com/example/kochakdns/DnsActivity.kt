@@ -618,10 +618,11 @@ class DnsActivity : AppCompatActivity() {
             showLoading()
         }
 
-        // مرحله‌ی ۲: sync زنده در پس‌زمینه
+        // مرحله‌ی ۲: به همون sync ای که MainActivity از قبل شروع کرده join
+        // می‌شیم (یا اگه به هر دلیلی چیزی در جریان نبود، همینجا شروعش می‌کنیم).
+        // دیگه صبر نمی‌کنیم تا از صفر یک درخواست جدید بزنیم.
         withContext(Dispatchers.IO) {
-            val dnsSyncManager = DnsSyncManager(applicationContext)
-            dnsSyncManager.sync()
+            DnsSyncCoordinator.startSync(applicationContext).await()
         }
 
         // مرحله‌ی ۳: لیست تازه رو بخون و جایگزین همون قبلی کن
