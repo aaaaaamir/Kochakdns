@@ -102,6 +102,49 @@ class PowerIconView(context: Context) : View(context) {
     }
 }
 
+/**
+ * فقط نوکِ پیکان (یک مثلث ساده)، بدون خط/دسته‌ی پشتش. با filled=true توپر
+ * می‌شه (برای کارت انتخاب‌شده)، با false فقط حاشیه‌ش کشیده می‌شه (خالی).
+ * چرخش برای باز/بسته شدن از بیرون با خودِ `rotation` استاندارد View کنترل می‌شه.
+ */
+class ExpandArrowView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeJoin = Paint.Join.ROUND
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val path = android.graphics.Path()
+
+    var filled: Boolean = false
+        set(value) {
+            field = value
+            paint.style = if (value) Paint.Style.FILL else Paint.Style.STROKE
+            invalidate()
+        }
+
+    fun setArrowColor(color: Int) {
+        paint.color = color
+        invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        paint.strokeWidth = w * 0.09f
+        path.reset()
+        // یک مثلثِ ساده‌ی رو به راست، تنها نوک پیکان، بدون هیچ خط اضافه‌ای
+        path.moveTo(w * 0.30f, h * 0.16f)
+        path.lineTo(w * 0.78f, h * 0.5f)
+        path.lineTo(w * 0.30f, h * 0.84f)
+        path.close()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawPath(path, paint)
+    }
+}
+
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -630,9 +673,29 @@ class DnsActivity : AppCompatActivity() {
             loadDnsFromProfiles(profiles)
             isSyncing = false
             hideLoading()
+            fetchAndApplyStats()
         } else {
             isSyncing = false
             if (dnsItems.isEmpty()) showError() else hideLoading()
+        }
+    }
+
+    /** آمار پکت‌های ارسالی/گم‌شده رو از سرور می‌گیره و روی کارت‌های همین لیست اعمال می‌کنه. */
+    private fun fetchAndApplyStats() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val stats = DnsSyncManager(applicationContext).fetchStats()
+            if (stats.isEmpty()) return@launch
+            mainHandler.post {
+                stats.forEach { (name, pair) ->
+                    val (sent, lost) = pair
+                    val index = dnsItems.indexOfFirst { it.name == name }
+                    if (index >= 0) {
+                        val updated = dnsItems[index].copy(statsPacketsSent = sent, statsPacketsLost = lost)
+                        dnsItems[index] = updated
+                        dnsItemViews[name]?.update(updated, name == selectedDnsName)
+                    }
+                }
+            }
         }
     }
 
@@ -1025,7 +1088,15 @@ class DnsActivity : AppCompatActivity() {
         private val nameText: TextView
         private val pingText: TextView
         private val loadingDots: LinearLayout
-        private val selectionDot: View
+        private val percentBadge: TextView
+        private val expandArrow: ExpandArrowView
+        private val detailsPanel: LinearLayout
+        private val detailSentText: TextView
+        private val detailLostText: TextView
+        private val detailTotalText: TextView
+        private val detailAvgText: TextView
+        private var isSelected = false
+        private var isExpanded = false
         private var cardBgColor = Color.parseColor("#1E1E2E")
         private var cardStrokeColor = Color.parseColor("#2A2A3E")
         private var cardColorAnimator: android.animation.ValueAnimator? = null
@@ -1038,8 +1109,7 @@ class DnsActivity : AppCompatActivity() {
                 setStroke(2, cardStrokeColor)
             }
             view = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.VERTICAL
                 setPadding(32, 24, 32, 24)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1066,6 +1136,11 @@ class DnsActivity : AppCompatActivity() {
                     selectDns(initial.name)
                 }
             }
+
+            val topRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             val infoContainer = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1076,6 +1151,10 @@ class DnsActivity : AppCompatActivity() {
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
             }
+            val pingRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             pingText = TextView(context).apply {
                 text = if (initial.ping > 0) "${initial.ping} ms" else ""
                 setTextColor(Color.parseColor("#888888"))
@@ -1085,25 +1164,87 @@ class DnsActivity : AppCompatActivity() {
             loadingDots = buildLoadingDots(context).apply {
                 visibility = if (initial.ping > 0) View.GONE else View.VISIBLE
             }
-            infoContainer.addView(nameText)
-            infoContainer.addView(pingText)
-            infoContainer.addView(loadingDots)
-
-            // به‌جای دکمه‌ی متنی سبز «انتخاب»، یک نشانگر دایره‌ای مینیمال:
-            // خالی وقتی انتخاب نشده، پر و روشن وقتی انتخاب شده. کل کارت هم
-            // خودش کلیک‌پذیره، این فقط یک نشانه‌ی بصریه نه دکمه‌ی جدا.
-            selectionDot = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(28, 28)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(Color.TRANSPARENT)
-                        setStroke(2, Color.parseColor("#555566"))
-                    }
-                }
+            // درصد موفقیت ارسال پکت‌ها (از آماری که سرور برگردونده)، همون
+            // کنار پینگ — یک جای مناسب و کم‌حجم که همیشه در دید باشه.
+            percentBadge = TextView(context).apply {
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(14, 4, 14, 4)
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = 12 }
             }
-            view.addView(infoContainer)
-            view.addView(selectionDot)
+            pingRow.addView(pingText)
+            pingRow.addView(loadingDots)
+            pingRow.addView(percentBadge)
+            infoContainer.addView(nameText)
+            infoContainer.addView(pingRow)
+
+            // به‌جای دایره‌ی انتخاب، فقط نوک یک پیکان: پر برای کارت انتخاب‌شده،
+            // خالی برای بقیه. کلیک روش کاملاً جدا از انتخاب کارت عمل می‌کنه —
+            // فقط باز/بسته کردن جزئیات آماره، نه انتخاب DNS.
+            expandArrow = ExpandArrowView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(28, 28).apply { marginStart = 16 }
+                setArrowColor(Color.parseColor("#555566"))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { toggleExpanded() }
+            }
+            topRow.addView(infoContainer)
+            topRow.addView(expandArrow)
+
+            // پنل جزئیات، پیش‌فرض بسته (ارتفاع صفر)
+            detailsPanel = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0
+                )
+            }
+            val divider = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                    topMargin = 20
+                    bottomMargin = 16
+                }
+                setBackgroundColor(Color.parseColor("#2A2A3E"))
+            }
+            val statsGrid = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            fun statCell(label: String): TextView {
+                val cell = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val labelView = TextView(context).apply {
+                    text = label
+                    setTextColor(Color.parseColor("#888888"))
+                    textSize = 11f
+                    gravity = Gravity.CENTER
+                }
+                val valueView = TextView(context).apply {
+                    setTextColor(Color.WHITE)
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    gravity = Gravity.CENTER
+                    setPadding(0, 6, 0, 0)
+                }
+                cell.addView(labelView)
+                cell.addView(valueView)
+                statsGrid.addView(cell)
+                return valueView
+            }
+            detailSentText = statCell("ارسالی")
+            detailLostText = statCell("گم‌شده")
+            detailTotalText = statCell("کل")
+            detailAvgText = statCell("میانگین")
+            detailsPanel.addView(divider)
+            detailsPanel.addView(statsGrid)
+
+            view.addView(topRow)
+            view.addView(detailsPanel)
         }
 
         private fun buildLoadingDots(context: Context): LinearLayout {
@@ -1113,7 +1254,7 @@ class DnsActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 6 }
+                )
             }
             for (i in 0 until 3) {
                 val dot = View(context).apply {
@@ -1146,7 +1287,47 @@ class DnsActivity : AppCompatActivity() {
             return container
         }
 
+        /** باز/بسته کردن پنل جزئیات با انیمیشن ارتفاع نرم، و چرخش ۱۸۰ درجه‌ی پیکان. */
+        private fun toggleExpanded() {
+            isExpanded = !isExpanded
+            expandArrow.animate().rotationBy(180f).setDuration(280)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.2f)).start()
+
+            if (isExpanded) {
+                detailsPanel.visibility = View.VISIBLE
+                detailsPanel.measure(
+                    View.MeasureSpec.makeMeasureSpec((view.width), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                )
+                val targetHeight = detailsPanel.measuredHeight
+                animateHeight(detailsPanel, 0, targetHeight) {}
+            } else {
+                val startHeight = detailsPanel.height
+                animateHeight(detailsPanel, startHeight, 0) {
+                    detailsPanel.visibility = View.GONE
+                }
+            }
+        }
+
+        private fun animateHeight(target: View, from: Int, to: Int, onEnd: () -> Unit) {
+            val animator = android.animation.ValueAnimator.ofInt(from, to)
+            animator.duration = 300
+            animator.interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            animator.addUpdateListener {
+                val params = target.layoutParams
+                params.height = it.animatedValue as Int
+                target.layoutParams = params
+            }
+            animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    onEnd()
+                }
+            })
+            animator.start()
+        }
+
         fun update(item: DnsItem, isSelected: Boolean) {
+            this.isSelected = isSelected
             nameText.text = item.name
             if (item.ping > 0) {
                 pingText.text = "${item.ping} ms"
@@ -1163,25 +1344,51 @@ class DnsActivity : AppCompatActivity() {
                 else -> pingText.setTextColor(Color.parseColor("#F44336"))
             }
 
+            val percent = item.successPercent
+            if (percent != null) {
+                percentBadge.visibility = View.VISIBLE
+                percentBadge.text = "%${"%.0f".format(percent)}"
+                val badgeColor = when {
+                    percent >= 95 -> Color.parseColor("#4CAF50")
+                    percent >= 85 -> Color.parseColor("#FFC107")
+                    else -> Color.parseColor("#F44336")
+                }
+                percentBadge.setTextColor(badgeColor)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    percentBadge.background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 20f
+                        setColor(Color.parseColor("#22FFFFFF"))
+                        setStroke(1, badgeColor)
+                    }
+                }
+            } else {
+                percentBadge.visibility = View.GONE
+            }
+
+            detailSentText.text = item.statsPacketsSent.toString()
+            detailLostText.text = item.statsPacketsLost.toString()
+            detailTotalText.text = item.statsTotal.toString()
+            detailAvgText.text = if (percent != null) "%${"%.1f".format(percent)}" else "--"
+
             // به‌جای سبز شدن، کارت انتخاب‌شده فقط کمی از بقیه سفیدتر می‌شه؛
             // تغییر رنگ هم نرمه، نه پرش ناگهانی.
             val targetBg = if (isSelected) Color.parseColor("#2C2C3E") else Color.parseColor("#1E1E2E")
             val targetStroke = if (isSelected) Color.parseColor("#4A4A60") else Color.parseColor("#2A2A3E")
             animateCardColors(targetBg, targetStroke)
 
-            val dotTargetColor = if (isSelected) Color.WHITE else Color.TRANSPARENT
-            val dotTargetStroke = if (isSelected) Color.WHITE else Color.parseColor("#555566")
-            (selectionDot.background as? android.graphics.drawable.GradientDrawable)?.let { dotShape ->
-                val evaluator = android.animation.ArgbEvaluator()
-                android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = 250
-                    addUpdateListener { anim ->
-                        val f = anim.animatedValue as Float
-                        dotShape.setColor(evaluator.evaluate(f, (dotShape.color?.defaultColor ?: Color.TRANSPARENT), dotTargetColor) as Int)
-                        dotShape.setStroke(2, evaluator.evaluate(f, cardStrokeColor, dotTargetStroke) as Int)
-                    }
-                    start()
+            // پر بودن پیکان = انتخاب‌شده؛ خالی = انتخاب‌نشده. این کاملاً مستقل
+            // از حالت باز/بسته‌ی جزئیاته (که با چرخش کنترل می‌شه).
+            expandArrow.filled = isSelected
+            val arrowEvaluator = android.animation.ArgbEvaluator()
+            val fromColor = Color.parseColor("#555566")
+            val toColor = if (isSelected) Color.WHITE else Color.parseColor("#555566")
+            android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 250
+                addUpdateListener { anim ->
+                    val f = anim.animatedValue as Float
+                    expandArrow.setArrowColor(arrowEvaluator.evaluate(f, fromColor, toColor) as Int)
                 }
+                start()
             }
         }
 
