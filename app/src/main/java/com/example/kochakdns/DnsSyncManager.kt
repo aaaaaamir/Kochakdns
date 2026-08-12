@@ -40,10 +40,22 @@ object DnsSyncCoordinator {
     @Volatile
     private var syncDeferred: kotlinx.coroutines.Deferred<Boolean>? = null
 
-    /** true اگه دیتای تازه واقعاً از سرور دریافت و ذخیره شد، false اگه سرور خطا داد. */
-    fun startSync(context: Context): kotlinx.coroutines.Deferred<Boolean> {
+    /**
+     * true اگه دیتای تازه واقعاً از سرور دریافت و ذخیره شد، false اگه سرور خطا داد.
+     *
+     * پیش‌فرض (force=false): اگه یک sync قبلاً شروع شده — چه هنوز در حال
+     * اجرا باشه چه از قبل *تموم* شده باشه — همون نتیجه رو دوباره برمی‌گردونه،
+     * بدون این‌که درخواست جدیدی به سرور بزنه (چون await روی یک Deferred
+     * تموم‌شده فقط نتیجه‌ی کش‌شده رو برمی‌گردونه، نه اجرای دوباره).
+     * این دقیقاً همون چیزیه که جلوی «دو بار sync زدن» (یکی از MainActivity،
+     * یکی از DnsActivity) رو می‌گیره.
+     *
+     * force=true: صرف‌نظر از هرچی، یک درخواست کاملاً تازه می‌زنه — فقط برای
+     * دکمه‌ی رفرش دستی کاربر استفاده می‌شه.
+     */
+    fun startSync(context: Context, force: Boolean = false): kotlinx.coroutines.Deferred<Boolean> {
         val existing = syncDeferred
-        if (existing != null && existing.isActive) return existing
+        if (!force && existing != null) return existing
         val appContext = context.applicationContext
         val job = scope.async {
             DnsSyncManager(appContext).sync()
