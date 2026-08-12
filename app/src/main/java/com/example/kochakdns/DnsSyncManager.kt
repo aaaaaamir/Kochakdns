@@ -68,9 +68,6 @@ object DnsSyncCoordinator {
 class DnsSyncManager(private val context: Context) {
 
     companion object {
-        // دامنه‌ی جدید بدون فیلتر — دیگه نیازی به resolve با DoH نیست،
-        // چون این دامنه (برخلاف زیردامنه‌ی workers.dev قبلی) مسدود نیست.
-        private const val BASE_URL = "https://kodns.ir"
         private var accessToken: String? = null
 
         fun setAccessToken(token: String?) {
@@ -119,9 +116,47 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
+    /**
+     * آمار پکت‌های ارسالی/گم‌شده‌ی هر پروفایل رو از سرور می‌گیره (GET
+     * /api/dns/stats). فرض ساختار پاسخ: {"ok":true,"data":[{"profile_name":
+     * "...","packets_sent":N,"packets_lost":N}, ...]} — یعنی همون شکلی که
+     * با POST ذخیره می‌شه. اگه ساختار واقعی سرور فرق داره بگو تا اصلاحش کنم.
+     *
+     * @return map از profile_name به Pair(packetsSent, packetsLost)
+     */
+    suspend fun fetchStats(): Map<String, Pair<Long, Long>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url("${AppConfig.BASE_URL}/api/dns/stats")
+                    .get()
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext emptyMap()
+                    val body = response.body?.string() ?: return@withContext emptyMap()
+                    val root = JSONObject(body)
+                    val dataArray = root.optJSONArray("data") ?: return@withContext emptyMap()
+                    val map = mutableMapOf<String, Pair<Long, Long>>()
+                    for (i in 0 until dataArray.length()) {
+                        val item = dataArray.getJSONObject(i)
+                        val name = item.optString("profile_name")
+                        if (name.isBlank()) continue
+                        val sent = item.optLong("packets_sent", 0)
+                        val lost = item.optLong("packets_lost", 0)
+                        map[name] = sent to lost
+                    }
+                    map
+                }
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+    }
+
     private fun fetchListFromServer(): List<DnsProfile> {
         val requestBuilder = Request.Builder()
-            .url("$BASE_URL/api/dns/list")
+            .url("${AppConfig.BASE_URL}/api/dns/list")
             .get()
             .header("Accept", "application/json")
             .header("User-Agent", "KochakDNS-Android-Client/1.0")
