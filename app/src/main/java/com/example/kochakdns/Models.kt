@@ -5,6 +5,11 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
+/** دامنه‌ی اصلی بک‌اند، یک‌جا تعریف شده تا هم DnsSyncManager هم MyVpnService از همین استفاده کنن. */
+object AppConfig {
+    const val BASE_URL = "https://kodns.ir"
+}
+
 data class DnsServer(
     val role: String,
     val priority: Int,
@@ -100,10 +105,21 @@ data class DnsItem(
     val name: String,
     val servers: List<DnsServer>,
     val ping: Long = -1,
-    val previousPing: Long = -1
+    val previousPing: Long = -1,
+    // آماری که از سرور (GET /api/dns/stats) خونده می‌شه؛ مجموع پکت‌های
+    // ارسالی/گم‌شده‌ای که قبلاً وقتی این پروفایل وصل بوده، ثبت شده.
+    val statsPacketsSent: Long = 0,
+    val statsPacketsLost: Long = 0
 ) {
     val jitter: Long
         get() = if (ping > 0 && previousPing > 0) abs(ping - previousPing) else 0
+
+    val statsTotal: Long
+        get() = statsPacketsSent + statsPacketsLost
+
+    /** درصد موفقیت (چند درصد از کل پکت‌ها واقعاً ارسال شدن، نه گم شدن). null یعنی هنوز آماری نیست. */
+    val successPercent: Double?
+        get() = if (statsTotal > 0) (statsPacketsSent * 100.0 / statsTotal) else null
 }
 
 object VpnStats {
