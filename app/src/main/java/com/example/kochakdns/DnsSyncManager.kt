@@ -38,9 +38,10 @@ object DnsSyncCoordinator {
         kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
     )
     @Volatile
-    private var syncDeferred: kotlinx.coroutines.Deferred<Unit>? = null
+    private var syncDeferred: kotlinx.coroutines.Deferred<Boolean>? = null
 
-    fun startSync(context: Context): kotlinx.coroutines.Deferred<Unit> {
+    /** true اگه دیتای تازه واقعاً از سرور دریافت و ذخیره شد، false اگه سرور خطا داد. */
+    fun startSync(context: Context): kotlinx.coroutines.Deferred<Boolean> {
         val existing = syncDeferred
         if (existing != null && existing.isActive) return existing
         val appContext = context.applicationContext
@@ -80,11 +81,12 @@ class DnsSyncManager(private val context: Context) {
             .build()
     }
 
+    /** @return true اگه از سرور با موفقیت گرفته و ذخیره شد، false اگه خطا خورد (و کش قبلی دست‌نخورده می‌مونه). */
     suspend fun sync(
         onSuccess: ((List<DnsProfile>) -> Unit)? = null,
         onError: ((String) -> Unit)? = null
-    ) {
-        try {
+    ): Boolean {
+        return try {
             val profiles = withContext(Dispatchers.IO) {
                 fetchListFromServer()
             }
@@ -94,12 +96,14 @@ class DnsSyncManager(private val context: Context) {
                 showToast("✓ لیست DNS با موفقیت بروزرسانی شد (${profiles.size} پروفایل)", false)
             }
             onSuccess?.invoke(profiles)
+            true
         } catch (e: Exception) {
             val errorMessage = parseErrorMessage(e)
             withContext(Dispatchers.Main) {
                 showToast(errorMessage, true)
             }
             onError?.invoke(errorMessage)
+            false
         }
     }
 
