@@ -33,6 +33,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -608,47 +609,27 @@ class DnsActivity : AppCompatActivity() {
 
     private suspend fun syncDnsData() {
         isSyncing = true
+        showLoading()
 
-        // مرحله‌ی ۱: اگه از دور قبل چیزی کش شده، فوری نشونش بده تا کاربر
-        // صفحه‌ی خالی/لودینگ نبینه؛ فقط وقتی هیچ کشی نیست لودینگ کامل نشون بده.
-        val cached = withContext(Dispatchers.IO) { readCachedProfiles() }
-        if (cached != null && cached.isNotEmpty()) {
-            loadDnsFromProfiles(cached)
-        } else {
-            showLoading()
-        }
-
-        // مرحله‌ی ۲: به همون sync ای که MainActivity از قبل شروع کرده join
-        // می‌شیم (یا اگه به هر دلیلی چیزی در جریان نبود، همینجا شروعش می‌کنیم).
-        // دیگه صبر نمی‌کنیم تا از صفر یک درخواست جدید بزنیم.
+        // اول واقعاً تلاش می‌کنیم دیتای تازه از سرور بگیریم. فقط اگه سرور
+        // خطا داد (نه هر بار)، می‌ریم سراغ آخرین کش سالمی که قبلاً ذخیره شده.
         withContext(Dispatchers.IO) {
             DnsSyncCoordinator.startSync(applicationContext).await()
         }
 
-        // مرحله‌ی ۳: لیست تازه رو بخون و جایگزین همون قبلی کن
-        withContext(Dispatchers.IO) {
-            try {
-                val fresh = readCachedProfiles()
-                if (fresh != null && fresh.isNotEmpty()) {
-                    mainHandler.post {
-                        loadDnsFromProfiles(fresh)
-                        isSyncing = false
-                        hideLoading()
-                    }
-                } else {
-                    mainHandler.post {
-                        isSyncing = false
-                        // اگه چیزی از قبل (cache) روی صفحه هست، همونو نگه دار؛ فقط
-                        // وقتی واقعاً هیچی نداریم خطای کامل نشون بده.
-                        if (dnsItems.isEmpty()) showError() else hideLoading()
-                    }
-                }
-            } catch (e: Exception) {
-                mainHandler.post {
-                    isSyncing = false
-                    if (dnsItems.isEmpty()) showError() else hideLoading()
-                }
-            }
+        // نکته: DataStore فقط وقتی sync موفق باشه بازنویسی می‌شه (توی
+        // DnsSyncManager.sync)، پس این یک خط همیشه چیز درستی برمی‌گردونه:
+        // موفق بود -> دیتای تازه‌ای که همین الان ذخیره شد؛ خطا داد -> همون
+        // آخرین کش سالمی که از قبل روی دیسک مونده، بدون هیچ تغییری.
+        val profiles = withContext(Dispatchers.IO) { readCachedProfiles() }
+
+        if (profiles != null && profiles.isNotEmpty()) {
+            loadDnsFromProfiles(profiles)
+            isSyncing = false
+            hideLoading()
+        } else {
+            isSyncing = false
+            if (dnsItems.isEmpty()) showError() else hideLoading()
         }
     }
 
