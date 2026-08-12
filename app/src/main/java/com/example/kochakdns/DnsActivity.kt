@@ -103,13 +103,15 @@ class PowerIconView(context: Context) : View(context) {
 }
 
 /**
- * فقط نوکِ پیکان (یک مثلث ساده)، بدون خط/دسته‌ی پشتش. با filled=true توپر
- * می‌شه (برای کارت انتخاب‌شده)، با false فقط حاشیه‌ش کشیده می‌شه (خالی).
- * چرخش برای باز/بسته شدن از بیرون با خودِ `rotation` استاندارد View کنترل می‌شه.
+ * یک پیکان باز (شبیه یک مثلث که ضلع پایینش رو نداره — فقط دو خط که به هم
+ * می‌رسن)، با گوشه‌های نرم (round join/cap). چون شکل همیشه بازه، «پر» بودن
+ * با ضخیم‌تر و روشن‌تر شدن خط نشون داده می‌شه (نه واقعاً fill)، «توخالی»
+ * با نازک‌تر و کم‌رنگ‌تر شدنش. چرخش برای باز/بسته شدن با `rotation`
+ * استاندارد View از بیرون کنترل می‌شه.
  */
 class ExpandArrowView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = Color.parseColor("#555566")
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
@@ -119,7 +121,7 @@ class ExpandArrowView(context: Context) : View(context) {
     var filled: Boolean = false
         set(value) {
             field = value
-            paint.style = if (value) Paint.Style.FILL else Paint.Style.STROKE
+            updateStrokeWidth()
             invalidate()
         }
 
@@ -128,15 +130,28 @@ class ExpandArrowView(context: Context) : View(context) {
         invalidate()
     }
 
+    private fun updateStrokeWidth() {
+        val glyphSize = minOf(width, height) * 0.5f // فقط بخش میانی، بقیه فضای لمسی خالیه
+        paint.strokeWidth = if (filled) glyphSize * 0.16f else glyphSize * 0.09f
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        paint.strokeWidth = w * 0.09f
+        updateStrokeWidth()
         path.reset()
-        // یک مثلثِ ساده‌ی رو به راست، تنها نوک پیکان، بدون هیچ خط اضافه‌ای
-        path.moveTo(w * 0.30f, h * 0.16f)
-        path.lineTo(w * 0.78f, h * 0.5f)
-        path.lineTo(w * 0.30f, h * 0.84f)
-        path.close()
+        // فقط یک ناحیه‌ی کوچیک وسط View رو برای رسم استفاده می‌کنیم؛ خودِ
+        // View بزرگ‌تره تا لمس کردنش راحت باشه، ولی گلیف بصری کوچیک می‌مونه.
+        val cx = w / 2f
+        val cy = h / 2f
+        val glyph = minOf(w, h) * 0.5f
+        val left = cx - glyph * 0.28f
+        val right = cx + glyph * 0.30f
+        val top = cy - glyph * 0.34f
+        val bottom = cy + glyph * 0.34f
+        // دو خط باز به شکل «>» — نوک پیکان، بدون خط سوم/پایه
+        path.moveTo(left, top)
+        path.lineTo(right, cy)
+        path.lineTo(left, bottom)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -1186,10 +1201,21 @@ class DnsActivity : AppCompatActivity() {
             // خالی برای بقیه. کلیک روش کاملاً جدا از انتخاب کارت عمل می‌کنه —
             // فقط باز/بسته کردن جزئیات آماره، نه انتخاب DNS.
             expandArrow = ExpandArrowView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(28, 28).apply { marginStart = 16 }
+                layoutParams = LinearLayout.LayoutParams(72, 72).apply { marginStart = 8 }
                 setArrowColor(Color.parseColor("#555566"))
                 isClickable = true
                 isFocusable = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val rippleMask = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(Color.WHITE)
+                    }
+                    foreground = android.graphics.drawable.RippleDrawable(
+                        android.content.res.ColorStateList.valueOf(Color.parseColor("#33FFFFFF")),
+                        null,
+                        rippleMask
+                    )
+                }
                 setOnClickListener { toggleExpanded() }
             }
             topRow.addView(infoContainer)
@@ -1326,49 +1352,72 @@ class DnsActivity : AppCompatActivity() {
             animator.start()
         }
 
+        private var lastKnownSelected: Boolean? = null
+        private var lastKnownPing: Long? = null
+        private var lastKnownPercent: Double? = null
+        private var lastKnownStatsSent: Long? = null
+        private var lastKnownStatsLost: Long? = null
+
         fun update(item: DnsItem, isSelected: Boolean) {
             this.isSelected = isSelected
-            nameText.text = item.name
-            if (item.ping > 0) {
-                pingText.text = "${item.ping} ms"
-                pingText.visibility = View.VISIBLE
-                loadingDots.visibility = View.GONE
-            } else {
-                pingText.visibility = View.GONE
-                loadingDots.visibility = View.VISIBLE
-            }
-            when {
-                item.ping < 0 -> pingText.setTextColor(Color.parseColor("#666666"))
-                item.ping < 50 -> pingText.setTextColor(Color.parseColor("#4CAF50"))
-                item.ping < 100 -> pingText.setTextColor(Color.parseColor("#FFC107"))
-                else -> pingText.setTextColor(Color.parseColor("#F44336"))
+            if (nameText.text != item.name) nameText.text = item.name
+
+            if (lastKnownPing != item.ping) {
+                lastKnownPing = item.ping
+                if (item.ping > 0) {
+                    pingText.text = "${item.ping} ms"
+                    pingText.visibility = View.VISIBLE
+                    loadingDots.visibility = View.GONE
+                } else {
+                    pingText.visibility = View.GONE
+                    loadingDots.visibility = View.VISIBLE
+                }
+                when {
+                    item.ping < 0 -> pingText.setTextColor(Color.parseColor("#666666"))
+                    item.ping < 50 -> pingText.setTextColor(Color.parseColor("#4CAF50"))
+                    item.ping < 100 -> pingText.setTextColor(Color.parseColor("#FFC107"))
+                    else -> pingText.setTextColor(Color.parseColor("#F44336"))
+                }
             }
 
             val percent = item.successPercent
-            if (percent != null) {
-                percentBadge.visibility = View.VISIBLE
-                percentBadge.text = "%${"%.0f".format(percent)}"
-                val badgeColor = when {
-                    percent >= 95 -> Color.parseColor("#4CAF50")
-                    percent >= 85 -> Color.parseColor("#FFC107")
-                    else -> Color.parseColor("#F44336")
-                }
-                percentBadge.setTextColor(badgeColor)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    percentBadge.background = android.graphics.drawable.GradientDrawable().apply {
-                        cornerRadius = 20f
-                        setColor(Color.parseColor("#22FFFFFF"))
-                        setStroke(1, badgeColor)
+            if (lastKnownPercent != percent) {
+                lastKnownPercent = percent
+                if (percent != null) {
+                    percentBadge.visibility = View.VISIBLE
+                    percentBadge.text = "%${"%.0f".format(percent)}"
+                    val badgeColor = when {
+                        percent >= 95 -> Color.parseColor("#4CAF50")
+                        percent >= 85 -> Color.parseColor("#FFC107")
+                        else -> Color.parseColor("#F44336")
                     }
+                    percentBadge.setTextColor(badgeColor)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        percentBadge.background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = 20f
+                            setColor(Color.parseColor("#22FFFFFF"))
+                            setStroke(1, badgeColor)
+                        }
+                    }
+                } else {
+                    percentBadge.visibility = View.GONE
                 }
-            } else {
-                percentBadge.visibility = View.GONE
             }
 
-            detailSentText.text = item.statsPacketsSent.toString()
-            detailLostText.text = item.statsPacketsLost.toString()
-            detailTotalText.text = item.statsTotal.toString()
-            detailAvgText.text = if (percent != null) "%${"%.1f".format(percent)}" else "--"
+            if (lastKnownStatsSent != item.statsPacketsSent || lastKnownStatsLost != item.statsPacketsLost) {
+                lastKnownStatsSent = item.statsPacketsSent
+                lastKnownStatsLost = item.statsPacketsLost
+                detailSentText.text = item.statsPacketsSent.toString()
+                detailLostText.text = item.statsPacketsLost.toString()
+                detailTotalText.text = item.statsTotal.toString()
+                detailAvgText.text = if (percent != null) "%${"%.1f".format(percent)}" else "--"
+            }
+
+            // فقط وقتی خودِ وضعیت انتخاب واقعاً عوض شده انیمیشن رنگ اجرا بشه؛
+            // وگرنه با هر تپ روی هر کارتی (که همه‌ی کارت‌ها رو update می‌کنه)
+            // کل لیست دوباره انیمیشن می‌گرفت و حس «از نو ساخته شدن» می‌داد.
+            if (lastKnownSelected == isSelected) return
+            lastKnownSelected = isSelected
 
             // به‌جای سبز شدن، کارت انتخاب‌شده فقط کمی از بقیه سفیدتر می‌شه؛
             // تغییر رنگ هم نرمه، نه پرش ناگهانی.
