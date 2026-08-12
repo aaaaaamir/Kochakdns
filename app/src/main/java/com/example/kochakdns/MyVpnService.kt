@@ -20,6 +20,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -43,6 +48,12 @@ class MyVpnService : VpnService() {
         private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
         // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
         private const val MAX_CONCURRENT_RELAYS = 12
+
+        // یک scope و کلاینت مستقل و جدا از serviceJob؛ چون stopVpn() دقیقاً
+        // همزمان با متوقف شدن سرویس صدا زده می‌شه، اگه از serviceScope
+        // استفاده می‌کردیم، درخواست ارسال آمار قبل از تموم شدن لغو می‌شد.
+        private val statsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val statsHttpClient: OkHttpClient by lazy { OkHttpClient() }
     }
 
     // یک CoroutineScope مستقل با SupervisorJob: خطای یک relay بقیه رو نمی‌کشه،
@@ -427,6 +438,14 @@ class MyVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        // قبل از صفر کردن هر چیزی، آمار همین دورِ اتصال رو برای سرور می‌فرستیم.
+        val profileName = VpnStats.activeDnsName
+        val sent = VpnStats.totalPacketsSent.get()
+        val lost = VpnStats.totalPacketsLost.get()
+        if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0)) {
+            sendStatsToServer(profileName, sent, lost)
+        }
+
         VpnStats.isVpnActive = false
         readerJob?.cancel()
         readerJob = null
@@ -436,6 +455,28 @@ class MyVpnService : VpnService() {
         sendBroadcast(Intent("VPN_STOPPED"))
         stopForeground(true)
         stopSelf()
+    }
+
+    /** ارسال best-effort آمار پکت‌ها به سرور؛ اگه شکست بخوره اهمیتی نداره، فقط نادیده گرفته می‌شه. */
+    private fun sendStatsToServer(profileName: String, sent: Long, lost: Long) {
+        statsScope.launch {
+            try {
+                val json = JSONObject().apply {
+                    put("profile_name", profileName)
+                    put("packets_sent", sent)
+                    put("packets_lost", lost)
+                }
+                val body = json.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("${AppConfig.BASE_URL}/api/dns/stats")
+                    .post(body)
+                    .addHeader("Content-Type", "application/json")
+                    .build()
+                statsHttpClient.newCall(request).execute().close()
+            } catch (_: Exception) {
+                // اگه ارسال آمار شکست خورد مهم نیست، صرفاً نادیده می‌گیریم
+            }
+        }
     }
 
     override fun onDestroy() {
