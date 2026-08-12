@@ -228,7 +228,7 @@ class DnsActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#D32F2F"))
             visibility = View.GONE
-            setOnClickListener { lifecycleScope.launch { syncDnsData() } }
+            setOnClickListener { lifecycleScope.launch { syncDnsData(force = true) } }
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -607,14 +607,17 @@ class DnsActivity : AppCompatActivity() {
     private data class Quad(val a: String, val b: String, val c: String, val d: Boolean)
 
 
-    private suspend fun syncDnsData() {
+    private suspend fun syncDnsData(force: Boolean = false) {
         isSyncing = true
         showLoading()
 
         // اول واقعاً تلاش می‌کنیم دیتای تازه از سرور بگیریم. فقط اگه سرور
         // خطا داد (نه هر بار)، می‌ریم سراغ آخرین کش سالمی که قبلاً ذخیره شده.
+        // force فقط از دکمه‌ی رفرش دستی true می‌شه؛ در حالت عادی (باز شدن
+        // صفحه) به همون sync ای که MainActivity از قبل زده join می‌شیم و
+        // یک درخواست تکراری به سرور نمی‌زنیم.
         withContext(Dispatchers.IO) {
-            DnsSyncCoordinator.startSync(applicationContext).await()
+            DnsSyncCoordinator.startSync(applicationContext, force).await()
         }
 
         // نکته: DataStore فقط وقتی sync موفق باشه بازنویسی می‌شه (توی
