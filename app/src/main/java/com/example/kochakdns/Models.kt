@@ -1,5 +1,7 @@
 package com.example.kochakdns
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
@@ -133,4 +135,86 @@ object VpnStats {
     
     @Volatile
     var activeDnsName: String? = null
+}
+
+/**
+ * چک‌پوینت پیوسته‌ی آمار روی دیسک، برای وقتی که برنامه force-stop می‌شه و
+ * اصلاً فرصت اجرای هیچ کدی (نه onDestroy نه هیچ callback دیگه) پیش نمیاد.
+ * MyVpnService هر چند ثانیه یک‌بار همین‌جا ذخیره می‌کنه؛ دفعه‌ی بعد که اپ
+ * باز می‌شه (از MainActivity)، اگه رکورد ارسال‌نشده‌ای مونده باشه، همون‌جا
+ * (با همون قانون حداقل ۳۰ ثانیه) فرستاده و پاک می‌شه.
+ */
+object PendingStatsStore {
+    private const val PREFS = "vpn_pending_stats"
+    private const val KEY_PROFILE = "profile_name"
+    private const val KEY_SENT = "packets_sent"
+    private const val KEY_LOST = "packets_lost"
+    private const val KEY_START = "connect_start"
+    private const val KEY_CHECKPOINT = "last_checkpoint"
+
+    fun save(context: android.content.Context, profileName: String, sent: Long, lost: Long, connectStart: Long) {
+        try {
+            context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit()
+                .putString(KEY_PROFILE, profileName)
+                .putLong(KEY_SENT, sent)
+                .putLong(KEY_LOST, lost)
+                .putLong(KEY_START, connectStart)
+                .putLong(KEY_CHECKPOINT, System.currentTimeMillis())
+                .apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    fun clear(context: android.content.Context) {
+        try {
+            context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit().clear().apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    data class Pending(val profileName: String, val sent: Long, val lost: Long, val durationMs: Long)
+
+    fun read(context: android.content.Context): Pending? {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            val profile = prefs.getString(KEY_PROFILE, null) ?: return null
+            val start = prefs.getLong(KEY_START, 0)
+            val checkpoint = prefs.getLong(KEY_CHECKPOINT, 0)
+            if (start <= 0 || checkpoint <= 0) return null
+            Pending(
+                profileName = profile,
+                sent = prefs.getLong(KEY_SENT, 0),
+                lost = prefs.getLong(KEY_LOST, 0),
+                durationMs = checkpoint - start
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+/** منطق مشترک ارسال آمار به سرور، هم از MyVpnService (قطع عادی) هم از MainActivity (فلاش کردن رکورد جامونده) استفاده می‌شه. */
+object StatsReporter {
+    private val client: okhttp3.OkHttpClient by lazy { okhttp3.OkHttpClient() }
+
+    /** blocking است؛ حتماً از یک ترد پس‌زمینه صدا زده بشه. */
+    fun send(profileName: String, sent: Long, lost: Long): Boolean {
+        return try {
+            val json = JSONObject().apply {
+                put("profile_name", profileName)
+                put("packets_sent", sent)
+                put("packets_lost", lost)
+            }
+            val body = json.toString()
+                .toRequestBody("application/json".toMediaType())
+            val request = okhttp3.Request.Builder()
+                .url("${AppConfig.BASE_URL}/api/dns/stats")
+                .post(body)
+                .addHeader("Content-Type", "application/json")
+                .build()
+            client.newCall(request).execute().use { it.isSuccessful }
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
