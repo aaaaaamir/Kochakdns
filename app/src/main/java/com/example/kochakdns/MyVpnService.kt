@@ -20,11 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -53,7 +48,6 @@ class MyVpnService : VpnService() {
         // همزمان با متوقف شدن سرویس صدا زده می‌شه، اگه از serviceScope
         // استفاده می‌کردیم، درخواست ارسال آمار قبل از تموم شدن لغو می‌شد.
         private val statsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        private val statsHttpClient: OkHttpClient by lazy { OkHttpClient() }
     }
 
     // یک CoroutineScope مستقل با SupervisorJob: خطای یک relay بقیه رو نمی‌کشه،
@@ -66,6 +60,7 @@ class MyVpnService : VpnService() {
 
     private var readerJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var connectStartTime: Long = 0L
     private var statsUpdateHandler: Handler? = null
 
     override fun onCreate() {
@@ -126,13 +121,36 @@ class MyVpnService : VpnService() {
             VpnStats.totalBytesReceived.set(0)
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
+            connectStartTime = System.currentTimeMillis()
             readerJob = serviceScope.launch { processPackets() }
             statsUpdateHandler = Handler(Looper.getMainLooper())
             statsUpdateHandler?.post(object : Runnable {
                 override fun run() {
-                    if (VpnStats.isVpnActive) { updateNotification(); statsUpdateHandler?.postDelayed(this, 2000) }
+                    if (VpnStats.isVpnActive) {
+                        updateNotification()
+                        statsUpdateHandler?.postDelayed(this, 2000)
+                    }
                 }
             })
+            // چک‌پوینت پیوسته روی دیسک، جدا از نوتیفیکیشن و با فاصله‌ی خودش
+            // (۵ ثانیه)؛ اگه برنامه force-stop بشه، دفعه‌ی بعد از همین آخرین
+            // نقطه می‌تونیم ارسال کنیم.
+            statsUpdateHandler?.postDelayed(object : Runnable {
+                override fun run() {
+                    if (VpnStats.isVpnActive) {
+                        VpnStats.activeDnsName?.let { name ->
+                            PendingStatsStore.save(
+                                this@MyVpnService,
+                                name,
+                                VpnStats.totalPacketsSent.get(),
+                                VpnStats.totalPacketsLost.get(),
+                                connectStartTime
+                            )
+                        }
+                        statsUpdateHandler?.postDelayed(this, 5000)
+                    }
+                }
+            }, 5000)
             sendBroadcast(Intent("VPN_STARTED"))
         } catch (e: Exception) {
             e.printStackTrace()
@@ -438,13 +456,20 @@ class MyVpnService : VpnService() {
     }
 
     private fun stopVpn() {
-        // قبل از صفر کردن هر چیزی، آمار همین دورِ اتصال رو برای سرور می‌فرستیم.
+        // قبل از صفر کردن هر چیزی، آمار همین دورِ اتصال رو برای سرور می‌فرستیم —
+        // فقط اگه واقعاً حداقل ۳۰ ثانیه وصل بوده (اتصال‌های خیلی کوتاه آماری
+        // معنادار نیستن و ارزش ارسال ندارن).
         val profileName = VpnStats.activeDnsName
         val sent = VpnStats.totalPacketsSent.get()
         val lost = VpnStats.totalPacketsLost.get()
-        if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0)) {
+        val durationMs = if (connectStartTime > 0) System.currentTimeMillis() - connectStartTime else 0L
+        if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0) && durationMs >= 30_000) {
             sendStatsToServer(profileName, sent, lost)
         }
+        // این یک قطعِ عادیه (نه force-stop)، پس دیگه چک‌پوینت روی دیسک لازم
+        // نیست — یا الان فرستاده شد، یا طبق قانون ۳۰ ثانیه اصلاً نباید بفرستیم.
+        PendingStatsStore.clear(this)
+        connectStartTime = 0L
 
         VpnStats.isVpnActive = false
         readerJob?.cancel()
@@ -460,22 +485,7 @@ class MyVpnService : VpnService() {
     /** ارسال best-effort آمار پکت‌ها به سرور؛ اگه شکست بخوره اهمیتی نداره، فقط نادیده گرفته می‌شه. */
     private fun sendStatsToServer(profileName: String, sent: Long, lost: Long) {
         statsScope.launch {
-            try {
-                val json = JSONObject().apply {
-                    put("profile_name", profileName)
-                    put("packets_sent", sent)
-                    put("packets_lost", lost)
-                }
-                val body = json.toString().toRequestBody("application/json".toMediaType())
-                val request = Request.Builder()
-                    .url("${AppConfig.BASE_URL}/api/dns/stats")
-                    .post(body)
-                    .addHeader("Content-Type", "application/json")
-                    .build()
-                statsHttpClient.newCall(request).execute().close()
-            } catch (_: Exception) {
-                // اگه ارسال آمار شکست خورد مهم نیست، صرفاً نادیده می‌گیریم
-            }
+            StatsReporter.send(profileName, sent, lost)
         }
     }
 
