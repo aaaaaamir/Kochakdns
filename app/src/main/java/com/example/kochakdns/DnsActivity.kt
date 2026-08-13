@@ -144,14 +144,14 @@ class ExpandArrowView(context: Context) : View(context) {
         val cx = w / 2f
         val cy = h / 2f
         val glyph = minOf(w, h) * 0.5f
-        val left = cx - glyph * 0.28f
-        val right = cx + glyph * 0.30f
-        val top = cy - glyph * 0.34f
-        val bottom = cy + glyph * 0.34f
-        // دو خط باز به شکل «>» — نوک پیکان، بدون خط سوم/پایه
+        val left = cx - glyph * 0.34f
+        val right = cx + glyph * 0.34f
+        val top = cy - glyph * 0.28f
+        val bottom = cy + glyph * 0.30f
+        // یک «V» رو به پایین — دو خط باز که پایین به هم می‌رسن، بدون ضلع بالا/پایه
         path.moveTo(left, top)
-        path.lineTo(right, cy)
-        path.lineTo(left, bottom)
+        path.lineTo(cx, bottom)
+        path.lineTo(right, top)
     }
 
     override fun onDraw(canvas: Canvas) {
