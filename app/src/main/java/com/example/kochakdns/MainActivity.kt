@@ -51,6 +51,20 @@ class MainActivity : AppCompatActivity() {
         // صفحه آماده‌ست و دیگه منتظرش نمی‌مونیم.
         DnsSyncCoordinator.startSync(applicationContext)
 
+        // اگه دفعه‌ی قبل برنامه force-stop شده باشه، MyVpnService فرصت نکرده
+        // آمار آخرین اتصال رو بفرسته. اینجا چک می‌کنیم آیا از چک‌پوینت پیوسته‌ی
+        // روی دیسک چیزی جامونده، و اگه بله (و طبق همون قانون ۳۰ ثانیه واجد
+        // شرایط بود) همین الان می‌فرستیمش.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val pending = PendingStatsStore.read(applicationContext)
+            if (pending != null) {
+                if (pending.durationMs >= 30_000) {
+                    StatsReporter.send(pending.profileName, pending.sent, pending.lost)
+                }
+                PendingStatsStore.clear(applicationContext)
+            }
+        }
+
         lifecycleScope.launch {
             delay(3000)
             checkNotificationPermission()
