@@ -111,44 +111,59 @@ class PowerIconView(context: Context) : View(context) {
  */
 class ExpandArrowView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#555566")
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
     private val path = android.graphics.Path()
+    private var blend = 0f // 0 = انتخاب‌نشده (نازک‌تر، تیره‌تر)، 1 = انتخاب‌شده (ضخیم‌تر، روشن‌تر)
+    private var blendAnimator: android.animation.ValueAnimator? = null
 
     var filled: Boolean = false
         set(value) {
+            if (field == value) return
             field = value
-            updateStrokeWidth()
-            invalidate()
+            blendAnimator?.cancel()
+            blendAnimator = android.animation.ValueAnimator.ofFloat(blend, if (value) 1f else 0f).apply {
+                duration = 260
+                addUpdateListener {
+                    blend = it.animatedValue as Float
+                    applyPaint()
+                    invalidate()
+                }
+                start()
+            }
         }
 
-    fun setArrowColor(color: Int) {
-        paint.color = color
-        invalidate()
-    }
+    private fun applyPaint() {
+        if (width <= 0 || height <= 0) return
+        val glyphSize = minOf(width, height) * 0.55f
+        val strokeMin = glyphSize * 0.24f
+        val strokeMax = glyphSize * 0.30f
+        paint.strokeWidth = strokeMin + (strokeMax - strokeMin) * blend
 
-    private fun updateStrokeWidth() {
-        val glyphSize = minOf(width, height) * 0.5f // فقط بخش میانی، بقیه فضای لمسی خالیه
-        paint.strokeWidth = if (filled) glyphSize * 0.16f else glyphSize * 0.09f
+        // گرادیانت روشن-به-تیره برای حس نرم و برجسته (soft UI)، بین حالت
+        // انتخاب‌نشده (خاکستری کم‌رنگ) و انتخاب‌شده (تقریباً سفید) نرم بلند می‌شه.
+        val evaluator = android.animation.ArgbEvaluator()
+        val top = evaluator.evaluate(blend, Color.parseColor("#8A8A96"), Color.parseColor("#FFFFFF")) as Int
+        val bottom = evaluator.evaluate(blend, Color.parseColor("#4A4A56"), Color.parseColor("#D8D8DC")) as Int
+        paint.shader = android.graphics.LinearGradient(
+            0f, 0f, 0f, height.toFloat(), top, bottom, android.graphics.Shader.TileMode.CLAMP
+        )
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        updateStrokeWidth()
+        applyPaint()
         path.reset()
-        // فقط یک ناحیه‌ی کوچیک وسط View رو برای رسم استفاده می‌کنیم؛ خودِ
-        // View بزرگ‌تره تا لمس کردنش راحت باشه، ولی گلیف بصری کوچیک می‌مونه.
         val cx = w / 2f
         val cy = h / 2f
-        val glyph = minOf(w, h) * 0.5f
-        val left = cx - glyph * 0.34f
-        val right = cx + glyph * 0.34f
-        val top = cy - glyph * 0.28f
-        val bottom = cy + glyph * 0.30f
-        // یک «V» رو به پایین — دو خط باز که پایین به هم می‌رسن، بدون ضلع بالا/پایه
+        val glyph = minOf(w, h) * 0.55f
+        val left = cx - glyph * 0.36f
+        val right = cx + glyph * 0.36f
+        val top = cy - glyph * 0.24f
+        val bottom = cy + glyph * 0.26f
+        // یک «V» نرم و پهن رو به پایین — دو خط باز که پایین به هم می‌رسن
         path.moveTo(left, top)
         path.lineTo(cx, bottom)
         path.lineTo(right, top)
@@ -1201,8 +1216,7 @@ class DnsActivity : AppCompatActivity() {
             // خالی برای بقیه. کلیک روش کاملاً جدا از انتخاب کارت عمل می‌کنه —
             // فقط باز/بسته کردن جزئیات آماره، نه انتخاب DNS.
             expandArrow = ExpandArrowView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(72, 72).apply { marginStart = 8 }
-                setArrowColor(Color.parseColor("#555566"))
+                layoutParams = LinearLayout.LayoutParams(88, 88).apply { marginStart = 4 }
                 isClickable = true
                 isFocusable = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -1425,20 +1439,10 @@ class DnsActivity : AppCompatActivity() {
             val targetStroke = if (isSelected) Color.parseColor("#4A4A60") else Color.parseColor("#2A2A3E")
             animateCardColors(targetBg, targetStroke)
 
-            // پر بودن پیکان = انتخاب‌شده؛ خالی = انتخاب‌نشده. این کاملاً مستقل
-            // از حالت باز/بسته‌ی جزئیاته (که با چرخش کنترل می‌شه).
+            // پر بودن پیکان = انتخاب‌شده؛ خالی = انتخاب‌نشده. خودِ View داخلی
+            // این تغییر رو نرم انیمیت می‌کنه (ضخامت + گرادیانت)، این کاملاً
+            // مستقل از حالت باز/بسته‌ی جزئیاته (که با چرخش کنترل می‌شه).
             expandArrow.filled = isSelected
-            val arrowEvaluator = android.animation.ArgbEvaluator()
-            val fromColor = Color.parseColor("#555566")
-            val toColor = if (isSelected) Color.WHITE else Color.parseColor("#555566")
-            android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 250
-                addUpdateListener { anim ->
-                    val f = anim.animatedValue as Float
-                    expandArrow.setArrowColor(arrowEvaluator.evaluate(f, fromColor, toColor) as Int)
-                }
-                start()
-            }
         }
 
         private fun animateCardColors(targetBg: Int, targetStroke: Int) {
