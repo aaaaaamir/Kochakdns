@@ -44,6 +44,9 @@
             android:exported="false"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 
+        <!--درباره ما -->
+        <activity android:name=".AboutActivity" android:exported="false" />
+
         <!-- سرویس وی‌پی‌ان -->
         <service
             android:name=".MyVpnService"
