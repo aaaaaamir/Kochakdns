@@ -175,9 +175,38 @@ class ExpandArrowView(context: Context) : View(context) {
     }
 }
 
+/** آیکون همبرگری: سه خط ساده و نرم، هم‌شکل با بقیه‌ی آیکون‌های دستی این فایل. */
+class HamburgerIconView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        paint.strokeWidth = minOf(w, h) * 0.09f
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val left = width * 0.24f
+        val right = width * 0.76f
+        listOf(height * 0.32f, height * 0.5f, height * 0.68f).forEach { y ->
+            canvas.drawLine(left, y, right, y, paint)
+        }
+    }
+}
+
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
+    private lateinit var hamburgerButton: HamburgerIconView
+    private lateinit var drawerPanel: LinearLayout
+    private lateinit var drawerScrim: View
+    private var isDrawerOpen = false
+    private var drawerWidthPx = 0
+    private var mainContainerRef: View? = null
     private lateinit var powerButton: LinearLayout
     private lateinit var powerIcon: PowerIconView
     private lateinit var powerButtonShape: android.graphics.drawable.GradientDrawable
@@ -449,8 +478,137 @@ class DnsActivity : AppCompatActivity() {
         scrollView.addView(dnsListContainer)
         mainContainer.addView(scrollView)
         rootLayout.addView(mainContainer)
+        buildDrawerMenu(mainContainer)
         setContentView(rootLayout)
         setVpnState(vpnState) // اعمال ظاهر اولیه‌ی دکمه
+    }
+
+    /**
+     * منوی کشویی: دکمه‌ی همبرگری بالا-چپ، یک دراور که از گوشه باز می‌شه، و
+     * پشتش به‌جای رنگ ساده از بلور واقعی محتوای اصلی استفاده می‌شه (فقط
+     * روی اندروید ۱۲/API 31 به بالا ممکنه؛ روی نسخه‌های قدیمی‌تر یک پرده‌ی
+     * نیمه‌شفاف تیره جایگزینش می‌شه چون RenderEffect قبل از آن نسخه وجود نداره).
+     */
+    private fun buildDrawerMenu(mainContainer: View) {
+        mainContainerRef = mainContainer
+        val screenWidth = resources.displayMetrics.widthPixels
+        drawerWidthPx = (screenWidth * 0.76f).toInt()
+
+        drawerScrim = View(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            alpha = 0f
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setOnClickListener { closeDrawer() }
+        }
+        rootLayout.addView(drawerScrim)
+
+        drawerPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 220, 32, 32)
+            // نیمه‌شفاف، تا وقتی محتوای پشتش بلور شده، خودِ بلور از زیر این
+            // رنگ هم دیده بشه (حس شیشه‌ی مات، نه یک صفحه‌ی رنگی توپر).
+            setBackgroundColor(Color.parseColor("#CC17171F"))
+            layoutParams = FrameLayout.LayoutParams(drawerWidthPx, FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                gravity = Gravity.START
+            }
+            translationX = -drawerWidthPx.toFloat()
+            elevation = 24f
+        }
+        val menuContent = MenuActivity(this).buildView(onItemClick = { closeDrawer() })
+        drawerPanel.addView(menuContent)
+        rootLayout.addView(drawerPanel)
+
+        hamburgerButton = HamburgerIconView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(80, 80).apply {
+                gravity = Gravity.TOP or Gravity.START
+                leftMargin = 40
+                topMargin = 64
+            }
+            isClickable = true
+            isFocusable = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val rippleMask = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                }
+                foreground = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#33FFFFFF")),
+                    null,
+                    rippleMask
+                )
+            }
+            setOnClickListener { toggleDrawer() }
+        }
+        rootLayout.addView(hamburgerButton)
+    }
+
+    private fun toggleDrawer() {
+        if (isDrawerOpen) closeDrawer() else openDrawer()
+    }
+
+    private fun openDrawer() {
+        if (isDrawerOpen) return
+        isDrawerOpen = true
+        drawerScrim.visibility = View.VISIBLE
+        drawerScrim.animate().alpha(1f).setDuration(280).start()
+        drawerPanel.animate()
+            .translationX(0f)
+            .setDuration(320)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+
+        // بلور واقعی محتوای پشت دراور (فقط API 31+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mainContainerRef?.setRenderEffect(
+                android.graphics.RenderEffect.createBlurEffect(
+                    22f, 22f, android.graphics.Shader.TileMode.CLAMP
+                )
+            )
+        }
+
+        // دکمه‌ی همبرگری، هم‌زمان با باز شدن دراور، انگار داخلش «می‌افته»
+        hamburgerButton.animate().cancel()
+        hamburgerButton.translationY = -30f
+        hamburgerButton.animate()
+            .translationY(0f)
+            .setStartDelay(90)
+            .setDuration(340)
+            .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
+            .start()
+    }
+
+    private fun closeDrawer() {
+        if (!isDrawerOpen) return
+        isDrawerOpen = false
+        drawerScrim.animate().alpha(0f).setDuration(240)
+            .withEndAction { drawerScrim.visibility = View.GONE }.start()
+        drawerPanel.animate()
+            .translationX(-drawerWidthPx.toFloat())
+            .setDuration(280)
+            .setInterpolator(android.view.animation.AccelerateInterpolator())
+            .start()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mainContainerRef?.setRenderEffect(null)
+        }
+
+        // دکمه‌ی همبرگری انگار از داخل دراور «بیرون می‌پره» و برمی‌گرده سرجاش
+        hamburgerButton.animate().cancel()
+        hamburgerButton.animate()
+            .translationY(-20f)
+            .setDuration(120)
+            .withEndAction {
+                hamburgerButton.animate()
+                    .translationY(0f)
+                    .setDuration(200)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
+            .start()
     }
 
     private fun createStatItem(label: String, value: String): LinearLayout {
@@ -1099,6 +1257,15 @@ class DnsActivity : AppCompatActivity() {
                 waitForActualState(expectActive = false, timeoutMs = 4000)
                 startVpn()
             }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (isDrawerOpen) {
+            closeDrawer()
+        } else {
+            super.onBackPressed()
         }
     }
 
