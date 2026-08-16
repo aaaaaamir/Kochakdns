@@ -82,8 +82,9 @@ class MyVpnService : VpnService() {
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
+        val ipv6Enabled = getSharedPreferences("dns_prefs", MODE_PRIVATE).getBoolean("ipv6_enabled", true)
         val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }
-        val validV6 = dnsServers.filter { it.isNotBlank() && isIpv6(it) }
+        val validV6 = if (ipv6Enabled) dnsServers.filter { it.isNotBlank() && isIpv6(it) } else emptyList()
         if (validV4.isEmpty() && validV6.isEmpty()) { stopSelf(); return }
 
         startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
@@ -111,6 +112,26 @@ class MyVpnService : VpnService() {
             setSession("Kochak DNS - $dnsName")
             setBlocking(true)
             setMtu(1500)
+
+            // اگه کاربر از صفحه‌ی «برنامه‌های تونل شده» یک زیرمجموعه‌ی خاص
+            // انتخاب کرده، بقیه‌ی برنامه‌ها رو کاملاً از تون خودمون مستثنی
+            // می‌کنیم (DNS سیستم عادی می‌گیرن، دست‌نخورده). null یعنی کاربر
+            // چیزی سفارشی انتخاب نکرده -> رفتار پیش‌فرض فعلی (همه، بدون تغییر).
+            val selectedPackages = TunnelAppsStore.getSelectedPackages(this@MyVpnService)
+            if (selectedPackages != null) {
+                try {
+                    val allPackages = packageManager.getInstalledApplications(0).map { it.packageName }
+                    allPackages.filterNot { selectedPackages.contains(it) }.forEach { pkg ->
+                        try { addDisallowedApplication(pkg) } catch (_: Exception) {}
+                    }
+                } catch (_: Exception) {}
+            }
+            // نکته: AppSettings.isBlockNonTunneledEnabled() عمداً اینجا اعمال
+            // نمی‌شه. با معماری فعلی (فقط relay کردن DNS، نه یک NAT/relay کامل
+            // برای همه‌ی ترافیک)، نمی‌شه هم‌زمان به برنامه‌های تونل‌شده اینترنت
+            // کامل داد هم برنامه‌های تونل‌نشده رو کاملاً مسدود کرد — این نیاز
+            // به همون معماری «تونل کامل» داره که قبلاً به‌عنوان یک پروژه‌ی
+            // جدا کنار گذاشتیم. مقدار این تنظیم فقط ذخیره می‌شه، فعلاً اعمال نمی‌شه.
         }
 
         try {
@@ -144,7 +165,8 @@ class MyVpnService : VpnService() {
                                 name,
                                 VpnStats.totalPacketsSent.get(),
                                 VpnStats.totalPacketsLost.get(),
-                                connectStartTime
+                                connectStartTime,
+                                getOperatorInfo(this@MyVpnService)
                             )
                         }
                         statsUpdateHandler?.postDelayed(this, 5000)
@@ -464,7 +486,7 @@ class MyVpnService : VpnService() {
         val lost = VpnStats.totalPacketsLost.get()
         val durationMs = if (connectStartTime > 0) System.currentTimeMillis() - connectStartTime else 0L
         if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0) && durationMs >= 30_000) {
-            sendStatsToServer(profileName, sent, lost)
+            sendStatsToServer(profileName, sent, lost, getOperatorInfo(this))
         }
         // این یک قطعِ عادیه (نه force-stop)، پس دیگه چک‌پوینت روی دیسک لازم
         // نیست — یا الان فرستاده شد، یا طبق قانون ۳۰ ثانیه اصلاً نباید بفرستیم.
@@ -483,9 +505,9 @@ class MyVpnService : VpnService() {
     }
 
     /** ارسال best-effort آمار پکت‌ها به سرور؛ اگه شکست بخوره اهمیتی نداره، فقط نادیده گرفته می‌شه. */
-    private fun sendStatsToServer(profileName: String, sent: Long, lost: Long) {
+    private fun sendStatsToServer(profileName: String, sent: Long, lost: Long, operator: String) {
         statsScope.launch {
-            StatsReporter.send(profileName, sent, lost)
+            StatsReporter.send(profileName, sent, lost, operator)
         }
     }
 
@@ -499,7 +521,18 @@ class MyVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Kochak VPN", NotificationManager.IMPORTANCE_LOW).apply {
+            // توجه: اندروید (از نسخه ۸ به بعد) اجازه نمی‌ده یک foreground
+            // service (که VPN هم جزوشه) کاملاً بدون نوتیفیکیشن اجرا بشه —
+            // این یک محدودیت سیستم‌عامله، نه چیزی که با کد این اپ بشه دورش زد.
+            // وقتی کاربر این گزینه رو خاموش می‌کنه، فقط اهمیتش رو به حداقل
+            // می‌بریم (IMPORTANCE_MIN به‌جای LOW) تا کمتر جلب توجه کنه.
+            val showNotification = AppSettings.isShowNotificationEnabled(this)
+            val importance = if (showNotification) {
+                NotificationManager.IMPORTANCE_LOW
+            } else {
+                NotificationManager.IMPORTANCE_MIN
+            }
+            val channel = NotificationChannel(CHANNEL_ID, "Kochak VPN", importance).apply {
                 description = "VPN Service"; setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
