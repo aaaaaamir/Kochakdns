@@ -19,13 +19,16 @@ android {
 
     signingConfigs {
         release {
+            def localProperties = new Properties()
+            def localPropertiesFile = rootProject.file('local.properties')
+            if (localPropertiesFile.exists()) {
+                localProperties.load(new FileInputStream(localPropertiesFile))
+            }
+
             storeFile file("${rootDir}/release.keystore")
             keyAlias 'my-key-alias'
-
-            // دریافت تعاملی رمز در ترمینال موقع اجرای بیلد
-            def pass = System.console() != null ? new String(System.console().readPassword("\nEnter Keystore Password: ")) : ""
-            storePassword pass
-            keyPassword pass
+            storePassword localProperties.getProperty('keystorePassword', '')
+            keyPassword localProperties.getProperty('keystorePassword', '')
         }
     }
 
