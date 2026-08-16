@@ -10,16 +10,19 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,11 +36,11 @@ class TunnelAppsActivity : AppCompatActivity() {
         val isSystem: Boolean
     )
 
-    private lateinit var listContainer: LinearLayout
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var adapter: AppsAdapter
     private lateinit var headerSpinner: ProgressBar
     private lateinit var countText: TextView
-    private val checkBoxes = mutableMapOf<String, CheckBox>()
-    
+
     private var isProcessStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,7 +50,13 @@ class TunnelAppsActivity : AppCompatActivity() {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
         }
-        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
 
         // هدر
         val header = LinearLayout(this).apply {
@@ -77,7 +86,7 @@ class TunnelAppsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
-        // لودینگ مینی‌مال دایره‌ای گوگل در بالا سمت راست
+        // لودینگ دایره‌ای گوگل
         headerSpinner = ProgressBar(this).apply {
             layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
                 marginEnd = dpToPx(12)
@@ -85,7 +94,7 @@ class TunnelAppsActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 indeterminateTintList = ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
             }
-            visibility = android.view.View.GONE
+            visibility = View.GONE
         }
         header.addView(headerSpinner)
 
@@ -106,22 +115,23 @@ class TunnelAppsActivity : AppCompatActivity() {
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
         actionsRow.addView(actionButton("انتخاب همه") { setAll(true) })
-        actionsRow.addView(android.view.View(this).apply {
+        actionsRow.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(dpToPx(12), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         actionsRow.addView(actionButton("لغو همه") { setAll(false) })
         column.addView(actionsRow)
 
-        // اسکرول‌ویو برای لیست برنامه‌ها
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-        }
-        listContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        // استفاده از RecyclerView به جای ScrollView برای جلوگیری از مشکل عدم رندر در ۴۰۰+ برنامه
+        adapter = AppsAdapter { updateCount() }
+        recyclerView = RecyclerView(this).apply {
+            layoutManager = LinearLayoutManager(this@TunnelAppsActivity)
+            adapter = this@TunnelAppsActivity.adapter
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(24))
+            clipToPadding = false
         }
-        scroll.addView(listContainer)
-        column.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        column.addView(recyclerView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
 
         root.addView(column)
         setContentView(root)
@@ -165,18 +175,18 @@ class TunnelAppsActivity : AppCompatActivity() {
     }
 
     private fun setAll(checked: Boolean) {
-        checkBoxes.values.forEach { it.isChecked = checked }
+        adapter.selectAll(checked)
         updateCount()
     }
 
     private fun updateCount() {
-        val total = checkBoxes.size
-        val selected = checkBoxes.values.count { it.isChecked }
+        val total = adapter.itemCount
+        val selected = adapter.getSelectedCount()
         countText.text = "$selected از $total برنامه انتخاب شده"
     }
 
     private fun loadAppsProgressively() {
-        headerSpinner.visibility = android.view.View.VISIBLE
+        headerSpinner.visibility = View.VISIBLE
 
         lifecycleScope.launch(Dispatchers.IO) {
             val pm = packageManager
@@ -187,7 +197,7 @@ class TunnelAppsActivity : AppCompatActivity() {
                 emptyList()
             }
 
-            val selected = try {
+            val selectedSet = try {
                 TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
             } catch (_: Exception) {
                 null
@@ -198,34 +208,26 @@ class TunnelAppsActivity : AppCompatActivity() {
             }.sortedBy { it.second.lowercase() }
 
             withContext(Dispatchers.Main) {
-                listContainer.removeAllViews()
-                checkBoxes.clear()
+                adapter.clear()
             }
 
             sortedApps.forEach { (appInfo, label) ->
                 val icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
                 val appModel = AppModel(appInfo.packageName, label, icon, isSystem)
+                val isChecked = selectedSet?.contains(appModel.packageName) ?: true
 
                 withContext(Dispatchers.Main) {
-                    val isChecked = selected?.contains(appModel.packageName) ?: true
-                    listContainer.addView(buildAppRow(appModel, isChecked))
+                    adapter.addApp(appModel, isChecked)
                     updateCount()
                 }
             }
 
             withContext(Dispatchers.Main) {
-                headerSpinner.visibility = android.view.View.GONE
+                headerSpinner.visibility = View.GONE
 
                 if (sortedApps.isEmpty()) {
                     countText.text = "برنامه‌ای یافت نشد"
-                    listContainer.addView(TextView(this@TunnelAppsActivity).apply {
-                        text = "هیچ برنامه‌ای پیدا نشد.\nمجوز QUERY_ALL_PACKAGES را در AndroidManifest.xml بررسی کنید."
-                        setTextColor(Color.parseColor("#888888"))
-                        textSize = 13f
-                        setPadding(16, 48, 16, 16)
-                        gravity = Gravity.CENTER
-                    })
                 }
             }
         }
@@ -235,31 +237,81 @@ class TunnelAppsActivity : AppCompatActivity() {
         return try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { appInfo.packageName }
     }
 
-    private fun buildAppRow(app: AppModel, initialChecked: Boolean): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dpToPx(8) }
+    private fun saveAndFinish() {
+        val totalCount = adapter.itemCount
+        val selectedCount = adapter.getSelectedCount()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#1A1A24"))
-                    cornerRadius = dpToPx(12).toFloat()
+        if (totalCount == selectedCount) {
+            TunnelAppsStore.clearSelection(this)
+        } else {
+            val selected = adapter.getSelectedPackages()
+            TunnelAppsStore.saveSelectedPackages(this, selected)
+        }
+        Toast.makeText(this, "ذخیره شد", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    // آداپتور اختصاصی RecyclerView
+    private inner class AppsAdapter(
+        private val onItemCheckChanged: () -> Unit
+    ) : RecyclerView.Adapter<AppsAdapter.AppViewHolder>() {
+
+        private val items = mutableListOf<AppModel>()
+        private val selectedPackages = mutableSetOf<String>()
+
+        fun addApp(app: AppModel, isChecked: Boolean) {
+            items.add(app)
+            if (isChecked) {
+                selectedPackages.add(app.packageName)
+            }
+            notifyItemInserted(items.size - 1)
+        }
+
+        fun clear() {
+            items.clear()
+            selectedPackages.clear()
+            notifyDataSetChanged()
+        }
+
+        fun selectAll(checked: Boolean) {
+            selectedPackages.clear()
+            if (checked) {
+                selectedPackages.addAll(items.map { it.packageName })
+            }
+            notifyDataSetChanged()
+        }
+
+        fun getSelectedCount(): Int = selectedPackages.size
+
+        fun getSelectedPackages(): Set<String> = selectedPackages.toSet()
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppViewHolder {
+            val rowView = LinearLayout(parent.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+                layoutParams = RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dpToPx(8)
                 }
-            }
-            isClickable = true
-            isFocusable = true
 
-            val iconView = ImageView(this@TunnelAppsActivity).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#1A1A24"))
+                        cornerRadius = dpToPx(8).toFloat()
+                    }
+                }
+                isClickable = true
+                isFocusable = true
+            }
+
+            val iconView = ImageView(parent.context).apply {
                 layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44))
-                app.icon?.let { setImageDrawable(it) }
             }
 
-            val labelColumn = LinearLayout(this@TunnelAppsActivity).apply {
+            val labelColumn = LinearLayout(parent.context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = dpToPx(12)
@@ -267,47 +319,70 @@ class TunnelAppsActivity : AppCompatActivity() {
                 }
             }
 
-            labelColumn.addView(TextView(this@TunnelAppsActivity).apply {
-                text = app.label
+            val titleText = TextView(parent.context).apply {
                 setTextColor(Color.WHITE)
                 textSize = 14f
-            })
-
-            if (app.isSystem) {
-                labelColumn.addView(TextView(this@TunnelAppsActivity).apply {
-                    text = "سیستمی"
-                    setTextColor(Color.parseColor("#666666"))
-                    textSize = 10f
-                    setPadding(0, dpToPx(2), 0, 0)
-                })
             }
 
-            val checkBox = CheckBox(this@TunnelAppsActivity).apply {
-                isChecked = initialChecked
+            val systemText = TextView(parent.context).apply {
+                text = "سیستمی"
+                setTextColor(Color.parseColor("#666666"))
+                textSize = 10f
+                setPadding(0, dpToPx(2), 0, 0)
             }
-            checkBoxes[app.packageName] = checkBox
 
-            setOnClickListener {
-                checkBox.isChecked = !checkBox.isChecked
-                updateCount()
-            }
-            checkBox.setOnCheckedChangeListener { _, _ -> updateCount() }
+            labelColumn.addView(titleText)
+            labelColumn.addView(systemText)
 
-            addView(iconView)
-            addView(labelColumn)
-            addView(checkBox)
+            val checkBox = CheckBox(parent.context)
+
+            rowView.addView(iconView)
+            rowView.addView(labelColumn)
+            rowView.addView(checkBox)
+
+            return AppViewHolder(rowView, iconView, titleText, systemText, checkBox)
         }
+
+        override fun onBindViewHolder(holder: AppViewHolder, position: Int) {
+            val app = items[position]
+
+            holder.iconView.setImageDrawable(app.icon)
+            holder.titleText.text = app.label
+            holder.systemText.visibility = if (app.isSystem) View.VISIBLE else View.GONE
+
+            holder.checkBox.setOnCheckedChangeListener(null)
+            val isChecked = selectedPackages.contains(app.packageName)
+            holder.checkBox.isChecked = isChecked
+
+            holder.itemView.setOnClickListener {
+                val newState = !holder.checkBox.isChecked
+                holder.checkBox.isChecked = newState
+                if (newState) {
+                    selectedPackages.add(app.packageName)
+                } else {
+                    selectedPackages.remove(app.packageName)
+                }
+                onItemCheckChanged()
+            }
+
+            holder.checkBox.setOnCheckedChangeListener { _, checked ->
+                if (checked) {
+                    selectedPackages.add(app.packageName)
+                } else {
+                    selectedPackages.remove(app.packageName)
+                }
+                onItemCheckChanged()
+            }
+        }
+
+        override fun getItemCount(): Int = items.size
     }
 
-    private fun saveAndFinish() {
-        val allSelected = checkBoxes.values.all { it.isChecked }
-        if (allSelected) {
-            TunnelAppsStore.clearSelection(this)
-        } else {
-            val selected = checkBoxes.filterValues { it.isChecked }.keys
-            TunnelAppsStore.saveSelectedPackages(this, selected)
-        }
-        Toast.makeText(this, "ذخیره شد", Toast.LENGTH_SHORT).show()
-        finish()
-    }
+    private class AppViewHolder(
+        itemView: View,
+        val iconView: ImageView,
+        val titleText: TextView,
+        val systemText: TextView,
+        val checkBox: CheckBox
+    ) : RecyclerView.ViewHolder(itemView)
 }
