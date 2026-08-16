@@ -150,24 +150,49 @@ class TunnelAppsActivity : AppCompatActivity() {
             val pm = packageManager
             // getInstalledApplications با فلگ صفر هم برنامه‌های عادی هم سیستمی
             // رو برمی‌گردونه؛ روی اندروید ۱۱ به بالا برای دیدن کامل لیست به
-            // مجوز QUERY_ALL_PACKAGES توی مانیفست نیاز داره.
+            // مجوز QUERY_ALL_PACKAGES توی مانیفست نیاز داره، وگرنه لیست
+            // تقریباً خالی برمی‌گرده (بدون خطا، فقط ساکت فیلتر می‌شه).
             val apps = try {
                 pm.getInstalledApplications(PackageManager.GET_META_DATA)
             } catch (e: Exception) {
                 emptyList()
             }
             val selected = TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
-            val sorted = apps.sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
+            // sortedBy رو گارد می‌کنیم: اگه گرفتن لیبل حتی یک برنامه throw کنه،
+            // قبلاً کل مرتب‌سازی (و در نتیجه کل لیست) از کار می‌افتاد.
+            val sorted = try {
+                apps.sortedBy { safeLabel(pm, it).lowercase() }
+            } catch (e: Exception) {
+                apps
+            }
 
             withContext(Dispatchers.Main) {
                 loadingSpinner.visibility = android.view.View.GONE
                 sorted.forEach { appInfo ->
-                    val isChecked = selected?.contains(appInfo.packageName) ?: true // null = پیش‌فرض همه انتخاب
-                    listContainer.addView(buildAppRow(pm, appInfo, isChecked))
+                    try {
+                        val isChecked = selected?.contains(appInfo.packageName) ?: true // null = پیش‌فرض همه انتخاب
+                        listContainer.addView(buildAppRow(pm, appInfo, isChecked))
+                    } catch (_: Exception) {
+                        // یک برنامه مشکل داشت (مثلاً آیکون/لیبلش قابل خوندن نبود)؛
+                        // به‌جای متوقف کردن کل لیست، فقط همینو رد می‌کنیم.
+                    }
                 }
                 updateCount()
+                if (sorted.isEmpty()) {
+                    listContainer.addView(TextView(this@TunnelAppsActivity).apply {
+                        text = "هیچ برنامه‌ای پیدا نشد. اگه روی اندروید ۱۱ به بالایی، مطمئن شو\nQUERY_ALL_PACKAGES توی AndroidManifest.xml اضافه شده."
+                        setTextColor(Color.parseColor("#888888"))
+                        textSize = 13f
+                        setPadding(16, 48, 16, 16)
+                        gravity = Gravity.CENTER
+                    })
+                }
             }
         }
+    }
+
+    private fun safeLabel(pm: PackageManager, appInfo: ApplicationInfo): String {
+        return try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { appInfo.packageName }
     }
 
     private fun buildAppRow(pm: PackageManager, appInfo: ApplicationInfo, initialChecked: Boolean): LinearLayout {
@@ -204,7 +229,7 @@ class TunnelAppsActivity : AppCompatActivity() {
                 }
             }
             labelColumn.addView(TextView(this@TunnelAppsActivity).apply {
-                text = try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { appInfo.packageName }
+                text = safeLabel(pm, appInfo)
                 setTextColor(Color.WHITE)
                 textSize = 14f
             })
