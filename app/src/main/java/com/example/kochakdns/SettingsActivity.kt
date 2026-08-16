@@ -59,7 +59,7 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(
             settingSwitch(
                 title = "مسدود کردن اینترنت برنامه‌های تونل‌نشده",
-                subtitle = "برنامه‌هایی که از لیست «برنامه‌های تونل شده» انتخاب نکردی، اصلاً به اینترنت دسترسی نداشته باشن",
+                subtitle = ".برنامه‌هایی که از لیست «برنامه‌های تونل شده» انتخاب نکردی، اصلاً به اینترنت دسترسی نداشته باشن",
                 initial = AppSettings.isBlockNonTunneledEnabled(this)
             ) { checked ->
                 AppSettings.setBlockNonTunneledEnabled(this, checked)
