@@ -1564,7 +1564,8 @@ class DnsActivity : AppCompatActivity() {
                 }
             }
 
-            val percent = item.successPercent
+            val statsEnabled = AppSettings.isShowPacketPercentEnabled(applicationContext)
+            val percent = if (statsEnabled) item.successPercent else null
             if (lastKnownPercent != percent) {
                 lastKnownPercent = percent
                 if (percent != null) {
@@ -1588,7 +1589,14 @@ class DnsActivity : AppCompatActivity() {
                 }
             }
 
-            if (lastKnownStatsSent != item.statsPacketsSent || lastKnownStatsLost != item.statsPacketsLost) {
+            if (!statsEnabled) {
+                // این تنظیم خاموشه؛ حتی اگه از قبل دیتای آماری روی دیسک/آبجکت
+                // مونده باشه، اصلاً نشونش نمی‌دیم.
+                detailSentText.text = "--"
+                detailLostText.text = "--"
+                detailTotalText.text = "--"
+                detailAvgText.text = "--"
+            } else if (lastKnownStatsSent != item.statsPacketsSent || lastKnownStatsLost != item.statsPacketsLost) {
                 lastKnownStatsSent = item.statsPacketsSent
                 lastKnownStatsLost = item.statsPacketsLost
                 detailSentText.text = item.statsPacketsSent.toString()
