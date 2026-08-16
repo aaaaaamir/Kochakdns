@@ -1,10 +1,5 @@
 {
-  "name": "Android Dev Environment",
-  "image": "mcr.microsoft.com/devcontainers/java:17-bullseye",
-  "features": {
-    "ghcr.io/devcontainers/features/android-sdk:1": {
-      "version": "latest"
-    }
-  },
-  "postCreateCommand": "chmod +x ./gradlew"
-}
+    "name": "Android Dev Environment",
+      "image": "mcr.microsoft.com/devcontainers/java:17-bullseye",
+        "postCreateCommand": "sudo apt update && sudo apt install -y android-sdk && echo 'sdk.dir=/usr/lib/android-sdk' > local.properties && chmod +x ./gradlew"
+        }
