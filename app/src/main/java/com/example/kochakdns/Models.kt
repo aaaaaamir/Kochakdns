@@ -151,8 +151,9 @@ object PendingStatsStore {
     private const val KEY_LOST = "packets_lost"
     private const val KEY_START = "connect_start"
     private const val KEY_CHECKPOINT = "last_checkpoint"
+    private const val KEY_OPERATOR = "operator"
 
-    fun save(context: android.content.Context, profileName: String, sent: Long, lost: Long, connectStart: Long) {
+    fun save(context: android.content.Context, profileName: String, sent: Long, lost: Long, connectStart: Long, operator: String) {
         try {
             context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit()
                 .putString(KEY_PROFILE, profileName)
@@ -160,6 +161,7 @@ object PendingStatsStore {
                 .putLong(KEY_LOST, lost)
                 .putLong(KEY_START, connectStart)
                 .putLong(KEY_CHECKPOINT, System.currentTimeMillis())
+                .putString(KEY_OPERATOR, operator)
                 .apply()
         } catch (_: Exception) {
         }
@@ -172,7 +174,7 @@ object PendingStatsStore {
         }
     }
 
-    data class Pending(val profileName: String, val sent: Long, val lost: Long, val durationMs: Long)
+    data class Pending(val profileName: String, val sent: Long, val lost: Long, val durationMs: Long, val operator: String)
 
     fun read(context: android.content.Context): Pending? {
         return try {
@@ -185,11 +187,31 @@ object PendingStatsStore {
                 profileName = profile,
                 sent = prefs.getLong(KEY_SENT, 0),
                 lost = prefs.getLong(KEY_LOST, 0),
-                durationMs = checkpoint - start
+                durationMs = checkpoint - start,
+                operator = prefs.getString(KEY_OPERATOR, null) ?: "unknown"
             )
         } catch (_: Exception) {
             null
         }
+    }
+}
+
+/** اسم اپراتور فعلی (یا "wifi" اگه روی وای‌فای باشه)؛ نیاز به هیچ مجوز خطرناکی نداره. */
+fun getOperatorInfo(context: android.content.Context): String {
+    return try {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val activeNetwork = cm.activeNetwork
+        val caps = cm.getNetworkCapabilities(activeNetwork)
+        when {
+            caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            else -> {
+                val tm = context.getSystemService(android.content.Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                val name = tm.networkOperatorName
+                if (name.isNullOrBlank()) "mobile" else name
+            }
+        }
+    } catch (e: Exception) {
+        "unknown"
     }
 }
 
@@ -198,12 +220,13 @@ object StatsReporter {
     private val client: okhttp3.OkHttpClient by lazy { okhttp3.OkHttpClient() }
 
     /** blocking است؛ حتماً از یک ترد پس‌زمینه صدا زده بشه. */
-    fun send(profileName: String, sent: Long, lost: Long): Boolean {
+    fun send(profileName: String, sent: Long, lost: Long, operator: String): Boolean {
         return try {
             val json = JSONObject().apply {
                 put("profile_name", profileName)
                 put("packets_sent", sent)
                 put("packets_lost", lost)
+                put("operator", operator)
             }
             val body = json.toString()
                 .toRequestBody("application/json".toMediaType())
@@ -216,5 +239,68 @@ object StatsReporter {
         } catch (_: Exception) {
             false
         }
+    }
+}
+
+/** تنظیمات سراسری برنامه (صفحه‌ی تنظیمات). پیش‌فرض‌ها دقیقاً همون رفتار فعلی برنامه‌ست. */
+object AppSettings {
+    private const val PREFS = "app_settings"
+    private const val KEY_BLOCK_NON_TUNNELED = "block_non_tunneled_internet"
+    private const val KEY_SHOW_PACKET_PERCENT = "show_packet_percentage"
+    private const val KEY_SHOW_NOTIFICATION = "show_notification"
+
+    private fun prefs(context: android.content.Context) =
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    // پیش‌فرض false: الان هیچ اینترنتی مسدود نمی‌شه، این یک قابلیت جدیده.
+    fun isBlockNonTunneledEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_BLOCK_NON_TUNNELED, false)
+
+    fun setBlockNonTunneledEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BLOCK_NON_TUNNELED, value).apply()
+    }
+
+    // پیش‌فرض true: الان درصد پکت‌ها نمایش داده می‌شه.
+    fun isShowPacketPercentEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_PACKET_PERCENT, true)
+
+    fun setShowPacketPercentEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_PACKET_PERCENT, value).apply()
+    }
+
+    // پیش‌فرض true: الان همیشه نوتیفیکیشن نشون داده می‌شه.
+    fun isShowNotificationEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_SHOW_NOTIFICATION, true)
+
+    fun setShowNotificationEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SHOW_NOTIFICATION, value).apply()
+    }
+}
+
+/** انتخاب برنامه‌هایی که باید تونل بشن (DNS سفارشی بگیرن). */
+object TunnelAppsStore {
+    private const val PREFS = "tunnel_apps_prefs"
+    private const val KEY_PACKAGES = "tunneled_packages"
+    private const val KEY_HAS_SELECTION = "has_custom_selection"
+
+    /** null یعنی کاربر هنوز انتخاب سفارشی نکرده -> یعنی «همه‌ی برنامه‌ها» (رفتار پیش‌فرض فعلی، بدون محدودیت). */
+    fun getSelectedPackages(context: android.content.Context): Set<String>? {
+        val prefs = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_HAS_SELECTION, false)) return null
+        return prefs.getStringSet(KEY_PACKAGES, emptySet())?.toSet() ?: emptySet()
+    }
+
+    fun saveSelectedPackages(context: android.content.Context, packages: Set<String>) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_HAS_SELECTION, true)
+            .putStringSet(KEY_PACKAGES, packages)
+            .apply()
+    }
+
+    fun clearSelection(context: android.content.Context) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_HAS_SELECTION, false)
+            .remove(KEY_PACKAGES)
+            .apply()
     }
 }
