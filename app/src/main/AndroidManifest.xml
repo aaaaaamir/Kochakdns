@@ -38,6 +38,18 @@
             </intent-filter>
         </activity>
 
+        <!--صفحه تنظیمات-->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <!--صفحه تول برنامه ها-->
+        <activity
+            android:name=".TunnelAppsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" /
+    >
+    
         <!-- فعالیت مدیریت و تنظیمات DNS (اضافه شده) -->
         <activity
             android:name=".DnsActivity"
