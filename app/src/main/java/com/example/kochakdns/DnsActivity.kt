@@ -870,6 +870,9 @@ class DnsActivity : AppCompatActivity() {
 
     /** آمار پکت‌های ارسالی/گم‌شده رو از سرور می‌گیره و روی کارت‌های همین لیست اعمال می‌کنه. */
     private fun fetchAndApplyStats() {
+        // اگه کاربر از تنظیمات این گزینه رو خاموش کرده، اصلاً درخواستی به API
+        // زده نمی‌شه — نه فقط مخفی کردن نمایش، بلکه کلاً fetch نمی‌شه.
+        if (!AppSettings.isShowPacketPercentEnabled(applicationContext)) return
         lifecycleScope.launch(Dispatchers.IO) {
             val stats = DnsSyncManager(applicationContext).fetchStats()
             if (stats.isEmpty()) return@launch
