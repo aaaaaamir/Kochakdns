@@ -82,7 +82,7 @@ class TunnelAppsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
                 marginEnd = dpToPx(12)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.21) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 indeterminateTintList = ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
             }
             visibility = android.view.View.GONE
@@ -129,7 +129,6 @@ class TunnelAppsActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // شروع پردازش دقیقاً هنگام نمایش صفحه به کاربر
         if (!isProcessStarted) {
             isProcessStarted = true
             loadAppsProgressively()
@@ -194,7 +193,6 @@ class TunnelAppsActivity : AppCompatActivity() {
                 null
             }
 
-            // مرتب‌سازی اولیه نام‌ها جهت افزودن منظم به لیست
             val sortedApps = apps.map { appInfo ->
                 Pair(appInfo, safeLabel(pm, appInfo))
             }.sortedBy { it.second.lowercase() }
@@ -204,7 +202,6 @@ class TunnelAppsActivity : AppCompatActivity() {
                 checkBoxes.clear()
             }
 
-            // لود تدریجی و اضافه کردن یکی‌یکی برنامه‌ها به لیست
             sortedApps.forEach { (appInfo, label) ->
                 val icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
@@ -217,7 +214,6 @@ class TunnelAppsActivity : AppCompatActivity() {
                 }
             }
 
-            // اتمام بارگذاری
             withContext(Dispatchers.Main) {
                 headerSpinner.visibility = android.view.View.GONE
 
