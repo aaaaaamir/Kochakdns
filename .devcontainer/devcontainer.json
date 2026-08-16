@@ -1,5 +1,5 @@
 {
-    "name": "Android Dev Environment",
-      "image": "mcr.microsoft.com/devcontainers/java:17-bullseye",
-        "postCreateCommand": "sudo apt update && sudo apt install -y android-sdk && echo 'sdk.dir=/usr/lib/android-sdk' > local.properties && chmod +x ./gradlew"
-        }
+  "name": "Android Dev",
+  "image": "mcr.microsoft.com/devcontainers/java:1-17-bullseye",
+  "postCreateCommand": "mkdir -p $HOME/android-sdk/cmdline-tools && cd $HOME/android-sdk/cmdline-tools && wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip && unzip -q tools.zip && rm tools.zip && mv cmdline-tools latest && yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1"
+}
