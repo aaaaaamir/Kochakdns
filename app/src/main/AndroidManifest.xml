@@ -4,7 +4,7 @@
 
     <!-- ========== مجوزهای ضروری ========== -->
     
-    <!-- دسترسی به اینترنت (برای دریافت DNS از سرور) -->
+    <!-- دسترسی به اینترنت -->
     <uses-permission android:name="android.permission.INTERNET" />
     
     <!-- بررسی وضعیت شبکه -->
@@ -19,45 +19,53 @@
     <!-- برای اندروید 13+ (API 33+) - نمایش نوتیفیکیشن VPN -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- برای اندروید 11+ (API 30+) - جهت نمایش کامل لیست برنامه‌ها در TunnelAppsActivity -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Kochakdns">
+        android:theme="@style/Theme.AppCompat.NoActionBar">
 
         <!-- فعالیت اصلی برنامه -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.AppCompat.NoActionBar">
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!--صفحه تنظیمات-->
+        <!-- صفحه تنظیمات -->
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
-        <!--صفحه تول برنامه ها-->
+
+        <!-- صفحه تونل برنامه‌ها -->
         <activity
             android:name=".TunnelAppsActivity"
             android:exported="false"
-            android:screenOrientation="portrait" /
-    >
-    
-        <!-- فعالیت مدیریت و تنظیمات DNS (اضافه شده) -->
+            android:screenOrientation="portrait" />
+
+        <!-- فعالیت مدیریت و تنظیمات DNS -->
         <activity
             android:name=".DnsActivity"
             android:exported="false"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
+            android:screenOrientation="portrait" />
 
-        <!--درباره ما -->
-        <activity android:name=".AboutActivity" android:exported="false" />
+        <!-- درباره ما -->
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <!-- سرویس وی‌پی‌ان -->
         <service
@@ -68,7 +76,7 @@
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
-            
+
             <!-- برای اندروید 14+ - توضیح استفاده از Foreground Service -->
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
