@@ -34,6 +34,7 @@ class MyVpnService : VpnService() {
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "vpn_channel"
+        const val CHANNEL_ID_MIN = "vpn_channel_min"
         const val ACTION_START = "action_start"
         const val ACTION_STOP = "action_stop"
         const val EXTRA_DNS_SERVERS = "dns_servers"
@@ -236,13 +237,14 @@ class MyVpnService : VpnService() {
                         launchRelay { relayDnsQueryV6(data, output) }
                     }
                     fullCaptureMode && isIpv4(data) -> {
-                        VpnStats.totalPacketsSent.incrementAndGet()
-                        VpnStats.totalBytesSent.addAndGet(length.toLong())
+                        // نکته: VpnStats.totalPacketsSent/totalBytesSent مخصوص
+                        // آمار DNSه (که برای سرور و UI گزارش می‌شه). قبلاً اینجا
+                        // هر پکتی که وارد تون می‌شد (حتی پکت‌های اپ‌های مسدودشده
+                        // که اصلاً relay نمی‌شن) به‌عنوان "ارسالی" شمرده می‌شد —
+                        // که در حالت تونل کامل باعث اعداد کاذب و خیلی بزرگ می‌شد.
                         handleGeneralPacketV4(data)
                     }
                     fullCaptureMode && isIpv6(data) -> {
-                        VpnStats.totalPacketsSent.incrementAndGet()
-                        VpnStats.totalBytesSent.addAndGet(length.toLong())
                         handleGeneralPacketV6(data)
                     }
                     else -> {
@@ -282,7 +284,7 @@ class MyVpnService : VpnService() {
         when (data[9].toInt() and 0xFF) {
             6 -> tunnelEngine?.handleTcpV4(data, ihl)   // TCP
             17 -> tunnelEngine?.handleUdpV4(data, ihl)  // UDP
-            else -> VpnStats.totalPacketsLost.incrementAndGet() // ICMP و بقیه فعلاً پشتیبانی نمی‌شن
+            // ICMP و بقیه‌ی پروتکل‌ها فعلاً پشتیبانی نمی‌شن، بی‌صدا نادیده گرفته می‌شن
         }
     }
 
@@ -291,7 +293,6 @@ class MyVpnService : VpnService() {
         when (data[6].toInt() and 0xFF) {
             6 -> tunnelEngine?.handleTcpV6(data)   // TCP
             17 -> tunnelEngine?.handleUdpV6(data)  // UDP
-            else -> VpnStats.totalPacketsLost.incrementAndGet()
         }
     }
 
@@ -594,20 +595,31 @@ class MyVpnService : VpnService() {
             // توجه: اندروید (از نسخه ۸ به بعد) اجازه نمی‌ده یک foreground
             // service (که VPN هم جزوشه) کاملاً بدون نوتیفیکیشن اجرا بشه —
             // این یک محدودیت سیستم‌عامله، نه چیزی که با کد این اپ بشه دورش زد.
-            // وقتی کاربر این گزینه رو خاموش می‌کنه، فقط اهمیتش رو به حداقل
-            // می‌بریم (IMPORTANCE_MIN به‌جای LOW) تا کمتر جلب توجه کنه.
-            val showNotification = AppSettings.isShowNotificationEnabled(this)
-            val importance = if (showNotification) {
-                NotificationManager.IMPORTANCE_LOW
-            } else {
-                NotificationManager.IMPORTANCE_MIN
-            }
-            val channel = NotificationChannel(CHANNEL_ID, "Kochak VPN", importance).apply {
-                description = "VPN Service"; setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+            //
+            // نکته‌ی مهم: اندروید بعد از اولین ساخت یک NotificationChannel،
+            // دیگه اجازه نمی‌ده اهمیتش (importance) با کد عوض بشه — هر بار که
+            // createNotificationChannel با همون ID صدا زده بشه ولی importance
+            // فرق کنه، اندروید بی‌صدا نادیده‌ش می‌گیره. برای همین قبلاً روشن/
+            // خاموش کردن این تنظیم هیچ اثری نداشت. فیکس: به‌جای عوض کردن
+            // importance یک channel، از دو تا channel جداگانه (با ID متفاوت
+            // و importance ثابت از همون ابتدا) استفاده می‌کنیم و موقع ساختن
+            // نوتیفیکیشن، بر اساس تنظیم فعلی یکی‌شون رو انتخاب می‌کنیم.
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Kochak VPN", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "VPN Service"; setShowBadge(false)
+                }
+            )
+            manager?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID_MIN, "Kochak VPN (کم‌اهمیت)", NotificationManager.IMPORTANCE_MIN).apply {
+                    description = "VPN Service"; setShowBadge(false)
+                }
+            )
         }
     }
+
+    private fun activeChannelId(): String =
+        if (AppSettings.isShowNotificationEnabled(this)) CHANNEL_ID else CHANNEL_ID_MIN
 
     private fun buildNotification(contentText: String): Notification {
         val pendingIntent = PendingIntent.getActivity(this, 0,
@@ -616,7 +628,7 @@ class MyVpnService : VpnService() {
         val stopIntent = Intent(this, MyVpnService::class.java).apply { action = ACTION_STOP }
         val stopPendingIntent = PendingIntent.getService(this, 1, stopIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, activeChannelId())
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentTitle("Kochak DNS")
             .setContentText(contentText)
