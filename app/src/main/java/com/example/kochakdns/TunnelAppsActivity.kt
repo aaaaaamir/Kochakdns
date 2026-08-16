@@ -83,12 +83,15 @@ class TunnelAppsActivity : AppCompatActivity() {
         column.addView(actionsRow)
 
         loadingSpinner = ProgressBar(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 80 }
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                topMargin = 80
+            }
         }
-        val spinnerWrap = FrameLayout(this).apply { gravity = Gravity.CENTER }
+        val spinnerWrap = FrameLayout(this)
         spinnerWrap.addView(loadingSpinner)
         column.addView(spinnerWrap, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
