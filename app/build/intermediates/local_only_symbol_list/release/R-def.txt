@@ -1,0 +1,21 @@
+R_DEF: Internal format may change without notice
+local
+color background_dark
+color background_light
+color black
+color on_background_dark
+color on_background_light
+color on_primary
+color on_secondary
+color primary
+color primary_variant
+color secondary
+color secondary_variant
+color surface_dark
+color surface_light
+color white
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+string hello_text
+style Theme.Kochakdns
