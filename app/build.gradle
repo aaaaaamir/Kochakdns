@@ -17,8 +17,21 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
+    signingConfigs {
+        release {
+            storeFile file("${rootDir}/release.keystore")
+            keyAlias 'my-key-alias'
+
+            // دریافت تعاملی رمز در ترمینال موقع اجرای بیلد
+            def pass = System.console() != null ? new String(System.console().readPassword("\nEnter Keystore Password: ")) : ""
+            storePassword pass
+            keyPassword pass
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
