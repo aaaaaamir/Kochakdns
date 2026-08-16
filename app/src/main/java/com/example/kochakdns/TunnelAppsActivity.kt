@@ -2,8 +2,10 @@ package com.example.kochakdns
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -24,10 +26,19 @@ import kotlinx.coroutines.withContext
 
 class TunnelAppsActivity : AppCompatActivity() {
 
+    private data class AppModel(
+        val packageName: String,
+        val label: String,
+        val icon: Drawable?,
+        val isSystem: Boolean
+    )
+
     private lateinit var listContainer: LinearLayout
-    private lateinit var loadingSpinner: ProgressBar
+    private lateinit var headerSpinner: ProgressBar
     private lateinit var countText: TextView
     private val checkBoxes = mutableMapOf<String, CheckBox>()
+    
+    private var isProcessStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,76 +53,96 @@ class TunnelAppsActivity : AppCompatActivity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 56, 24, 16)
+            setPadding(dpToPx(12), dpToPx(24), dpToPx(12), dpToPx(8))
         }
+
+        // دکمه بازگشت
         header.addView(TextView(this).apply {
             text = "←"
             textSize = 22f
             setTextColor(Color.WHITE)
-            setPadding(24, 16, 24, 16)
+            setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8))
             isClickable = true
             isFocusable = true
             setOnClickListener { saveAndFinish() }
         })
+
+        // عنوان صفحه
         header.addView(TextView(this).apply {
             text = "برنامه‌های تونل شده"
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
-            setPadding(16, 0, 0, 0)
+            setPadding(dpToPx(8), 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
+
+        // لودینگ مینی‌مال دایره‌ای گوگل در بالا سمت راست
+        headerSpinner = ProgressBar(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
+                marginEnd = dpToPx(12)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.21) {
+                indeterminateTintList = ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
+            }
+            visibility = android.view.View.GONE
+        }
+        header.addView(headerSpinner)
+
         column.addView(header)
 
+        // شمارنده برنامه‌ها
         countText = TextView(this).apply {
+            text = "در حال دریافت لیست برنامه‌ها..."
             setTextColor(Color.parseColor("#888888"))
             textSize = 12f
-            setPadding(24, 0, 24, 16)
+            setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
         column.addView(countText)
 
-        // انتخاب همه / لغو همه
+        // دکمه‌های انتخاب همه / لغو همه
         val actionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(24, 0, 24, 16)
+            setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
         actionsRow.addView(actionButton("انتخاب همه") { setAll(true) })
         actionsRow.addView(android.view.View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(16, LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(12), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         actionsRow.addView(actionButton("لغو همه") { setAll(false) })
         column.addView(actionsRow)
 
-        loadingSpinner = ProgressBar(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER
-                topMargin = 80
-            }
+        // اسکرول‌ویو برای لیست برنامه‌ها
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
         }
-        val spinnerWrap = FrameLayout(this)
-        spinnerWrap.addView(loadingSpinner)
-        column.addView(spinnerWrap, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        val scroll = ScrollView(this)
         listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 0, 24, 32)
+            setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(24))
         }
         scroll.addView(listContainer)
         column.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         root.addView(column)
         setContentView(root)
+    }
 
-        loadApps()
+    override fun onStart() {
+        super.onStart()
+        // شروع پردازش دقیقاً هنگام نمایش صفحه به کاربر
+        if (!isProcessStarted) {
+            isProcessStarted = true
+            loadAppsProgressively()
+        }
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         saveAndFinish()
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 
     private fun actionButton(text: String, onClick: () -> Unit): TextView {
@@ -120,14 +151,14 @@ class TunnelAppsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#4C8DFF"))
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
-            setPadding(28, 16, 28, 16)
+            setPadding(dpToPx(14), dpToPx(8), dpToPx(14), dpToPx(8))
             isClickable = true
             isFocusable = true
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#1E1E2E"))
-                    cornerRadius = 16f
-                    setStroke(2, Color.parseColor("#2A2A3E"))
+                    cornerRadius = dpToPx(8).toFloat()
+                    setStroke(dpToPx(1), Color.parseColor("#2A2A3E"))
                 }
             }
             setOnClickListener { onClick() }
@@ -145,42 +176,55 @@ class TunnelAppsActivity : AppCompatActivity() {
         countText.text = "$selected از $total برنامه انتخاب شده"
     }
 
-    private fun loadApps() {
+    private fun loadAppsProgressively() {
+        headerSpinner.visibility = android.view.View.VISIBLE
+
         lifecycleScope.launch(Dispatchers.IO) {
             val pm = packageManager
-            // getInstalledApplications با فلگ صفر هم برنامه‌های عادی هم سیستمی
-            // رو برمی‌گردونه؛ روی اندروید ۱۱ به بالا برای دیدن کامل لیست به
-            // مجوز QUERY_ALL_PACKAGES توی مانیفست نیاز داره، وگرنه لیست
-            // تقریباً خالی برمی‌گرده (بدون خطا، فقط ساکت فیلتر می‌شه).
+
             val apps = try {
                 pm.getInstalledApplications(PackageManager.GET_META_DATA)
             } catch (e: Exception) {
                 emptyList()
             }
-            val selected = TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
-            // sortedBy رو گارد می‌کنیم: اگه گرفتن لیبل حتی یک برنامه throw کنه،
-            // قبلاً کل مرتب‌سازی (و در نتیجه کل لیست) از کار می‌افتاد.
-            val sorted = try {
-                apps.sortedBy { safeLabel(pm, it).lowercase() }
-            } catch (e: Exception) {
-                apps
+
+            val selected = try {
+                TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
+            } catch (_: Exception) {
+                null
             }
 
+            // مرتب‌سازی اولیه نام‌ها جهت افزودن منظم به لیست
+            val sortedApps = apps.map { appInfo ->
+                Pair(appInfo, safeLabel(pm, appInfo))
+            }.sortedBy { it.second.lowercase() }
+
             withContext(Dispatchers.Main) {
-                loadingSpinner.visibility = android.view.View.GONE
-                sorted.forEach { appInfo ->
-                    try {
-                        val isChecked = selected?.contains(appInfo.packageName) ?: true // null = پیش‌فرض همه انتخاب
-                        listContainer.addView(buildAppRow(pm, appInfo, isChecked))
-                    } catch (_: Exception) {
-                        // یک برنامه مشکل داشت (مثلاً آیکون/لیبلش قابل خوندن نبود)؛
-                        // به‌جای متوقف کردن کل لیست، فقط همینو رد می‌کنیم.
-                    }
+                listContainer.removeAllViews()
+                checkBoxes.clear()
+            }
+
+            // لود تدریجی و اضافه کردن یکی‌یکی برنامه‌ها به لیست
+            sortedApps.forEach { (appInfo, label) ->
+                val icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
+                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                val appModel = AppModel(appInfo.packageName, label, icon, isSystem)
+
+                withContext(Dispatchers.Main) {
+                    val isChecked = selected?.contains(appModel.packageName) ?: true
+                    listContainer.addView(buildAppRow(appModel, isChecked))
+                    updateCount()
                 }
-                updateCount()
-                if (sorted.isEmpty()) {
+            }
+
+            // اتمام بارگذاری
+            withContext(Dispatchers.Main) {
+                headerSpinner.visibility = android.view.View.GONE
+
+                if (sortedApps.isEmpty()) {
+                    countText.text = "برنامه‌ای یافت نشد"
                     listContainer.addView(TextView(this@TunnelAppsActivity).apply {
-                        text = "هیچ برنامه‌ای پیدا نشد. اگه روی اندروید ۱۱ به بالایی، مطمئن شو\nQUERY_ALL_PACKAGES توی AndroidManifest.xml اضافه شده."
+                        text = "هیچ برنامه‌ای پیدا نشد.\nمجوز QUERY_ALL_PACKAGES را در AndroidManifest.xml بررسی کنید."
                         setTextColor(Color.parseColor("#888888"))
                         textSize = 13f
                         setPadding(16, 48, 16, 16)
@@ -195,58 +239,57 @@ class TunnelAppsActivity : AppCompatActivity() {
         return try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { appInfo.packageName }
     }
 
-    private fun buildAppRow(pm: PackageManager, appInfo: ApplicationInfo, initialChecked: Boolean): LinearLayout {
+    private fun buildAppRow(app: AppModel, initialChecked: Boolean): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 20, 16, 20)
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 8 }
+            ).apply { bottomMargin = dpToPx(8) }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#1A1A24"))
-                    cornerRadius = 18f
+                    cornerRadius = dpToPx(12).toFloat()
                 }
             }
             isClickable = true
             isFocusable = true
 
-            val icon = ImageView(this@TunnelAppsActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(72, 72)
-                try {
-                    setImageDrawable(pm.getApplicationIcon(appInfo))
-                } catch (_: Exception) {
-                }
+            val iconView = ImageView(this@TunnelAppsActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44))
+                app.icon?.let { setImageDrawable(it) }
             }
 
             val labelColumn = LinearLayout(this@TunnelAppsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = 20
-                    marginEnd = 12
+                    marginStart = dpToPx(12)
+                    marginEnd = dpToPx(8)
                 }
             }
+
             labelColumn.addView(TextView(this@TunnelAppsActivity).apply {
-                text = safeLabel(pm, appInfo)
+                text = app.label
                 setTextColor(Color.WHITE)
                 textSize = 14f
             })
-            val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            if (isSystemApp) {
+
+            if (app.isSystem) {
                 labelColumn.addView(TextView(this@TunnelAppsActivity).apply {
                     text = "سیستمی"
                     setTextColor(Color.parseColor("#666666"))
                     textSize = 10f
-                    setPadding(0, 4, 0, 0)
+                    setPadding(0, dpToPx(2), 0, 0)
                 })
             }
 
             val checkBox = CheckBox(this@TunnelAppsActivity).apply {
                 isChecked = initialChecked
             }
-            checkBoxes[appInfo.packageName] = checkBox
+            checkBoxes[app.packageName] = checkBox
 
             setOnClickListener {
                 checkBox.isChecked = !checkBox.isChecked
@@ -254,7 +297,7 @@ class TunnelAppsActivity : AppCompatActivity() {
             }
             checkBox.setOnCheckedChangeListener { _, _ -> updateCount() }
 
-            addView(icon)
+            addView(iconView)
             addView(labelColumn)
             addView(checkBox)
         }
@@ -263,7 +306,6 @@ class TunnelAppsActivity : AppCompatActivity() {
     private fun saveAndFinish() {
         val allSelected = checkBoxes.values.all { it.isChecked }
         if (allSelected) {
-            // اگه همه انتخابن، همون حالت پیش‌فرض (بدون محدودیت) رو ذخیره کن
             TunnelAppsStore.clearSelection(this)
         } else {
             val selected = checkBoxes.filterValues { it.isChecked }.keys
