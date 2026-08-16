@@ -59,7 +59,7 @@ class MainActivity : AppCompatActivity() {
             val pending = PendingStatsStore.read(applicationContext)
             if (pending != null) {
                 if (pending.durationMs >= 30_000) {
-                    StatsReporter.send(pending.profileName, pending.sent, pending.lost)
+                    StatsReporter.send(pending.profileName, pending.sent, pending.lost, pending.operator)
                 }
                 PendingStatsStore.clear(applicationContext)
             }
