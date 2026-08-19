@@ -121,7 +121,6 @@ class TunnelAppsActivity : AppCompatActivity() {
         actionsRow.addView(actionButton("لغو همه") { setAll(false) })
         column.addView(actionsRow)
 
-        // استفاده از RecyclerView به جای ScrollView برای جلوگیری از مشکل عدم رندر در ۴۰۰+ برنامه
         adapter = AppsAdapter { updateCount() }
         recyclerView = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@TunnelAppsActivity)
@@ -251,10 +250,9 @@ class TunnelAppsActivity : AppCompatActivity() {
         finish()
     }
 
-    // آداپتور اختصاصی RecyclerView
     private inner class AppsAdapter(
         private val onItemCheckChanged: () -> Unit
-    ) : RecyclerView.Adapter<AppsAdapter.AppViewHolder>() {
+    ) : RecyclerView.Adapter<AppViewHolder>() {
 
         private val items = mutableListOf<AppModel>()
         private val selectedPackages = mutableSetOf<String>()
