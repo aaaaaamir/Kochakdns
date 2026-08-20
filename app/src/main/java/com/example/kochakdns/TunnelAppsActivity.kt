@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.Collator
 
-// بعد از رفع مشکل، false کن تا متن دیباگ نمایش داده نشود.
+// بعد از رفع مشکل، false کن.
 private const val DEBUG = true
 
 // ===================================================================
@@ -190,10 +190,6 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    /**
-     * فقط برنامه‌های دارای دسترسی اینترنت (مثل AppManagerUtil.loadNetworkAppList در v2rayNG).
-     * اگر همه برنامه‌ها را می‌خواهی، شرط checkPermission را حذف کن.
-     */
     private fun loadNetworkAppList(context: Context): List<AppInfo> {
         val pm = context.packageManager
         val result = mutableListOf<AppInfo>()
@@ -237,6 +233,7 @@ class TunnelAppsActivity : AppCompatActivity() {
     private lateinit var headerSpinner: ProgressBar
     private lateinit var countText: TextView
 
+    private var rootView: FrameLayout? = null
     private var debugShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -246,6 +243,8 @@ class TunnelAppsActivity : AppCompatActivity() {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
         }
+        rootView = root
+
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(
@@ -317,6 +316,8 @@ class TunnelAppsActivity : AppCompatActivity() {
         ))
 
         // ===== لیست برنامه‌ها =====
+        // ⚠️ بدون weight — ارتفاع صریح و ثابت برای تست.
+        // اصلاح‌گرِ پایین آن را به «ارتفاع صفحه − موقعیت لیست» به‌روز می‌کند.
         adapter = AppsAdapter { packageName -> viewModel.toggle(packageName) }
         recyclerView = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@TunnelAppsActivity)
@@ -327,59 +328,55 @@ class TunnelAppsActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#13131B"))
         }
         column.addView(recyclerView, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(500) // ارتفاع ثابت برای تست
         ))
 
         root.addView(column)
         setContentView(root)
 
-        // ===== تضمین ارتفاع لیست =====
-        // روی هر پاسِ Layout اجرا می‌شود؛ اگر لیست ۰ ارتفاع بگیرد،
-        // ارتفاع آن را مستقیماً از روی موقعیتش محاسبه و اعمال می‌کنیم
-        // (مستقل از weight/constraint که در این پروژه صفر برمی‌گردانند).
-        root.viewTreeObserver.addOnGlobalLayoutListener(layoutFixer)
+        // ===== اصلاح‌گر ارتفاع (روی هر پاس Layout اجرا می‌شود) =====
+        root.viewTreeObserver.addOnGlobalLayoutListener(listHeightFixer)
 
         viewModel.loadApps()
         observeViewModel()
     }
 
     override fun onDestroy() {
-        rootViewTreeObserverCleanup()
+        rootView?.viewTreeObserver?.removeOnGlobalLayoutListener(listHeightFixer)
+        rootView = null
         super.onDestroy()
     }
 
-    private fun rootViewTreeObserverCleanup() {
-        val root = recyclerView.parent as? View ?: return
-        // root خودش ریشه محتواست؛ لیسنر روی ریشه است
-        (root.parent as? View)?.let { it.viewTreeObserver.removeOnGlobalLayoutListener(layoutFixer) }
-        root.viewTreeObserver.removeOnGlobalLayoutListener(layoutFixer)
-    }
-
-    /** ارتفاع لیست را بر اساس موقعیت واقعی آن در والد محاسبه و تضمین می‌کند. */
-    private val layoutFixer = ViewTreeObserver.OnGlobalLayoutListener {
+    /**
+     * ارتفاع لیست را مستقیماً تعیین می‌کند:
+     *   ارتفاع لیست = ارتفاع ستون (صفحه) − موقعیت بالای لیست
+     * چون دیگر weight نداریم، LinearLayout این ارتفاع صریح را رد نمی‌کند.
+     */
+    private val listHeightFixer = ViewTreeObserver.OnGlobalLayoutListener {
         val parent = recyclerView.parent as? ViewGroup ?: return@OnGlobalLayoutListener
         val parentHeight = parent.height
         if (parentHeight <= 0) return@OnGlobalLayoutListener
 
         val listTop = recyclerView.top
         val desired = parentHeight - listTop
-        if (desired <= 0) return@OnGlobalLayoutListener
 
-        if (recyclerView.height != desired) {
-            val lp = recyclerView.layoutParams
-            lp.height = desired
+        // اگر محاسبه نامعتبر بود، حداقل یک ارتفاع تست (۵۰۰dp) بگذار تا هرگز صفر نشود
+        val fallback = dpToPx(500)
+        val target = if (desired > dpToPx(100)) desired else fallback
+
+        val lp = recyclerView.layoutParams
+        if (lp.height != target) {
+            lp.height = target
             recyclerView.layoutParams = lp
         }
 
-        showDebugIfNeeded(parentHeight)
-    }
-
-    private fun showDebugIfNeeded(parentHeight: Int) {
-        if (!DEBUG || debugShown) return
-        debugShown = true
-        countText.append(
-            "  •  ردیف=${adapter.itemCount} | والد=${parentHeight}px | بالای لیست=${recyclerView.top}px | ارتفاع لیست=${recyclerView.height}px"
-        )
+        if (DEBUG && !debugShown) {
+            debugShown = true
+            countText.append(
+                "  •  ردیف=${adapter.itemCount} | والد=${parentHeight}px | بالای لیست=${listTop}px | " +
+                        "هدف=${target}px | ارتفاع لیست=${recyclerView.height}px"
+            )
+        }
     }
 
     /** معادل collectAsStateWithLifecycle در Compose */
