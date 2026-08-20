@@ -188,45 +188,39 @@ class TunnelAppsActivity : AppCompatActivity() {
         headerSpinner.visibility = View.VISIBLE
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val pm = packageManager
+            try {
+                val pm = packageManager
+                val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
 
-            val apps = try {
-                pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            } catch (e: Exception) {
-                emptyList()
-            }
+                val selectedSet = try {
+                    TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
+                } catch (_: Exception) {
+                    null
+                }
 
-            val selectedSet = try {
-                TunnelAppsStore.getSelectedPackages(this@TunnelAppsActivity)
-            } catch (_: Exception) {
-                null
-            }
-
-            val sortedApps = apps.map { appInfo ->
-                Pair(appInfo, safeLabel(pm, appInfo))
-            }.sortedBy { it.second.lowercase() }
-
-            withContext(Dispatchers.Main) {
-                adapter.clear()
-            }
-
-            sortedApps.forEach { (appInfo, label) ->
-                val icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
-                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val appModel = AppModel(appInfo.packageName, label, icon, isSystem)
-                val isChecked = selectedSet?.contains(appModel.packageName) ?: true
+                // ساخت کل لیست یک‌باره روی رشته پس‌زمینه
+                val models = apps
+                    .map { appInfo ->
+                        val icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
+                        val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                        AppModel(appInfo.packageName, safeLabel(pm, appInfo), icon, isSystem)
+                    }
+                    .sortedBy { it.label.lowercase() }
+                    .map { it to (selectedSet?.contains(it.packageName) ?: true) }
 
                 withContext(Dispatchers.Main) {
-                    adapter.addApp(appModel, isChecked)
+                    adapter.submitAll(models)
+                    headerSpinner.visibility = View.GONE
                     updateCount()
+                    if (models.isEmpty()) {
+                        countText.text = "برنامه‌ای یافت نشد"
+                    }
                 }
-            }
-
-            withContext(Dispatchers.Main) {
-                headerSpinner.visibility = View.GONE
-
-                if (sortedApps.isEmpty()) {
-                    countText.text = "برنامه‌ای یافت نشد"
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    headerSpinner.visibility = View.GONE
+                    countText.text = "خطا در دریافت لیست برنامه‌ها"
+                    Toast.makeText(this@TunnelAppsActivity, "خطا: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -256,6 +250,16 @@ class TunnelAppsActivity : AppCompatActivity() {
 
         private val items = mutableListOf<AppModel>()
         private val selectedPackages = mutableSetOf<String>()
+
+        fun submitAll(newItems: List<Pair<AppModel, Boolean>>) {
+            items.clear()
+            selectedPackages.clear()
+            newItems.forEach { (app, checked) ->
+                items.add(app)
+                if (checked) selectedPackages.add(app.packageName)
+            }
+            notifyDataSetChanged()
+        }
 
         fun addApp(app: AppModel, isChecked: Boolean) {
             items.add(app)
