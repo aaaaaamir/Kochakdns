@@ -27,9 +27,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +39,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.Collator
 
+// برای دیباگ: وقتی true باشد، تعداد ردیف‌ها و ارتفاع لیست هم نمایش داده می‌شود.
+// بعد از رفع مشکل، false کن.
+private const val DEBUG = true
+
 // ===================================================================
 //  مدل داده یک برنامه (معادل dto/AppInfo در v2rayNG)
 // ===================================================================
@@ -51,7 +53,7 @@ data class AppInfo(
 )
 
 // ===================================================================
-//  آیتم نمایشی هر ردیف (معادل AppListItem + checked در نسخه Compose)
+//  آیتم نمایشی هر ردیف
 // ===================================================================
 private data class AppItem(
     val app: AppInfo,
@@ -63,31 +65,24 @@ private data class AppItem(
 // ===================================================================
 class TunnelAppsViewModel(application: Application) : AndroidViewModel(application) {
 
-    // وضعیت بارگذاری
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // پیام خطا (یک‌بار مصرف؛ Activity بعد از نمایش clearError می‌کند)
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    // کل لیست برنامه‌ها (بدون فیلتر)
     private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
     val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
 
-    // برنامه‌های انتخاب‌شده (معادل blacklist در v2rayNG)
     private val _selectedPackages = MutableStateFlow<Set<String>>(emptySet())
     val selectedPackages: StateFlow<Set<String>> = _selectedPackages.asStateFlow()
 
-    // عبارت جستجو
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    // لیست نمایشی (فیلترشده)
     private val _displayedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val displayedApps: StateFlow<List<AppInfo>> = _displayedApps.asStateFlow()
 
-    // کش لیست کامل برای فیلتر (مثل appsAll در v2rayNG)
     private var appsAll: List<AppInfo>? = null
     private var isAppListLoading = false
 
@@ -104,7 +99,6 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
                 val list = withContext(Dispatchers.IO) { loadNetworkAppList(context) }
 
                 // null یعنی هنوز چیزی ذخیره نشده → پیش‌فرض: همه برنامه‌ها انتخاب باشند
-                // (همان منطق قدیمی: selectedSet?.contains(...) ?: true)
                 val stored = loadStoredSelection()
                 _selectedPackages.value = stored ?: list.map { it.packageName }.toSet()
 
@@ -154,12 +148,11 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         persistSelection(newSet)
     }
 
-    /** ذخیره فوری (مثل replaceBlacklist در v2rayNG که بلافاصله در MMKV می‌نویسد) */
+    /** ذخیره فوری (مثل replaceBlacklist در v2rayNG) */
     private fun persistSelection(newSet: Set<String>) {
         val context = getApplication<Application>()
         val all = appsAll
         if (all != null && newSet.containsAll(all.map { it.packageName })) {
-            // همه انتخاب شده = حالت پیش‌فرض (همان منطق saveAndFinish قدیمی)
             TunnelAppsStore.clearSelection(context)
         } else {
             TunnelAppsStore.saveSelectedPackages(context, newSet)
@@ -184,7 +177,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    /** مرتب‌سازی مثل v2rayNG: انتخاب‌شده‌ها اول، غیرسیستمی قبل از سیستمی، سپس حروف الفبا */
+    /** مرتب‌سازی مثل v2rayNG */
     private fun sortApps(apps: List<AppInfo>): List<AppInfo> {
         val collator = Collator.getInstance()
         val selected = _selectedPackages.value
@@ -202,8 +195,8 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * فقط برنامه‌های دارای دسترسی اینترنت (دقیقاً مثل AppManagerUtil.loadNetworkAppList در v2rayNG).
-     * اگر می‌خواهی همه برنامه‌ها نمایش داده شوند، کافیست شرط checkPermission را حذف کنی.
+     * فقط برنامه‌های دارای دسترسی اینترنت (مثل AppManagerUtil.loadNetworkAppList در v2rayNG).
+     * اگر همه برنامه‌ها را می‌خواهی، شرط checkPermission را حذف کن.
      */
     private fun loadNetworkAppList(context: Context): List<AppInfo> {
         val pm = context.packageManager
@@ -263,14 +256,12 @@ class TunnelAppsActivity : AppCompatActivity() {
             )
         }
 
-        // هدر
+        // ===== هدر =====
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(12), dpToPx(24), dpToPx(12), dpToPx(8))
         }
-
-        // دکمه بازگشت
         header.addView(TextView(this).apply {
             text = "←"
             textSize = 22f
@@ -280,8 +271,6 @@ class TunnelAppsActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { saveAndFinish() }
         })
-
-        // عنوان صفحه
         header.addView(TextView(this).apply {
             text = "برنامه‌های تونل شده"
             textSize = 18f
@@ -290,8 +279,6 @@ class TunnelAppsActivity : AppCompatActivity() {
             setPadding(dpToPx(8), 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-
-        // لودینگ دایره‌ای
         headerSpinner = ProgressBar(this).apply {
             layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
                 marginEnd = dpToPx(12)
@@ -302,19 +289,23 @@ class TunnelAppsActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         header.addView(headerSpinner)
+        // عرض کامل (قبلاً بدون LayoutParams صریح بود → WRAP_CONTENT می‌شد)
+        column.addView(header, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
 
-        column.addView(header)
-
-        // شمارنده برنامه‌ها
+        // ===== شمارنده =====
         countText = TextView(this).apply {
             text = "در حال دریافت لیست برنامه‌ها..."
             setTextColor(Color.parseColor("#888888"))
             textSize = 12f
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
-        column.addView(countText)
+        column.addView(countText, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
 
-        // دکمه‌های انتخاب همه / لغو همه
+        // ===== دکمه‌های انتخاب همه / لغو همه =====
         val actionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
@@ -324,14 +315,19 @@ class TunnelAppsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dpToPx(12), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         actionsRow.addView(actionButton("لغو همه") { viewModel.clearAll() })
-        column.addView(actionsRow)
+        column.addView(actionsRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
 
+        // ===== لیست برنامه‌ها =====
         adapter = AppsAdapter { packageName -> viewModel.toggle(packageName) }
         recyclerView = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@TunnelAppsActivity)
             adapter = this@TunnelAppsActivity.adapter
-            setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(24))
+            setPadding(dpToPx(16), dpToPx(4), dpToPx(16), dpToPx(24))
             clipToPadding = false
+            // پس‌زمینه کمی روشن‌تر از صفحه تا «ناحیه لیست» دیده شود (برای اطمینان از ارتفاع درست)
+            setBackgroundColor(Color.parseColor("#13131B"))
         }
         column.addView(recyclerView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
@@ -374,7 +370,7 @@ class TunnelAppsActivity : AppCompatActivity() {
             viewModel.clearError()
         }
 
-        adapter.submitList(state.items)
+        adapter.submit(state.items)
 
         val total = state.items.size
         val selected = state.items.count { it.checked }
@@ -382,6 +378,13 @@ class TunnelAppsActivity : AppCompatActivity() {
             state.loading && total == 0 -> "در حال دریافت لیست برنامه‌ها..."
             total == 0 -> "برنامه‌ای یافت نشد"
             else -> "$selected از $total برنامه انتخاب شده"
+        }
+
+        // ===== بخش موقت برای دیباگ (بعد از رفع مشکل حذف کن یا DEBUG را false کن) =====
+        if (DEBUG) {
+            recyclerView.post {
+                countText.append("  •  ردیف=${adapter.itemCount} ارتفاع لیست=${recyclerView.height}px")
+            }
         }
     }
 
@@ -391,7 +394,6 @@ class TunnelAppsActivity : AppCompatActivity() {
     }
 
     private fun saveAndFinish() {
-        // چون هر تغییر بلافاصله در ViewModel ذخیره می‌شود، فقط Toast و خروج
         Toast.makeText(this, "ذخیره شد", Toast.LENGTH_SHORT).show()
         finish()
     }
@@ -421,85 +423,95 @@ class TunnelAppsActivity : AppCompatActivity() {
 }
 
 // ===================================================================
-//  Adapter — معادل ListAdapter + DiffUtil = نسخه XML از items(key = ...) در Compose
+//  Adapter — ساده و قابل‌پیش‌بینی (بدون DiffUtil تا اشکال پنهانی نداشته باشد)
 // ===================================================================
 private class AppsAdapter(
     private val onToggle: (String) -> Unit
-) : ListAdapter<AppItem, AppsAdapter.AppViewHolder>(DIFF) {
+) : RecyclerView.Adapter<AppsAdapter.AppViewHolder>() {
+
+    private val items = mutableListOf<AppItem>()
+
+    fun submit(newItems: List<AppItem>) {
+        items.clear()
+        items.addAll(newItems)
+        notifyDataSetChanged()
+    }
 
     companion object {
-        private val DIFF = object : DiffUtil.ItemCallback<AppItem>() {
-            override fun areItemsTheSame(oldItem: AppItem, newItem: AppItem): Boolean =
-                oldItem.app.packageName == newItem.app.packageName
-
-            override fun areContentsTheSame(oldItem: AppItem, newItem: AppItem): Boolean =
-                oldItem == newItem
-        }
-
         private fun dp(context: Context, dp: Int): Int =
             (dp * context.resources.displayMetrics.density).toInt()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppViewHolder {
-        val rowView = LinearLayout(parent.context).apply {
+        val ctx = parent.context
+
+        // ردیف کارت — با حداقل ارتفاع و کنتراست واضح
+        val rowView = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(parent.context, 12), dp(parent.context, 10), dp(parent.context, 12), dp(parent.context, 10))
+            setPadding(dp(ctx, 16), dp(ctx, 12), dp(ctx, 12), dp(ctx, 12))
+            minimumHeight = dp(ctx, 60)
             layoutParams = RecyclerView.LayoutParams(
                 RecyclerView.LayoutParams.MATCH_PARENT,
                 RecyclerView.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(parent.context, 8)
+                bottomMargin = dp(ctx, 10)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#1A1A24"))
-                    cornerRadius = dp(parent.context, 8).toFloat()
+                    setColor(Color.parseColor("#262636"))
+                    cornerRadius = dp(ctx, 14).toFloat()
+                    setStroke(dp(ctx, 1), Color.parseColor("#3F3F5A"))
                 }
             }
             isClickable = true
             isFocusable = true
         }
 
-        // به جای آیکون، حرف اول اسم برنامه (v2rayNG هم آیکون را null پاس می‌دهد)
-        val monogram = TextView(parent.context).apply {
+        // حرف اول اسم برنامه به جای آیکون
+        val monogram = TextView(ctx).apply {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(dp(parent.context, 44), dp(parent.context, 44))
+            layoutParams = LinearLayout.LayoutParams(dp(ctx, 40), dp(ctx, 40))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#4C8DFF"))
-                    cornerRadius = dp(parent.context, 22).toFloat()
+                    cornerRadius = dp(ctx, 20).toFloat()
                 }
             }
         }
 
-        val labelColumn = LinearLayout(parent.context).apply {
+        val labelColumn = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(parent.context, 12)
-                marginEnd = dp(parent.context, 8)
+                marginStart = dp(ctx, 12)
+                marginEnd = dp(ctx, 8)
             }
         }
 
-        val titleText = TextView(parent.context).apply {
+        val titleText = TextView(ctx).apply {
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
         }
 
-        val systemText = TextView(parent.context).apply {
+        val systemText = TextView(ctx).apply {
             text = "سیستمی"
-            setTextColor(Color.parseColor("#666666"))
+            setTextColor(Color.parseColor("#8A8A9A"))
             textSize = 10f
-            setPadding(0, dp(parent.context, 2), 0, 0)
+            setPadding(0, dp(ctx, 2), 0, 0)
         }
 
         labelColumn.addView(titleText)
         labelColumn.addView(systemText)
 
-        val checkBox = CheckBox(parent.context)
+        val checkBox = CheckBox(ctx).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                buttonTintList = ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
+            }
+        }
 
         rowView.addView(monogram)
         rowView.addView(labelColumn)
@@ -509,7 +521,7 @@ private class AppsAdapter(
     }
 
     override fun onBindViewHolder(holder: AppViewHolder, position: Int) {
-        val item = getItem(position)
+        val item = items[position]
         val app = item.app
 
         holder.monogram.text = if (app.appName.isNotEmpty()) app.appName.take(1).uppercase() else "؟"
@@ -522,6 +534,8 @@ private class AppsAdapter(
         holder.itemView.setOnClickListener { onToggle(app.packageName) }
         holder.checkBox.setOnCheckedChangeListener { _, _ -> onToggle(app.packageName) }
     }
+
+    override fun getItemCount(): Int = items.size
 
     class AppViewHolder(
         itemView: View,
