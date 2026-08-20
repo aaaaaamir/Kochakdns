@@ -14,10 +14,11 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.CheckBox
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.RelativeLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -39,8 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.Collator
 
-// برای دیباگ: وقتی true باشد، تعداد ردیف‌ها و ارتفاع لیست هم نمایش داده می‌شود.
-// بعد از رفع مشکل، false کن.
+// برای دیباگ: وقتی true باشد، تعداد ردیف‌ها و ارتفاع واقعی لیست (بعد از Layout) نمایش داده می‌شود.
 private const val DEBUG = true
 
 // ===================================================================
@@ -228,7 +228,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
 }
 
 // ===================================================================
-//  Activity — معادل PerAppProxyActivity در v2rayNG
+//  Activity — چیدمان با RelativeLayout (بدون weight تا ارتفاع لیست قطعاً صفر نشود)
 // ===================================================================
 class TunnelAppsActivity : AppCompatActivity() {
 
@@ -245,19 +245,13 @@ class TunnelAppsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
 
-        val root = FrameLayout(this).apply {
+        val root = RelativeLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
-        }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
         }
 
         // ===== هدر =====
         val header = LinearLayout(this).apply {
+            id = View.generateViewId()
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dpToPx(12), dpToPx(24), dpToPx(12), dpToPx(8))
@@ -289,24 +283,30 @@ class TunnelAppsActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         header.addView(headerSpinner)
-        // عرض کامل (قبلاً بدون LayoutParams صریح بود → WRAP_CONTENT می‌شد)
-        column.addView(header, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
+        root.addView(header, RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            addRule(RelativeLayout.ALIGN_PARENT_TOP)
+            addRule(RelativeLayout.ALIGN_PARENT_START)
+        })
 
         // ===== شمارنده =====
         countText = TextView(this).apply {
+            id = View.generateViewId()
             text = "در حال دریافت لیست برنامه‌ها..."
             setTextColor(Color.parseColor("#888888"))
             textSize = 12f
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
-        column.addView(countText, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
+        root.addView(countText, RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            addRule(RelativeLayout.BELOW, header.id)
+        })
 
         // ===== دکمه‌های انتخاب همه / لغو همه =====
         val actionsRow = LinearLayout(this).apply {
+            id = View.generateViewId()
             orientation = LinearLayout.HORIZONTAL
             setPadding(dpToPx(16), 0, dpToPx(16), dpToPx(12))
         }
@@ -315,25 +315,30 @@ class TunnelAppsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dpToPx(12), LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         actionsRow.addView(actionButton("لغو همه") { viewModel.clearAll() })
-        column.addView(actionsRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
+        root.addView(actionsRow, RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            addRule(RelativeLayout.BELOW, countText.id)
+        })
 
         // ===== لیست برنامه‌ها =====
+        // ارتفاع آن از «زیر دکمه‌ها» تا «ته صفحه» توسط RelativeLayout تضمین می‌شود.
         adapter = AppsAdapter { packageName -> viewModel.toggle(packageName) }
         recyclerView = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@TunnelAppsActivity)
             adapter = this@TunnelAppsActivity.adapter
+            setHasFixedSize(true)
             setPadding(dpToPx(16), dpToPx(4), dpToPx(16), dpToPx(24))
             clipToPadding = false
-            // پس‌زمینه کمی روشن‌تر از صفحه تا «ناحیه لیست» دیده شود (برای اطمینان از ارتفاع درست)
             setBackgroundColor(Color.parseColor("#13131B"))
         }
-        column.addView(recyclerView, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
+        root.addView(recyclerView, RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT
+        ).apply {
+            addRule(RelativeLayout.BELOW, actionsRow.id)
+            addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+        })
 
-        root.addView(column)
         setContentView(root)
 
         viewModel.loadApps()
@@ -380,11 +385,18 @@ class TunnelAppsActivity : AppCompatActivity() {
             else -> "$selected از $total برنامه انتخاب شده"
         }
 
-        // ===== بخش موقت برای دیباگ (بعد از رفع مشکل حذف کن یا DEBUG را false کن) =====
+        // ===== دیباگ موقت: خواندن ارتفاع واقعی بعد از اتمام Layout =====
         if (DEBUG) {
-            recyclerView.post {
-                countText.append("  •  ردیف=${adapter.itemCount} ارتفاع لیست=${recyclerView.height}px")
-            }
+            recyclerView.viewTreeObserver.addOnGlobalLayoutListener(
+                object : ViewTreeObserver.OnGlobalLayoutListener {
+                    override fun onGlobalLayout() {
+                        recyclerView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                        countText.append(
+                            "  •  ردیف=${adapter.itemCount} ارتفاع لیست=${recyclerView.height}px"
+                        )
+                    }
+                }
+            )
         }
     }
 
@@ -423,7 +435,7 @@ class TunnelAppsActivity : AppCompatActivity() {
 }
 
 // ===================================================================
-//  Adapter — ساده و قابل‌پیش‌بینی (بدون DiffUtil تا اشکال پنهانی نداشته باشد)
+//  Adapter — ساده و قابل‌پیش‌بینی
 // ===================================================================
 private class AppsAdapter(
     private val onToggle: (String) -> Unit
@@ -445,7 +457,7 @@ private class AppsAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppViewHolder {
         val ctx = parent.context
 
-        // ردیف کارت — با حداقل ارتفاع و کنتراست واضح
+        // ردیف کارت — کنتراست واضح + حداقل ارتفاع
         val rowView = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
