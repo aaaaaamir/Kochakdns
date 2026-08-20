@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-37:/values-pt-rPT/values-pt-rPT.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-38:/values-pt-rPT/values-pt-rPT.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/res/values-pt-rPT/values-pt-rPT.xml",

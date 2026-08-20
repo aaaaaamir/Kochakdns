@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-37:/values-in/values-in.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-38:/values-in/values-in.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/res/values-in/values-in.xml",

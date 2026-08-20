@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-37:/values-h480dp-land-v13/values-h480dp-land-v13.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-38:/values-h480dp-land-v13/values-h480dp-land-v13.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/res/values-h480dp-land-v13/values-h480dp-land-v13.xml",

@@ -52,10 +52,10 @@
       externalAnnotations="annotations.zip"
       proguardRules="proguard.txt"/>
   <library
-      name="androidx.viewpager2:viewpager2:1.0.0@aar"
-      jars="/home/vscode/.gradle/caches/8.10.2/transforms/0d98343fcd790d09a5550d368026c4dc/transformed/jetified-viewpager2-1.0.0/jars/classes.jar"
-      resolved="androidx.viewpager2:viewpager2:1.0.0"
-      folder="/home/vscode/.gradle/caches/8.10.2/transforms/0d98343fcd790d09a5550d368026c4dc/transformed/jetified-viewpager2-1.0.0"
+      name="androidx.viewpager2:viewpager2:1.1.0-beta02@aar"
+      jars="/home/vscode/.gradle/caches/8.10.2/transforms/ed219ce6fa106ba193e174ca191a847d/transformed/jetified-viewpager2-1.1.0-beta02/jars/classes.jar"
+      resolved="androidx.viewpager2:viewpager2:1.1.0-beta02"
+      folder="/home/vscode/.gradle/caches/8.10.2/transforms/ed219ce6fa106ba193e174ca191a847d/transformed/jetified-viewpager2-1.1.0-beta02"
       manifest="AndroidManifest.xml"
       resFolder="res"
       assetsFolder="assets"
@@ -238,6 +238,19 @@
       externalAnnotations="annotations.zip"
       proguardRules="proguard.txt"/>
   <library
+      name="androidx.recyclerview:recyclerview:1.3.2@aar"
+      jars="/home/vscode/.gradle/caches/8.10.2/transforms/382a4f6dd3c47671ff953545b87860e4/transformed/recyclerview-1.3.2/jars/classes.jar"
+      resolved="androidx.recyclerview:recyclerview:1.3.2"
+      folder="/home/vscode/.gradle/caches/8.10.2/transforms/382a4f6dd3c47671ff953545b87860e4/transformed/recyclerview-1.3.2"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
+  <library
       name="androidx.drawerlayout:drawerlayout:1.1.1@aar"
       jars="/home/vscode/.gradle/caches/8.10.2/transforms/3fe23684b4c07ea5c5a9ef229fc341a2/transformed/drawerlayout-1.1.1/jars/classes.jar"
       resolved="androidx.drawerlayout:drawerlayout:1.1.1"
@@ -255,19 +268,6 @@
       jars="/home/vscode/.gradle/caches/8.10.2/transforms/a7e149ec9bb2731bb62b3c688df5a215/transformed/coordinatorlayout-1.1.0/jars/classes.jar"
       resolved="androidx.coordinatorlayout:coordinatorlayout:1.1.0"
       folder="/home/vscode/.gradle/caches/8.10.2/transforms/a7e149ec9bb2731bb62b3c688df5a215/transformed/coordinatorlayout-1.1.0"
-      manifest="AndroidManifest.xml"
-      resFolder="res"
-      assetsFolder="assets"
-      lintJar="lint.jar"
-      publicResources="public.txt"
-      symbolFile="R.txt"
-      externalAnnotations="annotations.zip"
-      proguardRules="proguard.txt"/>
-  <library
-      name="androidx.recyclerview:recyclerview:1.1.0@aar"
-      jars="/home/vscode/.gradle/caches/8.10.2/transforms/3f77b849f0501f51a29cc1348eae0cdc/transformed/recyclerview-1.1.0/jars/classes.jar"
-      resolved="androidx.recyclerview:recyclerview:1.1.0"
-      folder="/home/vscode/.gradle/caches/8.10.2/transforms/3f77b849f0501f51a29cc1348eae0cdc/transformed/recyclerview-1.1.0"
       manifest="AndroidManifest.xml"
       resFolder="res"
       assetsFolder="assets"
@@ -639,6 +639,19 @@
       name="androidx.resourceinspection:resourceinspection-annotation:1.0.1@jar"
       jars="/home/vscode/.gradle/caches/modules-2/files-2.1/androidx.resourceinspection/resourceinspection-annotation/1.0.1/8c21f8ff5d96d5d52c948707f7e4d6ca6773feef/resourceinspection-annotation-1.0.1.jar"
       resolved="androidx.resourceinspection:resourceinspection-annotation:1.0.1"/>
+  <library
+      name="androidx.customview:customview-poolingcontainer:1.0.0@aar"
+      jars="/home/vscode/.gradle/caches/8.10.2/transforms/20c2765ca2540282e31149018f5b5529/transformed/jetified-customview-poolingcontainer-1.0.0/jars/classes.jar"
+      resolved="androidx.customview:customview-poolingcontainer:1.0.0"
+      folder="/home/vscode/.gradle/caches/8.10.2/transforms/20c2765ca2540282e31149018f5b5529/transformed/jetified-customview-poolingcontainer-1.0.0"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
   <library
       name="androidx.emoji2:emoji2-views-helper:1.3.0@aar"
       jars="/home/vscode/.gradle/caches/8.10.2/transforms/9fbcb28802196af600071fe5d91a38a9/transformed/jetified-emoji2-views-helper-1.3.0/jars/classes.jar"
