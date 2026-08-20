@@ -3,19 +3,19 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ========== مجوزهای ضروری ========== -->
-    
+
     <!-- دسترسی به اینترنت -->
     <uses-permission android:name="android.permission.INTERNET" />
-    
+
     <!-- بررسی وضعیت شبکه -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
+
     <!-- برای اجرای VPN به صورت Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    
+
     <!-- برای اندروید 14+ (API 34+) - نوع Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    
+
     <!-- برای اندروید 13+ (API 33+) - نمایش نوتیفیکیشن VPN -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -23,6 +23,15 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
+    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
