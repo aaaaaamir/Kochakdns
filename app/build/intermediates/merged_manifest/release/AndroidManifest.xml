@@ -29,6 +29,16 @@
     <!-- برای اندروید 11+ (API 30+) - جهت نمایش کامل لیست برنامه‌ها در TunnelAppsActivity -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
+    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <permission
         android:name="com.example.kochakdns.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
