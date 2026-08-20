@@ -95,7 +95,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
     fun loadApps() {
         if (appsAll != null || isAppListLoading) return
 
-        val context = getApplication()
+        val context = getApplication<Application>()
         isAppListLoading = true
         _isLoading.value = true
 
@@ -156,7 +156,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
 
     /** ذخیره فوری (مثل replaceBlacklist در v2rayNG که بلافاصله در MMKV می‌نویسد) */
     private fun persistSelection(newSet: Set<String>) {
-        val context = getApplication()
+        val context = getApplication<Application>()
         val all = appsAll
         if (all != null && newSet.containsAll(all.map { it.packageName })) {
             // همه انتخاب شده = حالت پیش‌فرض (همان منطق saveAndFinish قدیمی)
@@ -169,7 +169,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
     /** مقدار ذخیره‌شده از استور؛ null یعنی هنوز ذخیره‌ای انجام نشده */
     private fun loadStoredSelection(): Set<String>? {
         return try {
-            TunnelAppsStore.getSelectedPackages(getApplication())
+            TunnelAppsStore.getSelectedPackages(getApplication<Application>())
         } catch (e: Exception) {
             null
         }
