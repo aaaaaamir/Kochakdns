@@ -5,11 +5,16 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -27,22 +32,37 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,30 +85,29 @@ import java.text.Collator
 data class AppInfo(
     val packageName: String,
     val appName: String,
-    val isSystemApp: Boolean
+    val isSystemApp: Boolean,
+    val icon: ImageBitmap? = null
 )
 
 // ===================================================================
 //  ViewModel — معادل PerAppProxyViewModel در v2rayNG
-//  کل state با StateFlow نگهداری می‌شود و UI فقط آن را می‌خواند.
 // ===================================================================
 class TunnelAppsViewModel(application: Application) : AndroidViewModel(application) {
 
-    // برنامه‌های انتخاب‌شده (معادل blacklist در v2rayNG)
     private val _selectedPackages = MutableStateFlow<Set<String>>(emptySet())
     val selectedPackages: StateFlow<Set<String>> = _selectedPackages.asStateFlow()
 
-    // لیست نمایشی
     private val _displayedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val displayedApps: StateFlow<List<AppInfo>> = _displayedApps.asStateFlow()
 
-    // وضعیت بارگذاری
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // پیام خطا (یک‌بار مصرف)
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
 
     private var appsAll: List<AppInfo>? = null
     private var isAppListLoading = false
@@ -103,18 +122,22 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
 
         viewModelScope.launch {
             try {
-                val apps = withContext(Dispatchers.IO) {
-                    val list = loadNetworkAppList(context)
+                // ۱) اول لیست سریع (بدون آیکون) بالا می‌آید
+                val list = withContext(Dispatchers.IO) {
+                    val raw = loadNetworkAppList(context)
 
                     // null یعنی هنوز چیزی ذخیره نشده → پیش‌فرض: همه برنامه‌ها انتخاب باشند
                     val stored = loadStoredSelection()
-                    val selection = stored ?: list.map { it.packageName }.toSet()
+                    val selection = stored ?: raw.map { it.packageName }.toSet()
                     _selectedPackages.value = selection
 
-                    sortApps(list, selection)
+                    sortApps(raw, selection)
                 }
-                appsAll = apps
-                _displayedApps.value = apps
+                appsAll = list
+                _displayedApps.value = applyFilter(_query.value)
+
+                // ۲) بعد از نمایش لیست، آیکون‌ها در پس‌زمینه لود و به‌تدریج نمایش داده می‌شوند
+                loadIcons(context)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -128,6 +151,11 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    fun filterApps(query: String) {
+        _query.value = query
+        _displayedApps.value = applyFilter(query)
     }
 
     fun toggle(packageName: String) {
@@ -152,24 +180,66 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         persistSelection(newSelection)
     }
 
-    /** ذخیره فوری (مثل replaceBlacklist در v2rayNG که بلافاصله در MMKV می‌نویسد) */
+    /** ذخیره فوری (مثل replaceBlacklist در v2rayNG) */
     private fun persistSelection(newSelection: Set<String>) {
         val context = getApplication<Application>()
         val all = appsAll
         if (all != null && newSelection.containsAll(all.map { it.packageName })) {
-            // همه انتخاب شده = حالت پیش‌فرض (همان منطق saveAndFinish قدیمی)
             TunnelAppsStore.clearSelection(context)
         } else {
             TunnelAppsStore.saveSelectedPackages(context, newSelection)
         }
     }
 
-    /** مقدار ذخیره‌شده از استور؛ null یعنی هنوز ذخیره‌ای انجام نشده */
     private fun loadStoredSelection(): Set<String>? {
         return try {
             TunnelAppsStore.getSelectedPackages(getApplication<Application>())
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** بارگذاری تدریجی آیکون‌ها در پس‌زمینه (اختیاری؛ خطا نادیده گرفته می‌شود) */
+    private fun loadIcons(context: Context) {
+        val snapshot = appsAll ?: return
+        viewModelScope.launch {
+            try {
+                val updated = withContext(Dispatchers.IO) {
+                    snapshot.map { app ->
+                        if (app.icon != null) {
+                            app
+                        } else {
+                            val icon = loadIcon(context, app.packageName)
+                            if (icon != null) app.copy(icon = icon) else app
+                        }
+                    }
+                }
+                appsAll = updated
+                _displayedApps.value = applyFilter(_query.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // آیکون‌ها اختیاری‌اند؛ خطا نادیده گرفته می‌شود
+            }
+        }
+    }
+
+    private fun loadIcon(context: Context, packageName: String): ImageBitmap? {
+        return try {
+            val sizePx = (48 * context.resources.displayMetrics.density).toInt()
+            val drawable = context.packageManager.getApplicationIcon(packageName)
+            drawableToBitmap(drawable, sizePx).asImageBitmap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun applyFilter(query: String): List<AppInfo> {
+        val apps = appsAll ?: return emptyList()
+        if (query.isEmpty()) return apps
+        return apps.filter {
+            it.appName.contains(query, ignoreCase = true) ||
+                    it.packageName.contains(query, ignoreCase = true)
         }
     }
 
@@ -222,6 +292,19 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
     }
 }
 
+/** تبدیل Drawable به Bitmap (برای نمایش آیکون برنامه‌ها در Compose) */
+private fun drawableToBitmap(drawable: Drawable, sizePx: Int): Bitmap {
+    val current = (drawable as? BitmapDrawable)?.bitmap
+    if (current != null && current.width > 0 && current.height > 0) {
+        return Bitmap.createScaledBitmap(current, sizePx, sizePx, true)
+    }
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, sizePx, sizePx)
+    drawable.draw(canvas)
+    return bitmap
+}
+
 // ===================================================================
 //  Activity — معادل PerAppProxyActivity در v2rayNG
 // ===================================================================
@@ -242,6 +325,7 @@ class TunnelAppsActivity : AppCompatActivity() {
                 val selected by viewModel.selectedPackages.collectAsStateWithLifecycle()
                 val loading by viewModel.isLoading.collectAsStateWithLifecycle()
                 val error by viewModel.errorMessage.collectAsStateWithLifecycle()
+                val query by viewModel.query.collectAsStateWithLifecycle()
 
                 LaunchedEffect(error) {
                     error?.let {
@@ -254,6 +338,8 @@ class TunnelAppsActivity : AppCompatActivity() {
                     apps = apps,
                     selected = selected,
                     loading = loading,
+                    query = query,
+                    onQueryChange = { viewModel.filterApps(it) },
                     onBack = { finish() },
                     onToggle = { viewModel.toggle(it) },
                     onSelectAll = { viewModel.selectAll() },
@@ -265,7 +351,7 @@ class TunnelAppsActivity : AppCompatActivity() {
 }
 
 // ===================================================================
-//  تم دارک (رنگ‌های هماهنگ با بقیه برنامه)
+//  تم دارک (مشکی، خاکستری، سفید + تاکید آبی برای موارد تعاملی)
 // ===================================================================
 private val KochakColors = darkColorScheme(
     primary = Color(0xFF4C8DFF),
@@ -289,12 +375,23 @@ private fun TunnelAppsScreen(
     apps: List<AppInfo>,
     selected: Set<String>,
     loading: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onBack: () -> Unit,
     onToggle: (String) -> Unit,
     onSelectAll: () -> Unit,
     onClearAll: () -> Unit
 ) {
     val listState = rememberLazyListState()
+    var searchActive by rememberSaveable { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(searchActive) {
+        if (searchActive) {
+            focusRequester.requestFocus()
+        }
+    }
+
     val total = apps.size
     val selectedCount = apps.count { it.packageName in selected }
 
@@ -308,34 +405,81 @@ private fun TunnelAppsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "←",
-                color = Color.White,
-                fontSize = 22.sp,
-                modifier = Modifier
-                    .clickable { onBack() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            )
-            Text(
-                text = "برنامه‌های تونل شده",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 8.dp)
-            )
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .padding(end = 12.dp),
-                    color = Color(0xFF4C8DFF),
-                    strokeWidth = 2.dp
+            // دکمه بازگشت (آیکون)
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Rounded.ArrowBack,
+                    contentDescription = "بازگشت",
+                    tint = Color.White
                 )
+            }
+
+            if (searchActive) {
+                // فیلد جستجو
+                TextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    singleLine = true,
+                    placeholder = {
+                        Text("جستجو در برنامه‌ها...", color = Color(0xFF888888), fontSize = 14.sp)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFF888888))
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { onQueryChange("") }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "پاک کردن", tint = Color(0xFF888888))
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = TextFieldDefaults.textFieldColors(
+                        containerColor = Color(0xFF1E1E2E),
+                        cursorColor = Color(0xFF4C8DFF),
+                        textColor = Color.White,
+                        placeholderColor = Color(0xFF888888),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
+                )
+                // بستن جستجو
+                IconButton(onClick = {
+                    onQueryChange("")
+                    searchActive = false
+                }) {
+                    Icon(Icons.Rounded.Close, contentDescription = "بستن جستجو", tint = Color.White)
+                }
+            } else {
+                // عنوان صفحه
+                Text(
+                    text = "برنامه‌های تونل شده",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp)
+                )
+                // لودینگ
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color(0xFF4C8DFF),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                // دکمه جستجو (آیکون)
+                IconButton(onClick = { searchActive = true }) {
+                    Icon(Icons.Rounded.Search, contentDescription = "جستجو", tint = Color.White)
+                }
             }
         }
 
@@ -417,20 +561,32 @@ private fun AppRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // حرف اول اسم برنامه به جای آیکون
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4C8DFF)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (app.appName.isNotEmpty()) app.appName.take(1).uppercase() else "؟",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+            val icon = app.icon
+            if (icon != null) {
+                // آیکون واقعی برنامه (با گوشه‌های گرد)
+                Image(
+                    bitmap = icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
                 )
+            } else {
+                // جای‌نگهدار: حرف اول اسم برنامه (تا وقتی آیکون لود شود)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF4C8DFF)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (app.appName.isNotEmpty()) app.appName.take(1).uppercase() else "؟",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Column(
