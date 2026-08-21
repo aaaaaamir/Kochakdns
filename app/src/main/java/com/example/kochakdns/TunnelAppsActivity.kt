@@ -206,11 +206,12 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         val context = getApplication<Application>()
         val all = appsAll
         val allSelected = all != null && newSelection.containsAll(all.map { it.packageName })
-        // خالی یا «همه انتخاب شده» = حالت پیش‌فرض «همه برنامه‌ها تونل شوند»؛
-        // یک انتخابِ خالی نباید باعث قطع تونلِ همه‌ی برنامه‌ها شود.
-        if (allSelected || newSelection.isEmpty()) {
+        if (allSelected) {
+            // «همه انتخاب شده» = حالت پیش‌فرض (بدون انتخاب سفارشی)
             TunnelAppsStore.clearSelection(context)
         } else {
+            // انتخابِ خالی هم یک حالت معتبر و متمایز است («هیچ برنامه‌ای انتخاب نشده»)
+            // و باید ذخیره شود تا بعد از بازگشتن، دوباره همه تیک‌دار نشوند.
             TunnelAppsStore.saveSelectedPackages(context, newSelection)
         }
     }
