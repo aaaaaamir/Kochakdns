@@ -98,7 +98,15 @@ class MyVpnService : VpnService() {
         // برنامه‌های انتخاب‌شده با TunnelEngine واقعاً relay می‌شن (اینترنت
         // کامل دارن)، بقیه هیچ‌جا relay نمی‌شن یعنی عملاً مسدودن.
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
-        fullCaptureMode = AppSettings.isBlockNonTunneledEnabled(this) && selectedPackages != null
+        // این حالت فقط از اندروید ۱۰ (API 29) به بالا معنا داره، چون تشخیص
+        // مالک هر flow (برای این‌که بفهمیم relay کنیم یا نه) با یک API که
+        // فقط از همون نسخه به بعد وجود داره انجام می‌شه. روی نسخه‌های
+        // قدیمی‌تر، چون نمی‌تونیم هیچ‌کس رو با اطمینان تشخیص بدیم و برای
+        // امنیت «مسدود» رو پیش‌فرض گرفتیم، فعال کردنش همه رو مسدود می‌کرد —
+        // برای همین اونجا کلاً غیرفعالش می‌کنیم و به حالت عادی برمی‌گردیم.
+        fullCaptureMode = AppSettings.isBlockNonTunneledEnabled(this) &&
+            selectedPackages != null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
