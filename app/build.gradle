@@ -51,6 +51,14 @@ android {
 
     buildFeatures {
         viewBinding true
+        // ===== Jetpack Compose =====
+        compose true
+    }
+
+    // ===== کامپایلر Compose — هماهنگ با Kotlin 1.8.10 (که در build.gradle ریشه است) =====
+    // Kotlin 1.8.10 → Compose Compiler 1.4.1
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.4.1'
     }
 }
 
@@ -61,25 +69,32 @@ dependencies {
     implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // ========== RecyclerView (برای ListAdapter و DiffUtil در TunnelAppsActivity) ==========
-    implementation 'androidx.recyclerview:recyclerview:1.3.2'
-
     // ========== Coroutines (برای async/await در Kotlin) ==========
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
 
     // ========== Lifecycle (برای lifecycleScope و viewModelScope) ==========
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2'
 
     // ========== DataStore (برای ذخیره DNS Config) ==========
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
 
-    // ========== Fragment (اگر از Fragment استفاده می‌کنید) ==========
+    // ========== Fragment ==========
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
     // ========== Networking (برای DoH و resolve دستی DNS در DnsSyncManager) ==========
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // ========== Jetpack Compose (مثل v2rayNG) ==========
+    // BOM هم‌دوره با Kotlin 1.8 (Compose 1.5.4) برای جلوگیری از ناسازگاری metadata
+    implementation platform('androidx.compose:compose-bom:2023.10.01')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.activity:activity-compose:1.7.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.6.2'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
 
     // ========== Testing ==========
     testImplementation 'junit:junit:4.13.2'
