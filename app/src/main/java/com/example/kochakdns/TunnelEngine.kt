@@ -41,6 +41,7 @@ class TunnelEngine(
 ) {
     private val udpSessions = ConcurrentHashMap<String, UdpSession>()
     private val tcpSessions = ConcurrentHashMap<String, TcpSession>()
+    private val ownershipDecisions = ConcurrentHashMap<String, Boolean>()
     private val outputMutex = Mutex()
 
     private suspend fun writePacket(packet: ByteArray) {
@@ -58,6 +59,7 @@ class TunnelEngine(
         udpSessions.clear()
         tcpSessions.values.forEach { try { it.socket?.close() } catch (_: Exception) {} }
         tcpSessions.clear()
+        ownershipDecisions.clear()
     }
 
     // ============================== UDP ==============================
@@ -73,9 +75,9 @@ class TunnelEngine(
             val udpLen = ((data[ihl + 4].toInt() and 0xFF) shl 8) or (data[ihl + 5].toInt() and 0xFF)
             val payload = data.copyOfRange(ihl + 8, ihl + udpLen)
 
-            if (!ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
-
             val key = "v4:$srcIp:$srcPort:$dstIp:$dstPort"
+            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
+
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
                 vpnService.protect(socket)
@@ -99,9 +101,9 @@ class TunnelEngine(
             val udpLen = ((data[44].toInt() and 0xFF) shl 8) or (data[45].toInt() and 0xFF)
             val payload = data.copyOfRange(48, 40 + udpLen)
 
-            if (!ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
-
             val key = "v6:$srcIp:$srcPort:$dstIp:$dstPort"
+            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
+
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
                 vpnService.protect(socket)
@@ -195,8 +197,6 @@ class TunnelEngine(
         val payloadStart = headerOffset + dataOffsetBytes
         val payload = if (payloadStart < data.size) data.copyOfRange(payloadStart, data.size) else ByteArray(0)
 
-        if (!ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = false)) return
-
         val key = "${if (isV6) "v6" else "v4"}:$srcIp:$srcPort:$dstIp:$dstPort"
 
         if (isRst) {
@@ -205,6 +205,10 @@ class TunnelEngine(
         }
 
         if (isSyn && !isAck) {
+            // فقط همین‌جا، یک بار برای کل عمر این اتصال، مالکیت چک می‌شه —
+            // نه روی هر پکت (که هم اضافه‌کاریه هم به خطای گذرای API حساس‌تره).
+            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = false)) return
+
             // شروع یک اتصال جدید
             val session = TcpSession(key, srcIp, srcPort, dstIp, dstPort, clientSeq = seq + 1, ourSeq = (100000..900000).random().toLong())
             tcpSessions[key] = session
@@ -227,6 +231,8 @@ class TunnelEngine(
             return
         }
 
+        // اگه اینجا رسیدیم و هیچ سشنی برای این key نیست، یعنی یا مسدود بوده
+        // (SYNـش رد شده) یا اتصالی در جریان نبوده؛ در هر دو حالت نادیده می‌گیریم.
         val session = tcpSessions[key] ?: return
 
         if (isFin) {
@@ -297,19 +303,26 @@ class TunnelEngine(
 
     /**
      * تعیین می‌کنه آیا مالک این flow (بر اساس UID) اجازه‌ی عبور داره یا نه.
-     * فقط API 29+ پشتیبانی می‌شه؛ روی نسخه‌های قدیمی‌تر یا در صورت خطا، برای
-     * امنیت (که یک برنامه‌ی مجاز اشتباهی مسدود نشه) اجازه می‌دیم رد بشه.
+     * fail-closed: هر جا نتونستیم مطمئن بشیم (خطا، UID نامعلوم، یا حتی
+     * نسخه‌ی اندروید قدیمی)، به‌جای رد کردن، مسدود می‌کنیم — چون این یک
+     * قابلیت مسدودسازیه، اجازه دادن اشتباهی خیلی بدتر از مسدود کردن
+     * اشتباهیه (که با retry خودکار اپ‌ها معمولاً خودش حل می‌شه).
      */
+    /** تصمیم مالکیت هر flow رو فقط یک‌بار (موقع ساخته شدنش) می‌گیره و کش می‌کنه. */
+    private fun isAllowedCached(key: String, srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, isUdp: Boolean): Boolean {
+        return ownershipDecisions.getOrPut(key) { ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp) }
+    }
+
     private fun ownerAllowed(srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, isUdp: Boolean): Boolean {
-        if (android.os.Build.VERSION.SDK_INT < 29) return true
+        if (android.os.Build.VERSION.SDK_INT < 29) return false
         return try {
             val cm = vpnService.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val proto = if (isUdp) android.system.OsConstants.IPPROTO_UDP else android.system.OsConstants.IPPROTO_TCP
             val uid = cm.getConnectionOwnerUid(proto, InetSocketAddress(srcIp, srcPort), InetSocketAddress(dstIp, dstPort))
-            if (uid <= 0) return true // نتونستیم تشخیص بدیم؛ برای امنیت اجازه می‌دیم
+            if (uid <= 0) return false // نتونستیم تشخیص بدیم؛ مسدود می‌کنیم
             shouldForward(uid)
         } catch (_: Exception) {
-            true
+            false
         }
     }
 
