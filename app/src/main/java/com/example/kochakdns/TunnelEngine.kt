@@ -76,7 +76,7 @@ class TunnelEngine(
             val payload = data.copyOfRange(ihl + 8, ihl + udpLen)
 
             val key = "v4:$srcIp:$srcPort:$dstIp:$dstPort"
-            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
+            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) return
 
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
@@ -102,7 +102,7 @@ class TunnelEngine(
             val payload = data.copyOfRange(48, 40 + udpLen)
 
             val key = "v6:$srcIp:$srcPort:$dstIp:$dstPort"
-            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = true)) return
+            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) return
 
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
@@ -147,6 +147,7 @@ class TunnelEngine(
             }
         }
         udpSessions.remove(key)
+        ownershipDecisions.remove(key)
         try { session.socket.close() } catch (_: Exception) {}
     }
 
@@ -162,7 +163,8 @@ class TunnelEngine(
         var state: TcpState = TcpState.SYN_RCVD,
         var clientSeq: Long = 0,   // آخرین seq که از اپ دیدیم (برای ack کردن)
         var ourSeq: Long = 0,      // seq خودمون برای دیتایی که به اپ می‌فرستیم
-        var job: Job? = null
+        var job: Job? = null,
+        var ownerPending: Boolean = false // مالکیت موقع SYN مشخص نشد؛ روی پکت بعدی دوباره چک می‌شود
     )
 
     fun handleTcpV4(data: ByteArray, ihl: Int) {
@@ -205,12 +207,19 @@ class TunnelEngine(
         }
 
         if (isSyn && !isAck) {
-            // فقط همین‌جا، یک بار برای کل عمر این اتصال، مالکیت چک می‌شه —
-            // نه روی هر پکت (که هم اضافه‌کاریه هم به خطای گذرای API حساس‌تره).
-            if (!isAllowedCached(key, srcIp, srcPort, dstIp, dstPort, isUdp = false)) return
+            // SYN تکراری (retransmit): سشن همین اتصال از قبل ساخته شده؛ نباید
+            // سشن دومی بسازیم (که باعث ارسال دو SYN-ACK با شماره‌های دنباله‌ی
+            // متفاوت و به هم ریختن اتصال می‌شد).
+            if (tcpSessions.containsKey(key)) return
+
+            // مالکیت فقط یک‌بار اینجا چک می‌شود؛ اگر هنوز نامشخص باشد،
+            // fail-open عمل می‌کنیم و روی پکت بعدی (ACK/دیتا) دوباره چک می‌کنیم.
+            val decision = ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = false)
+            if (decision == false) return // مالک شناسایی شد و مجاز نیست → مسدود
 
             // شروع یک اتصال جدید
             val session = TcpSession(key, srcIp, srcPort, dstIp, dstPort, clientSeq = seq + 1, ourSeq = (100000..900000).random().toLong())
+            session.ownerPending = decision == null
             tcpSessions[key] = session
             session.job = scope.launch {
                 try {
@@ -234,6 +243,19 @@ class TunnelEngine(
         // اگه اینجا رسیدیم و هیچ سشنی برای این key نیست، یعنی یا مسدود بوده
         // (SYNـش رد شده) یا اتصالی در جریان نبوده؛ در هر دو حالت نادیده می‌گیریم.
         val session = tcpSessions[key] ?: return
+
+        // اگر مالکیت موقع SYN مشخص نشده بود، اینجا (اولین پکت بعدی) دوباره
+        // چک می‌کنیم؛ جدول conntrack معمولاً تا این لحظه آماده است.
+        if (session.ownerPending) {
+            session.ownerPending = false
+            val decision = ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = false)
+            if (decision == false) {
+                tcpSessions.remove(key)
+                try { session.socket?.close() } catch (_: Exception) {}
+                session.job?.cancel()
+                return
+            }
+        }
 
         if (isFin) {
             session.clientSeq = seq + 1
@@ -302,27 +324,40 @@ class TunnelEngine(
     // ============================== ownership check ==============================
 
     /**
-     * تعیین می‌کنه آیا مالک این flow (بر اساس UID) اجازه‌ی عبور داره یا نه.
-     * fail-closed: هر جا نتونستیم مطمئن بشیم (خطا، UID نامعلوم، یا حتی
-     * نسخه‌ی اندروید قدیمی)، به‌جای رد کردن، مسدود می‌کنیم — چون این یک
-     * قابلیت مسدودسازیه، اجازه دادن اشتباهی خیلی بدتر از مسدود کردن
-     * اشتباهیه (که با retry خودکار اپ‌ها معمولاً خودش حل می‌شه).
+     * تعیین می‌کند آیا مالک این flow (بر اساس UID) اجازه‌ی عبور دارد یا نه.
+     *
+     * نکته‌ی مهم (رفع باگ «مسدود شدن اینترنت همه»): قبلاً fail-closed بود —
+     * یعنی هر جا getConnectionOwnerUid برمی‌گشت INVALID_UID (-1) یا استثنا
+     * پرتاب می‌کرد، پکت «مسدود» حساب می‌شد. اما طبق مستندات اندروید، این API
+     * روی بعضی دستگاه‌ها/پروتکل‌ها (مخصوصاً UDP و حتی لحظه‌ی اولین SYN) موقتاً
+     * نامشخص برمی‌گرداند؛ نتیجه این بود که با فعال شدن حالت مسدودسازی، اینترنتِ
+     * «همه»ی برنامه‌ها (حتی انتخاب‌شده‌ها) قطع می‌شد. حالا fail-open است:
+     * وقتی مالکیت مشخص نشود، پکت رد نمی‌شود (اجازه داده می‌شود) و روی پکت بعدی
+     * دوباره چک می‌کنیم تا به محض مشخص شدن، مسدودسازی واقعی اعمال شود.
      */
-    /** تصمیم مالکیت هر flow رو فقط یک‌بار (موقع ساخته شدنش) می‌گیره و کش می‌کنه. */
-    private fun isAllowedCached(key: String, srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, isUdp: Boolean): Boolean {
-        return ownershipDecisions.getOrPut(key) { ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp) }
-    }
 
-    private fun ownerAllowed(srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, isUdp: Boolean): Boolean {
-        if (android.os.Build.VERSION.SDK_INT < 29) return false
+    /** تصمیم قطعی مالکیت هر flow؛ فقط وقتی جواب قطعی داریم کش می‌شود. */
+    private fun ownerAllowed(srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, isUdp: Boolean): Boolean? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return true // بدون API تشخیص؛ fail-open تا اینترنت کسی بی‌دلیل قطع نشود
         return try {
             val cm = vpnService.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val proto = if (isUdp) android.system.OsConstants.IPPROTO_UDP else android.system.OsConstants.IPPROTO_TCP
             val uid = cm.getConnectionOwnerUid(proto, InetSocketAddress(srcIp, srcPort), InetSocketAddress(dstIp, dstPort))
-            if (uid <= 0) return false // نتونستیم تشخیص بدیم؛ مسدود می‌کنیم
-            shouldForward(uid)
+            if (uid <= 0) null else shouldForward(uid) // null یعنی هنوز مالکیت مشخص نیست
         } catch (_: Exception) {
-            false
+            null
+        }
+    }
+
+    /** نسخه‌ی UDP: تا وقتی تصمیم قطعی نگرفته‌ایم، روی هر پکت دوباره می‌پرسیم. */
+    private fun isAllowedUdp(key: String, srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int): Boolean {
+        ownershipDecisions[key]?.let { return it }
+        return when (val decision = ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = true)) {
+            null -> true // نامشخص → fail-open؛ پکت بعدی دوباره چک می‌شود
+            else -> {
+                ownershipDecisions[key] = decision
+                decision
+            }
         }
     }
 
