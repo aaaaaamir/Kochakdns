@@ -121,8 +121,9 @@ class MyVpnService : VpnService() {
         // روشن باشه. در این حالت کل ترافیک (نه فقط DNS) وارد تون می‌شه؛
         // برنامه‌های انتخاب‌شده با TunnelEngine واقعاً relay می‌شن (اینترنت
         // کامل دارن)، بقیه هیچ‌جا relay نمی‌شن یعنی عملاً مسدودن.
+        // null یعنی کاربر هیچ انتخاب سفارشی‌ای نکرده → «همه برنامه‌ها» (رفتار پیش‌فرض).
+        // مجموعه‌ی خالی (که null نیست) یعنی کاربر عمداً همه را لغو کرده → «هیچ برنامه‌ای».
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
-            ?.takeIf { it.isNotEmpty() } // انتخابِ خالی = «همه برنامه‌ها» (نباید تونل همه را قطع کند)
         // این حالت فقط از اندروید ۱۰ (API 29) به بالا معنا داره، چون تشخیص
         // مالک هر flow (برای این‌که بفهمیم relay کنیم یا نه) با یک API که
         // فقط از همون نسخه به بعد وجود داره انجام می‌شه. روی نسخه‌های
@@ -188,6 +189,8 @@ class MyVpnService : VpnService() {
             VpnStats.totalPacketsLost.set(0)
             connectStartTime = System.currentTimeMillis()
             readerJob = serviceScope.launch { processPackets() }
+            // جلوگیری از تکرار حلقه‌های آمار/چک‌پوینت بعد از ریاستارتِ تونل
+            statsUpdateHandler?.removeCallbacksAndMessages(null)
             statsUpdateHandler = Handler(Looper.getMainLooper())
             statsUpdateHandler?.post(object : Runnable {
                 override fun run() {
@@ -238,15 +241,23 @@ class MyVpnService : VpnService() {
         val output = FileOutputStream(vpnIface.fileDescriptor)
         val packet = ByteArray(32767)
 
-        if (fullCaptureMode) {
+        // موتور تونل را «محلی» نگه می‌داریم؛ مهم است که finally این کوروتین
+        // (که ممکن است بعد از restart دیر اجرا شود) موتورِ تازه‌ساخته‌شده را
+        // نبندد. قبلاً از فیلد مشترک tunnelEngine استفاده می‌شد و بعد از
+        // ریاستارت، پاک‌سازیِ کوروتین قدیمی، موتور جدید را هم خاموش می‌کرد
+        // و کل ترافیک غیر-DNS بی‌صدا drop می‌شد.
+        val localEngine: TunnelEngine? = if (fullCaptureMode) {
             val selected = TunnelAppsStore.getSelectedPackages(this@MyVpnService) ?: emptySet()
-            tunnelEngine = TunnelEngine(
+            TunnelEngine(
                 vpnService = this@MyVpnService,
                 output = output,
                 scope = serviceScope,
                 shouldForward = { uid -> isUidTunneled(uid, selected) }
             )
+        } else {
+            null
         }
+        tunnelEngine = localEngine
 
         try {
             while (VpnStats.isVpnActive) {
@@ -255,7 +266,7 @@ class MyVpnService : VpnService() {
                 } catch (_: Exception) {
                     break // fd بسته شده یا سرویس داره متوقف می‌شه
                 }
-                if (length <= 0) continue
+                if (length <= 0) break // fd بسته/EOF؛ خروج (نه continue که حلقه‌ی بی‌نهایت شود)
 
                 val data = packet.copyOf(length)
                 when {
@@ -275,10 +286,10 @@ class MyVpnService : VpnService() {
                         // هر پکتی که وارد تون می‌شد (حتی پکت‌های اپ‌های مسدودشده
                         // که اصلاً relay نمی‌شن) به‌عنوان "ارسالی" شمرده می‌شد —
                         // که در حالت تونل کامل باعث اعداد کاذب و خیلی بزرگ می‌شد.
-                        handleGeneralPacketV4(data)
+                        handleGeneralPacketV4(data, localEngine)
                     }
                     fullCaptureMode && isIpv6(data) -> {
-                        handleGeneralPacketV6(data)
+                        handleGeneralPacketV6(data, localEngine)
                     }
                     else -> {
                         // حالت عادی: پروتکل‌های غیر DNS رو نادیده می‌گیریم چون
@@ -288,8 +299,10 @@ class MyVpnService : VpnService() {
                 }
             }
         } finally {
-            tunnelEngine?.shutdown()
-            tunnelEngine = null
+            localEngine?.shutdown()
+            // فقط در صورتی فیلد مشترک را پاک کن که هنوز به همین موتور اشاره می‌کند؛
+            // در غیر این صورت (بعد از restart) موتور جدید دست‌نخورده می‌ماند.
+            if (tunnelEngine === localEngine) tunnelEngine = null
             try { input.close() } catch (_: Exception) {}
             try { output.close() } catch (_: Exception) {}
         }
@@ -311,21 +324,21 @@ class MyVpnService : VpnService() {
         data.isNotEmpty() && ((data[0].toInt() and 0xF0) ushr 4) == 6
 
     /** هر پکت غیر-DNS در حالت تونل کامل، بسته به پروتکلش (TCP/UDP) به TunnelEngine سپرده می‌شه. */
-    private fun handleGeneralPacketV4(data: ByteArray) {
+    private fun handleGeneralPacketV4(data: ByteArray, engine: TunnelEngine?) {
         if (data.size < 20) return
         val ihl = (data[0].toInt() and 0x0F) * 4
         when (data[9].toInt() and 0xFF) {
-            6 -> tunnelEngine?.handleTcpV4(data, ihl)   // TCP
-            17 -> tunnelEngine?.handleUdpV4(data, ihl)  // UDP
+            6 -> engine?.handleTcpV4(data, ihl)   // TCP
+            17 -> engine?.handleUdpV4(data, ihl)  // UDP
             // ICMP و بقیه‌ی پروتکل‌ها فعلاً پشتیبانی نمی‌شن، بی‌صدا نادیده گرفته می‌شن
         }
     }
 
-    private fun handleGeneralPacketV6(data: ByteArray) {
+    private fun handleGeneralPacketV6(data: ByteArray, engine: TunnelEngine?) {
         if (data.size < 40) return
         when (data[6].toInt() and 0xFF) {
-            6 -> tunnelEngine?.handleTcpV6(data)   // TCP
-            17 -> tunnelEngine?.handleUdpV6(data)  // UDP
+            6 -> engine?.handleTcpV6(data)   // TCP
+            17 -> engine?.handleUdpV6(data)  // UDP
         }
     }
 
