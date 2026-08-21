@@ -3,6 +3,7 @@ package com.example.kochakdns
 import android.Manifest
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -179,13 +180,35 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         if (newSelection == _selectedPackages.value) return
         _selectedPackages.value = newSelection
         persistSelection(newSelection)
+        restartVpnIfActive()
+    }
+
+    /**
+     * اگر VPN الان فعال است، انتخاب جدید فقط با ساخت دوباره‌ی تونل اعمال می‌شود
+     * (مثل makeRestartService در v2rayNG). چون سرویس در حال اجراست، فقط یک دستور
+     * ACTION_RESTART به آن می‌فرستیم و خودش تونل را با انتخاب جدید بازسازی می‌کند.
+     */
+    private fun restartVpnIfActive() {
+        if (!VpnStats.isVpnActive) return
+        val context = getApplication<Application>()
+        val intent = Intent(context, MyVpnService::class.java).apply {
+            action = MyVpnService.ACTION_RESTART
+        }
+        try {
+            context.startService(intent)
+        } catch (_: Exception) {
+            // سرویس ممکن است دقیقاً در همین لحظه متوقف شده باشد؛ بی‌خطر نادیده بگیر
+        }
     }
 
     /** ذخیره فوری (مثل replaceBlacklist در v2rayNG) */
     private fun persistSelection(newSelection: Set<String>) {
         val context = getApplication<Application>()
         val all = appsAll
-        if (all != null && newSelection.containsAll(all.map { it.packageName })) {
+        val allSelected = all != null && newSelection.containsAll(all.map { it.packageName })
+        // خالی یا «همه انتخاب شده» = حالت پیش‌فرض «همه برنامه‌ها تونل شوند»؛
+        // یک انتخابِ خالی نباید باعث قطع تونلِ همه‌ی برنامه‌ها شود.
+        if (allSelected || newSelection.isEmpty()) {
             TunnelAppsStore.clearSelection(context)
         } else {
             TunnelAppsStore.saveSelectedPackages(context, newSelection)
