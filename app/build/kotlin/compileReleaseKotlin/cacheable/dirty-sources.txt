@@ -1,0 +1,10 @@
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/MyVpnService.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/MenuActivity.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/DnsSyncManager.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/AboutActivity.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/Models.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/TunnelEngine.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/TunnelAppsActivity.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/MainActivity.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/DnsActivity.kt
+/workspaces/Kochakdns/app/src/main/java/com/example/kochakdns/SettingsActivity.kt
