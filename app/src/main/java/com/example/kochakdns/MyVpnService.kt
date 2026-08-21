@@ -16,6 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,6 +48,8 @@ class MyVpnService : VpnService() {
         private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
         // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
         private const val MAX_CONCURRENT_RELAYS = 12
+        // مدت «کیک» اتصال‌های برنامه‌های انتخاب‌نشده (میلی‌ثانیه)
+        private const val KICK_DURATION_MS = 2500L
 
         // یک scope و کلاینت مستقل و جدا از serviceJob؛ چون stopVpn() دقیقاً
         // همزمان با متوقف شدن سرویس صدا زده می‌شه، اگه از serviceScope
@@ -66,12 +70,11 @@ class MyVpnService : VpnService() {
     private var connectStartTime: Long = 0L
     private var statsUpdateHandler: Handler? = null
 
-    // ===== حالت «مسدودسازی در سطح DNS» (جایگزین تونل کامل + NAT دست‌نویس) =====
+    // ===== حالت «مسدودسازی در سطح DNS» =====
     // وقتی روشن باشد و کاربر یک زیرمجموعه‌ی سفارشی انتخاب کرده باشد، هیچ برنامه‌ای
     // از تونل مستثنا نمی‌شود و در processPackets کوئری‌های DNS برنامه‌های
     // انتخاب‌نشده drop می‌شوند. نتیجه: برنامه‌های انتخاب‌شده DNS سفارشی +
-    // اینترنت کامل دارند و بقیه عملاً آفلاین می‌شوند — بدون نیاز به هیچ NAT
-    // دست‌نویسی (که قبلاً باعث قطع اینترنت همه‌ی برنامه‌ها می‌شد).
+    // اینترنت کامل دارند و بقیه عملاً آفلاین می‌شوند.
     private var blockUnselectedMode = false
     private var blockSelectedPackages: Set<String>? = null
 
@@ -132,6 +135,28 @@ class MyVpnService : VpnService() {
         blockUnselectedMode = blockEnabled && selectedPackages != null
         blockSelectedPackages = selectedPackages
 
+        if (blockUnselectedMode) {
+            // اول اتصال‌های بازِ برنامه‌های انتخاب‌نشده را می‌بندیم (کیک)،
+            // بعد تونل DNS اصلی برقرار می‌شود.
+            serviceScope.launch {
+                kickUnselectedConnections(selectedPackages ?: emptySet())
+                establishDnsTunnel(validV4, validV6, dnsName, selectedPackages)
+            }
+        } else {
+            establishDnsTunnel(validV4, validV6, dnsName, selectedPackages)
+        }
+    }
+
+    /**
+     * برقراری تونل DNS (فقط مسیر سرورهای DNS). این همان حالتی است که همیشه
+     * کار می‌کرده و در آن فقط پرس‌وجوهای DNS وارد تون می‌شوند.
+     */
+    private fun establishDnsTunnel(
+        validV4: List<String>,
+        validV6: List<String>,
+        dnsName: String,
+        selectedPackages: Set<String>?
+    ) {
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
             if (validV6.isNotEmpty()) {
@@ -219,6 +244,210 @@ class MyVpnService : VpnService() {
             e.printStackTrace()
             stopSelf()
         }
+    }
+
+    // ------------------------------------------------------------
+    // «کیک»: یک تونل موقت تمام‌گیر برای بستن اتصال‌های بازِ برنامه‌های
+    // انتخاب‌نشده. چون برنامه‌های انتخاب‌شده با addDisallowedApplication
+    // از این تونل مستثنا می‌شوند، هر پکتی که اینجا می‌رسد قطعاً متعلق به
+    // یک برنامه‌ی انتخاب‌نشده است — پس بدون نیاز به هیچ API تشخیص UID،
+    // اتصال TCP آن را با RST می‌بندیم.
+    // ------------------------------------------------------------
+    private suspend fun kickUnselectedConnections(selected: Set<String>) {
+        val builder = Builder().apply {
+            addAddress(TUN_ADDRESS, 32)
+            try { addAddress(TUN_ADDRESS_V6, 128) } catch (_: Exception) {}
+            try { addRoute("0.0.0.0", 0) } catch (_: Exception) {}
+            try { addRoute("::", 0) } catch (_: Exception) {}
+            // برنامه‌های انتخاب‌شده از کیک مستثنا می‌شوند تا هیچ آسیبی نبینند
+            selected.forEach { pkg ->
+                try { addDisallowedApplication(pkg) } catch (_: Exception) {}
+            }
+            setSession("Kochak DNS")
+            setBlocking(true)
+            setMtu(1500)
+        }
+        val fd = try { builder.establish() } catch (_: Exception) { null } ?: return
+        try {
+            val input = FileInputStream(fd.fileDescriptor)
+            val output = FileOutputStream(fd.fileDescriptor)
+            val packet = ByteArray(32767)
+
+            coroutineScope {
+                // خواندن را در یک کوروتین فرزند انجام می‌دهیم تا بعد از مدت کیک
+                // بتوانیم با بستن fd، خواندنِ بلوکه را آزاد کنیم.
+                launch {
+                    try {
+                        while (true) {
+                            val length = try { input.read(packet) } catch (_: Exception) { break }
+                            if (length <= 0) break
+                            val data = packet.copyOf(length)
+                            // DNS در طول کیک رها می‌شود (مدت بسیار کوتاه است)
+                            if (isIpv4Udp53(data) || isIpv6Udp53(data)) continue
+                            if (isIpv4(data)) {
+                                sendRstV4(data, output)
+                            } else if (isIpv6(data)) {
+                                sendRstV6(data, output)
+                            }
+                        }
+                    } finally {
+                        try { input.close() } catch (_: Exception) {}
+                        try { output.close() } catch (_: Exception) {}
+                    }
+                }
+                try {
+                    delay(KICK_DURATION_MS)
+                } finally {
+                    // بستن fd خواندنِ بلوکه را می‌شکند و کوروتین فرزند تمام می‌شود
+                    try { fd.close() } catch (_: Exception) {}
+                }
+            }
+        } finally {
+            try { fd.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** برای یک پکت TCP ورودی، یک RST معتبر به سمت فرستنده (کلاینت) برمی‌گرداند. */
+    private fun sendRstV4(data: ByteArray, output: FileOutputStream) {
+        if (data.size < 20) return
+        val ihl = (data[0].toInt() and 0x0F) * 4
+        if (data.size < ihl + 20) return
+        if ((data[9].toInt() and 0xFF) != 6) return // فقط TCP
+
+        val srcIp = InetAddress.getByAddress(data.copyOfRange(12, 16))
+        val dstIp = InetAddress.getByAddress(data.copyOfRange(16, 20))
+        val srcPort = ((data[ihl].toInt() and 0xFF) shl 8) or (data[ihl + 1].toInt() and 0xFF)
+        val dstPort = ((data[ihl + 2].toInt() and 0xFF) shl 8) or (data[ihl + 3].toInt() and 0xFF)
+        val flags = data[ihl + 13].toInt() and 0xFF
+        val isSyn = flags and 0x02 != 0
+        val isAck = flags and 0x10 != 0
+        val seq = readUInt32(data, ihl + 4)
+        val ack = readUInt32(data, ihl + 8)
+
+        val rstSeq = if (isAck) ack else 0
+        val rstAck = if (isSyn) seq + 1 else 0
+        val rstFlags = if (isAck) 0x14 /*RST+ACK*/ else 0x04 /*RST*/
+
+        val rst = buildTcpRstV4(dstIp, srcIp, dstPort, srcPort, rstSeq, rstAck, rstFlags)
+        try { output.write(rst); output.flush() } catch (_: Exception) {}
+    }
+
+    /** نسخه‌ی IPv6 برای RST. */
+    private fun sendRstV6(data: ByteArray, output: FileOutputStream) {
+        if (data.size < 60) return // 40 هدر ثابت + 20 هدر TCP
+        if ((data[6].toInt() and 0xFF) != 6) return // فقط TCP (بدون extension header)
+
+        val srcIp = InetAddress.getByAddress(data.copyOfRange(8, 24))
+        val dstIp = InetAddress.getByAddress(data.copyOfRange(24, 40))
+        val srcPort = ((data[40].toInt() and 0xFF) shl 8) or (data[41].toInt() and 0xFF)
+        val dstPort = ((data[42].toInt() and 0xFF) shl 8) or (data[43].toInt() and 0xFF)
+        val flags = data[53].toInt() and 0xFF
+        val isSyn = flags and 0x02 != 0
+        val isAck = flags and 0x10 != 0
+        val seq = readUInt32(data, 44)
+        val ack = readUInt32(data, 48)
+
+        val rstSeq = if (isAck) ack else 0
+        val rstAck = if (isSyn) seq + 1 else 0
+        val rstFlags = if (isAck) 0x14 else 0x04
+
+        val rst = buildTcpRstV6(dstIp as Inet6Address, srcIp as Inet6Address, dstPort, srcPort, rstSeq, rstAck, rstFlags)
+        try { output.write(rst); output.flush() } catch (_: Exception) {}
+    }
+
+    private fun buildTcpRstV4(
+        srcIp: InetAddress, dstIp: InetAddress,
+        srcPort: Int, dstPort: Int,
+        seq: Long, ack: Long, flags: Int
+    ): ByteArray {
+        val totalLength = 40
+        val packet = ByteArray(totalLength)
+        packet[0] = 0x45 // version=4, IHL=5
+        packet[2] = ((totalLength shr 8) and 0xFF).toByte()
+        packet[3] = (totalLength and 0xFF).toByte()
+        packet[8] = 64 // TTL
+        packet[9] = 6  // TCP
+        System.arraycopy(srcIp.address, 0, packet, 12, 4)
+        System.arraycopy(dstIp.address, 0, packet, 16, 4)
+        val ipChecksum = checksum(packet, 0, 20)
+        packet[10] = ((ipChecksum shr 8) and 0xFF).toByte()
+        packet[11] = (ipChecksum and 0xFF).toByte()
+
+        val t = 20
+        packet[t] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[t + 1] = (srcPort and 0xFF).toByte()
+        packet[t + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[t + 3] = (dstPort and 0xFF).toByte()
+        writeUInt32(packet, t + 4, seq)
+        writeUInt32(packet, t + 8, ack)
+        packet[t + 12] = (5 shl 4).toByte() // data offset = 5 (20 بایت، بدون options)
+        packet[t + 13] = flags.toByte()
+        // window = 0
+
+        val pseudo = ByteArray(12 + 20)
+        System.arraycopy(srcIp.address, 0, pseudo, 0, 4)
+        System.arraycopy(dstIp.address, 0, pseudo, 4, 4)
+        pseudo[9] = 6 // TCP
+        pseudo[10] = 0
+        pseudo[11] = 20
+        System.arraycopy(packet, t, pseudo, 12, 20)
+        val tcpChecksum = checksum(pseudo, 0, pseudo.size)
+        packet[t + 16] = ((tcpChecksum shr 8) and 0xFF).toByte()
+        packet[t + 17] = (tcpChecksum and 0xFF).toByte()
+        return packet
+    }
+
+    private fun buildTcpRstV6(
+        srcIp: Inet6Address, dstIp: Inet6Address,
+        srcPort: Int, dstPort: Int,
+        seq: Long, ack: Long, flags: Int
+    ): ByteArray {
+        val tcpLength = 20
+        val packet = ByteArray(40 + tcpLength)
+        packet[0] = 0x60 // version=6
+        packet[4] = ((tcpLength shr 8) and 0xFF).toByte()
+        packet[5] = (tcpLength and 0xFF).toByte()
+        packet[6] = 6 // TCP
+        packet[7] = 64 // hop limit
+        System.arraycopy(srcIp.address, 0, packet, 8, 16)
+        System.arraycopy(dstIp.address, 0, packet, 24, 16)
+
+        val t = 40
+        packet[t] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[t + 1] = (srcPort and 0xFF).toByte()
+        packet[t + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[t + 3] = (dstPort and 0xFF).toByte()
+        writeUInt32(packet, t + 4, seq)
+        writeUInt32(packet, t + 8, ack)
+        packet[t + 12] = (5 shl 4).toByte()
+        packet[t + 13] = flags.toByte()
+
+        val pseudo = ByteArray(40 + tcpLength)
+        System.arraycopy(srcIp.address, 0, pseudo, 0, 16)
+        System.arraycopy(dstIp.address, 0, pseudo, 16, 16)
+        pseudo[34] = ((tcpLength shr 8) and 0xFF).toByte()
+        pseudo[35] = (tcpLength and 0xFF).toByte()
+        pseudo[39] = 6 // TCP
+        System.arraycopy(packet, t, pseudo, 40, tcpLength)
+        var cs = checksum(pseudo, 0, pseudo.size)
+        if (cs == 0) cs = 0xFFFF
+        packet[t + 16] = ((cs shr 8) and 0xFF).toByte()
+        packet[t + 17] = (cs and 0xFF).toByte()
+        return packet
+    }
+
+    private fun readUInt32(data: ByteArray, offset: Int): Long {
+        return ((data[offset].toLong() and 0xFF) shl 24) or
+            ((data[offset + 1].toLong() and 0xFF) shl 16) or
+            ((data[offset + 2].toLong() and 0xFF) shl 8) or
+            (data[offset + 3].toLong() and 0xFF)
+    }
+
+    private fun writeUInt32(packet: ByteArray, offset: Int, value: Long) {
+        packet[offset] = ((value shr 24) and 0xFF).toByte()
+        packet[offset + 1] = ((value shr 16) and 0xFF).toByte()
+        packet[offset + 2] = ((value shr 8) and 0xFF).toByte()
+        packet[offset + 3] = (value and 0xFF).toByte()
     }
 
     // ------------------------------------------------------------
@@ -628,18 +857,6 @@ class MyVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // توجه: اندروید (از نسخه ۸ به بعد) اجازه نمی‌ده یک foreground
-            // service (که VPN هم جزوشه) کاملاً بدون نوتیفیکیشن اجرا بشه —
-            // این یک محدودیت سیستم‌عامله، نه چیزی که با کد این اپ بشه دورش زد.
-            //
-            // نکته‌ی مهم: اندروید بعد از اولین ساخت یک NotificationChannel،
-            // دیگه اجازه نمی‌ده اهمیتش (importance) با کد عوض بشه — هر بار که
-            // createNotificationChannel با همون ID صدا زده بشه ولی importance
-            // فرق کنه، اندروید بی‌صدا نادیده‌ش می‌گیره. برای همین قبلاً روشن/
-            // خاموش کردن این تنظیم هیچ اثری نداشت. فیکس: به‌جای عوض کردن
-            // importance یک channel، از دو تا channel جداگانه (با ID متفاوت
-            // و importance ثابت از همون ابتدا) استفاده می‌کنیم و موقع ساختن
-            // نوتیفیکیشن، بر اساس تنظیم فعلی یکی‌شون رو انتخاب می‌کنیم.
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Kochak VPN", NotificationManager.IMPORTANCE_LOW).apply {
