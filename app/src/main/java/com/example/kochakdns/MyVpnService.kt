@@ -37,6 +37,7 @@ class MyVpnService : VpnService() {
         const val CHANNEL_ID_MIN = "vpn_channel_min"
         const val ACTION_START = "action_start"
         const val ACTION_STOP = "action_stop"
+        const val ACTION_RESTART = "action_restart"
         const val EXTRA_DNS_SERVERS = "dns_servers"
         const val EXTRA_DNS_NAME = "dns_name"
         private const val TUN_ADDRESS = "10.8.0.1"
@@ -65,6 +66,10 @@ class MyVpnService : VpnService() {
     private var statsUpdateHandler: Handler? = null
     private var tunnelEngine: TunnelEngine? = null
     private var fullCaptureMode = false
+    // آخرین DNSهایی که تونل با آن‌ها ساخته شده؛ برای بازسازی تونل موقع
+    // تغییر انتخاب برنامه‌ها (ACTION_RESTART) بدون نیاز به اطلاعات تازه لازم است.
+    private var lastDnsServers: List<String> = emptyList()
+    private var lastDnsName: String = "DNS"
 
     override fun onCreate() {
         super.onCreate()
@@ -75,13 +80,32 @@ class MyVpnService : VpnService() {
         when (intent?.action) {
             ACTION_STOP -> { stopVpn(); return START_NOT_STICKY }
             ACTION_START -> {
-                val dnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS) ?: emptyList()
-                val dnsName = intent.getStringExtra(EXTRA_DNS_NAME) ?: "DNS"
-                startVpn(dnsServers, dnsName)
+                lastDnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS) ?: emptyList()
+                lastDnsName = intent.getStringExtra(EXTRA_DNS_NAME) ?: "DNS"
+                startVpn(lastDnsServers, lastDnsName)
+            }
+            ACTION_RESTART -> {
+                restartVpn()
             }
             else -> { stopSelf(); return START_NOT_STICKY }
         }
         return START_STICKY
+    }
+
+    /**
+     * تونل فعلی را می‌بندد و با همان DNSهای قبلی دوباره می‌سازد؛ برای اعمالِ
+     * تغییرِ انتخاب برنامه‌ها بدون دخالت کاربر (معادل makeRestartService در
+     * v2rayNG). سرویس و آمار و نوتیفیکیشن همچنان فعال می‌مانند.
+     */
+    private fun restartVpn() {
+        readerJob?.cancel()
+        readerJob = null
+        tunnelEngine?.shutdown()
+        tunnelEngine = null
+        try { vpnInterface?.close() } catch (_: Exception) {}
+        vpnInterface = null
+        // startVpn انتخاب جدید برنامه‌ها را خودش از TunnelAppsStore می‌خواند
+        startVpn(lastDnsServers, lastDnsName)
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
@@ -98,6 +122,7 @@ class MyVpnService : VpnService() {
         // برنامه‌های انتخاب‌شده با TunnelEngine واقعاً relay می‌شن (اینترنت
         // کامل دارن)، بقیه هیچ‌جا relay نمی‌شن یعنی عملاً مسدودن.
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
+            ?.takeIf { it.isNotEmpty() } // انتخابِ خالی = «همه برنامه‌ها» (نباید تونل همه را قطع کند)
         // این حالت فقط از اندروید ۱۰ (API 29) به بالا معنا داره، چون تشخیص
         // مالک هر flow (برای این‌که بفهمیم relay کنیم یا نه) با یک API که
         // فقط از همون نسخه به بعد وجود داره انجام می‌شه. روی نسخه‌های
