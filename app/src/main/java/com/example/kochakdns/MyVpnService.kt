@@ -1,5 +1,6 @@
 package com.example.kochakdns
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,12 +27,29 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
-import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.Semaphore
 
+/**
+ * سرویس VPN — مسدودسازی درون‌برنامه‌ای (بدون always-on، بدون root):
+ *
+ * ۱) تونل همیشه فقط مسیر IP سرورهای DNS را می‌گیرد (بدون NAT، بدون تونل کامل)؛
+ *    بنابراین فقط پرس‌وجوهای DNS وارد تون می‌شوند و ما آن‌ها را relay می‌کنیم.
+ *
+ * ۲) وقتی «مسدودسازی» روشن است، کوئری‌های DNS برنامه‌های انتخاب‌نشده (بر اساس
+ *    UID) drop می‌شوند → اتصال جدید آن‌ها برقرار نمی‌شود.
+ *
+ * ۳) برای اتصال‌های «باز»ِ برنامه‌های انتخاب‌نشده، موقع برقراری تونل یک
+ *    «کیک» کوتاه انجام می‌شود: یک تونل موقت تمام‌گیر که در آن برنامه‌های
+ *    انتخاب‌شده مستثنا شده‌اند؛ هر پکت TCP از برنامه‌های انتخاب‌نشده با یک
+ *    RST معتبر (طبق RFC 793 / RFC 5961، همان منطق tcpkill) پاسخ داده می‌شود
+ *    تا اتصال‌شان همان لحظه بمیرد. UDP هم در طول کیک drop می‌شود.
+ *
+ * ۴) به‌عنوان تلاش تکمیلی، فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده با
+ *    killBackgroundProcesses بسته می‌شوند (مجوز عادی، بهترین‌تلاش).
+ */
 class MyVpnService : VpnService() {
 
     companion object {
@@ -43,6 +61,7 @@ class MyVpnService : VpnService() {
         const val ACTION_RESTART = "action_restart"
         const val EXTRA_DNS_SERVERS = "dns_servers"
         const val EXTRA_DNS_NAME = "dns_name"
+
         private const val TUN_ADDRESS = "10.8.0.1"
         // آدرس محلی ULA برای رابط تون در حالت IPv6؛ فقط برای خود دستگاه معتبره، مسیریابی نمی‌شه
         private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
@@ -51,15 +70,18 @@ class MyVpnService : VpnService() {
         // مدت «کیک» اتصال‌های برنامه‌های انتخاب‌نشده (میلی‌ثانیه)
         private const val KICK_DURATION_MS = 2500L
 
+        // کلیدهای ذخیره‌ی آخرین DNS (برای اتصال مجدد خودکار وقتی سیستم
+        // سرویس START_STICKY را با intent خالی دوباره راه می‌اندازد)
+        private const val PREFS_DNS = "dns_prefs"
+        private const val KEY_LAST_DNS_SERVERS = "last_dns_servers"
+        private const val KEY_LAST_DNS_NAME = "last_dns_name"
+
         // یک scope و کلاینت مستقل و جدا از serviceJob؛ چون stopVpn() دقیقاً
         // همزمان با متوقف شدن سرویس صدا زده می‌شه، اگه از serviceScope
         // استفاده می‌کردیم، درخواست ارسال آمار قبل از تموم شدن لغو می‌شد.
         private val statsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 
-    // یک CoroutineScope مستقل با SupervisorJob: خطای یک relay بقیه رو نمی‌کشه،
-    // و با cancel() کل کار به‌طور تمیز و قطعی متوقف می‌شه (به‌جای Thread.interrupt
-    // که تضمینی نیست فوراً اثر کنه).
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val relayPermits = Semaphore(MAX_CONCURRENT_RELAYS)
@@ -70,16 +92,11 @@ class MyVpnService : VpnService() {
     private var connectStartTime: Long = 0L
     private var statsUpdateHandler: Handler? = null
 
-    // ===== حالت «مسدودسازی در سطح DNS» =====
-    // وقتی روشن باشد و کاربر یک زیرمجموعه‌ی سفارشی انتخاب کرده باشد، هیچ برنامه‌ای
-    // از تونل مستثنا نمی‌شود و در processPackets کوئری‌های DNS برنامه‌های
-    // انتخاب‌نشده drop می‌شوند. نتیجه: برنامه‌های انتخاب‌شده DNS سفارشی +
-    // اینترنت کامل دارند و بقیه عملاً آفلاین می‌شوند.
+    // حالت مسدودسازی + لیست انتخاب‌شده‌ها (برای drop کردن DNS آن‌ها در processPackets)
     private var blockUnselectedMode = false
     private var blockSelectedPackages: Set<String>? = null
 
-    // آخرین DNSهایی که تونل با آن‌ها ساخته شده؛ برای بازسازی تونل موقع
-    // تغییر انتخاب برنامه‌ها (ACTION_RESTART) بدون نیاز به اطلاعات تازه لازم است.
+    // آخرین DNSهایی که تونل با آن‌ها ساخته شده (برای ACTION_RESTART و اتصال مجدد)
     private var lastDnsServers: List<String> = emptyList()
     private var lastDnsName: String = "DNS"
 
@@ -94,12 +111,24 @@ class MyVpnService : VpnService() {
             ACTION_START -> {
                 lastDnsServers = intent.getStringArrayListExtra(EXTRA_DNS_SERVERS) ?: emptyList()
                 lastDnsName = intent.getStringExtra(EXTRA_DNS_NAME) ?: "DNS"
+                persistLastDns(lastDnsServers, lastDnsName)
                 startVpn(lastDnsServers, lastDnsName)
             }
             ACTION_RESTART -> {
                 restartVpn()
             }
-            else -> { stopSelf(); return START_NOT_STICKY }
+            else -> {
+                // اتصال مجدد خودکار (intent خالی، مثلاً بعد از START_STICKY)؛
+                // با آخرین DNS ذخیره‌شده دوباره وصل می‌شویم.
+                val (servers, name) = readLastDns()
+                if (servers.isEmpty()) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                lastDnsServers = servers
+                lastDnsName = name
+                startVpn(servers, name)
+            }
         }
         return START_STICKY
     }
@@ -119,7 +148,7 @@ class MyVpnService : VpnService() {
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
-        val ipv6Enabled = getSharedPreferences("dns_prefs", MODE_PRIVATE).getBoolean("ipv6_enabled", true)
+        val ipv6Enabled = getSharedPreferences(PREFS_DNS, MODE_PRIVATE).getBoolean("ipv6_enabled", true)
         val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }
         val validV6 = if (ipv6Enabled) dnsServers.filter { it.isNotBlank() && isIpv6(it) } else emptyList()
         if (validV4.isEmpty() && validV6.isEmpty()) { stopSelf(); return }
@@ -136,6 +165,9 @@ class MyVpnService : VpnService() {
         blockSelectedPackages = selectedPackages
 
         if (blockUnselectedMode) {
+            // تلاش تکمیلی: بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده
+            killUnselectedBackgroundProcesses(selectedPackages ?: emptySet())
+
             // اول اتصال‌های بازِ برنامه‌های انتخاب‌نشده را می‌بندیم (کیک)،
             // بعد تونل DNS اصلی برقرار می‌شود.
             serviceScope.launch {
@@ -145,6 +177,17 @@ class MyVpnService : VpnService() {
         } else {
             establishDnsTunnel(validV4, validV6, dnsName, selectedPackages)
         }
+    }
+
+    /** بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده (بهترین‌تلاش؛ foreground را نمی‌کشد). */
+    private fun killUnselectedBackgroundProcesses(selected: Set<String>) {
+        try {
+            val am = getSystemService(ActivityManager::class.java) ?: return
+            val allPackages = packageManager.getInstalledApplications(0).map { it.packageName }
+            allPackages.filterNot { selected.contains(it) }.forEach { pkg ->
+                try { am.killBackgroundProcesses(pkg) } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
     }
 
     /**
@@ -164,8 +207,8 @@ class MyVpnService : VpnService() {
             }
 
             // همیشه فقط مسیر خودِ سرورهای DNS را می‌گیریم (چه v4 چه v6)، نه کل
-            // اینترنت. یعنی فقط پرس‌وجوهای DNS وارد تون می‌شن، بقیه‌ی ترافیک هر
-            // اپی از مسیر عادی شبکه رد می‌شه و دست‌نخورده باقی می‌مونه.
+            // اینترنت. یعنی فقط پرس‌وجوهای DNS وارد تون می‌شوند و بقیه‌ی ترافیک
+            // هر اپی از مسیر عادی شبکه رد می‌شود.
             validV4.take(4).forEach { dns ->
                 try {
                     addRoute(dns, 32)
@@ -181,9 +224,9 @@ class MyVpnService : VpnService() {
 
             // وقتی مسدودسازی خاموش است و یک زیرمجموعه‌ی سفارشی انتخاب شده،
             // برنامه‌های انتخاب‌نشده را از تونل مستثنی می‌کنیم (DNS سیستم
-            // عادی می‌گیرند، دست‌نخورده). وقتی مسدودسازی روشن است، کسی را
-            // مستثنی نمی‌کنیم تا بتوانیم کوئری‌هایشان را در processPackets
-            // بر اساس UID مسدود کنیم.
+            // عادی می‌گیرند، اینترنت‌شان دست‌نخورده است). وقتی مسدودسازی روشن
+            // است، کسی را مستثنی نمی‌کنیم تا بتوانیم کوئری‌هایشان را در
+            // processPackets بر اساس UID مسدود کنیم.
             if (selectedPackages != null && !blockUnselectedMode) {
                 try {
                     val allPackages = packageManager.getInstalledApplications(0).map { it.packageName }
@@ -263,6 +306,7 @@ class MyVpnService : VpnService() {
             selected.forEach { pkg ->
                 try { addDisallowedApplication(pkg) } catch (_: Exception) {}
             }
+            try { addDisallowedApplication(packageName) } catch (_: Exception) {}
             setSession("Kochak DNS")
             setBlocking(true)
             setMtu(1500)
@@ -289,6 +333,7 @@ class MyVpnService : VpnService() {
                             } else if (isIpv6(data)) {
                                 sendRstV6(data, output)
                             }
+                            // غیر TCP/UDP (و UDP) در طول کیک فقط drop می‌شود
                         }
                     } finally {
                         try { input.close() } catch (_: Exception) {}
@@ -319,14 +364,19 @@ class MyVpnService : VpnService() {
         val srcPort = ((data[ihl].toInt() and 0xFF) shl 8) or (data[ihl + 1].toInt() and 0xFF)
         val dstPort = ((data[ihl + 2].toInt() and 0xFF) shl 8) or (data[ihl + 3].toInt() and 0xFF)
         val flags = data[ihl + 13].toInt() and 0xFF
-        val isSyn = flags and 0x02 != 0
         val isAck = flags and 0x10 != 0
+        val isRst = flags and 0x04 != 0
+        if (isRst) return // به خودِ RST پاسخ نمی‌دهیم
         val seq = readUInt32(data, ihl + 4)
         val ack = readUInt32(data, ihl + 8)
 
-        val rstSeq = if (isAck) ack else 0
-        val rstAck = if (isSyn) seq + 1 else 0
-        val rstFlags = if (isAck) 0x14 /*RST+ACK*/ else 0x04 /*RST*/
+        // طبق RFC 793 / RFC 5961 (همان منطق tcpkill):
+        // - بسته‌ای که ACK دارد → RST ساده با seq = ack ورودی (که دقیقاً RCV.NXT گیرنده است).
+        // - بسته‌ی بدون ACK (مثل SYN) → RST|ACK با ack = seq + 1.
+        val (rstSeq, rstAck, rstFlags) = when {
+            isAck -> Triple(ack, 0L, 0x04)
+            else -> Triple(0L, seq + 1, 0x14)
+        }
 
         val rst = buildTcpRstV4(dstIp, srcIp, dstPort, srcPort, rstSeq, rstAck, rstFlags)
         try { output.write(rst); output.flush() } catch (_: Exception) {}
@@ -342,14 +392,17 @@ class MyVpnService : VpnService() {
         val srcPort = ((data[40].toInt() and 0xFF) shl 8) or (data[41].toInt() and 0xFF)
         val dstPort = ((data[42].toInt() and 0xFF) shl 8) or (data[43].toInt() and 0xFF)
         val flags = data[53].toInt() and 0xFF
-        val isSyn = flags and 0x02 != 0
         val isAck = flags and 0x10 != 0
+        val isRst = flags and 0x04 != 0
+        if (isRst) return
         val seq = readUInt32(data, 44)
         val ack = readUInt32(data, 48)
 
-        val rstSeq = if (isAck) ack else 0
-        val rstAck = if (isSyn) seq + 1 else 0
-        val rstFlags = if (isAck) 0x14 else 0x04
+        // همان منطق RFC 793/RFC 5961 نسخه‌ی IPv4
+        val (rstSeq, rstAck, rstFlags) = when {
+            isAck -> Triple(ack, 0L, 0x04)
+            else -> Triple(0L, seq + 1, 0x14)
+        }
 
         val rst = buildTcpRstV6(dstIp as Inet6Address, srcIp as Inet6Address, dstPort, srcPort, rstSeq, rstAck, rstFlags)
         try { output.write(rst); output.flush() } catch (_: Exception) {}
@@ -453,7 +506,6 @@ class MyVpnService : VpnService() {
     // ------------------------------------------------------------
     // فقط پکت‌های UDP روی پورت 53 (DNS) را تشخیص می‌دهد و relay می‌کند؛
     // در حالت مسدودسازی، کوئری‌های برنامه‌های انتخاب‌نشده drop می‌شوند.
-    // خواندن fd مسدودکننده‌ست، برای همین توی Dispatchers.IO اجرا می‌شه.
     // ------------------------------------------------------------
     private suspend fun processPackets() = withContext(Dispatchers.IO) {
         val vpnIface = vpnInterface ?: return@withContext
@@ -811,6 +863,29 @@ class MyVpnService : VpnService() {
         return sum.inv() and 0xFFFF
     }
 
+    private fun persistLastDns(servers: List<String>, name: String) {
+        try {
+            getSharedPreferences(PREFS_DNS, MODE_PRIVATE).edit()
+                .putString(KEY_LAST_DNS_NAME, name)
+                .putString(KEY_LAST_DNS_SERVERS, servers.joinToString("\u0000"))
+                .apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun readLastDns(): Pair<List<String>, String> {
+        return try {
+            val prefs = getSharedPreferences(PREFS_DNS, MODE_PRIVATE)
+            val servers = prefs.getString(KEY_LAST_DNS_SERVERS, null)
+                ?.split("\u0000")
+                ?.filter { it.isNotBlank() }
+                ?: emptyList()
+            val name = prefs.getString(KEY_LAST_DNS_NAME, null) ?: "DNS"
+            servers to name
+        } catch (_: Exception) {
+            emptyList<String>() to "DNS"
+        }
+    }
+
     private fun stopVpn() {
         // قبل از صفر کردن هر چیزی، آمار همین دورِ اتصال رو برای سرور می‌فرستیم —
         // فقط اگه واقعاً حداقل ۳۰ ثانیه وصل بوده (اتصال‌های خیلی کوتاه آماری
@@ -822,8 +897,6 @@ class MyVpnService : VpnService() {
         if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0) && durationMs >= 30_000) {
             sendStatsToServer(profileName, sent, lost, getOperatorInfo(this))
         }
-        // این یک قطعِ عادیه (نه force-stop)، پس دیگه چک‌پوینت روی دیسک لازم
-        // نیست — یا الان فرستاده شد، یا طبق قانون ۳۰ ثانیه اصلاً نباید بفرستیم.
         PendingStatsStore.clear(this)
         connectStartTime = 0L
 
