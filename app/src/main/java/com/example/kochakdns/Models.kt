@@ -129,10 +129,13 @@ object VpnStats {
     val totalBytesReceived = AtomicLong(0)
     val totalPacketsSent = AtomicLong(0)
     val totalPacketsLost = AtomicLong(0)
-    
+    // پکت‌هایی که عمداً به‌دلیل «مسدودسازی» دور ریخته می‌شوند؛ این‌ها گم‌شده
+    // نیستند و نه در UI به‌عنوان گم‌شده نمایش داده می‌شوند نه به سرور ارسال می‌شوند.
+    val totalPacketsBlocked = AtomicLong(0)
+
     @Volatile
     var isVpnActive = false
-    
+
     @Volatile
     var activeDnsName: String? = null
 }
