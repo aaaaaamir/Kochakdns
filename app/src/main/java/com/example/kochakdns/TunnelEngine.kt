@@ -76,7 +76,10 @@ class TunnelEngine(
             val payload = data.copyOfRange(ihl + 8, ihl + udpLen)
 
             val key = "v4:$srcIp:$srcPort:$dstIp:$dstPort"
-            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) return
+            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) {
+                VpnStats.totalPacketsBlocked.incrementAndGet()
+                return
+            }
 
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
@@ -102,7 +105,10 @@ class TunnelEngine(
             val payload = data.copyOfRange(48, 40 + udpLen)
 
             val key = "v6:$srcIp:$srcPort:$dstIp:$dstPort"
-            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) return
+            if (!isAllowedUdp(key, srcIp, srcPort, dstIp, dstPort)) {
+                VpnStats.totalPacketsBlocked.incrementAndGet()
+                return
+            }
 
             val session = udpSessions.getOrPut(key) {
                 val socket = DatagramSocket()
@@ -215,7 +221,14 @@ class TunnelEngine(
             // مالکیت فقط یک‌بار اینجا چک می‌شود؛ اگر هنوز نامشخص باشد،
             // fail-open عمل می‌کنیم و روی پکت بعدی (ACK/دیتا) دوباره چک می‌کنیم.
             val decision = ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = false)
-            if (decision == false) return // مالک شناسایی شد و مجاز نیست → مسدود
+            if (decision == false) {
+                // مالک شناسایی شد و مجاز نیست → مسدود.
+                // برای اینکه اپ سریع بفهمد (و منتظر timeout نماند)، یک RST
+                // معتبر به سمت کلاینت می‌فرستیم.
+                VpnStats.totalPacketsBlocked.incrementAndGet()
+                scope.launch { writePacket(buildSynReset(isV6, srcIp, dstIp, srcPort, dstPort, seq)) }
+                return
+            }
 
             // شروع یک اتصال جدید
             val session = TcpSession(key, srcIp, srcPort, dstIp, dstPort, clientSeq = seq + 1, ourSeq = (100000..900000).random().toLong())
@@ -250,6 +263,9 @@ class TunnelEngine(
             session.ownerPending = false
             val decision = ownerAllowed(srcIp, srcPort, dstIp, dstPort, isUdp = false)
             if (decision == false) {
+                // مالکیت بعداً مشخص شد و مجاز نیست → اتصال را فوراً ببند و RST بده
+                VpnStats.totalPacketsBlocked.incrementAndGet()
+                scope.launch { writePacket(buildTcpPacket(session, flags = 0x14 /*RST+ACK*/, payload = ByteArray(0))) }
                 tcpSessions.remove(key)
                 try { session.socket?.close() } catch (_: Exception) {}
                 session.job?.cancel()
@@ -294,6 +310,31 @@ class TunnelEngine(
             session.ourSeq += 1
             tcpSessions.remove(session.key)
             try { socket.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * برای یک SYN مسدودشده، یک RST|ACK معتبر به سمت کلاینت می‌سازد تا اتصال
+     * فوراً رد شود (طبق RFC 793: پاسخ به SYN بدون ACK → seq=0, ack=seq+1).
+     */
+    private fun buildSynReset(
+        isV6: Boolean,
+        srcIp: InetAddress, dstIp: InetAddress,
+        srcPort: Int, dstPort: Int,
+        clientSeq: Long
+    ): ByteArray {
+        return if (isV6) {
+            buildTcpV6(
+                dstIp as Inet6Address, srcIp as Inet6Address,
+                dstPort, srcPort,
+                0L, clientSeq + 1, 0x14, ByteArray(0)
+            )
+        } else {
+            buildTcpV4(
+                dstIp, srcIp,
+                dstPort, srcPort,
+                0L, clientSeq + 1, 0x14, ByteArray(0)
+            )
         }
     }
 
