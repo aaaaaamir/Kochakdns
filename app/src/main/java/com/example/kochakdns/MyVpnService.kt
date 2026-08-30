@@ -195,9 +195,18 @@ class MyVpnService : VpnService() {
                     try { addAllowedApplication(packageName) } catch (_: Exception) {}
                 }
                 fullTunnelMode -> {
-                    // تونل کاملِ فایروالی: هیچ برنامه‌ای مستثنا نمی‌شود تا ترافیکِ
-                    // همه وارد تون شود؛ سپس در TunnelEngine بر اساس UID،
-                    // برنامه‌های انتخاب‌نشده drop و انتخاب‌شده‌ها forward می‌شوند.
+                    // تونل کامل: برنامه‌های انتخاب‌نشده از تونل مستثنی می‌شوند
+                    // (اینترنت معمولی دارند) و ترافیک برنامه‌های انتخاب‌شده
+                    // به‌طور کامل و بدون هیچ بررسی UID (که روی بعضی دستگاه‌ها
+                    // اشتباه جواب می‌داد و اینترنت همه را قطع می‌کرد) forward
+                    // می‌شود. یعنی برنامه‌های انتخاب‌شده هرگز قطع نمی‌شوند.
+                    try {
+                        val selected = selectedPackages ?: emptySet()
+                        val allPackages = packageManager.getInstalledApplications(0).map { it.packageName }
+                        allPackages.filterNot { selected.contains(it) }.forEach { pkg ->
+                            try { addDisallowedApplication(pkg) } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {}
                 }
                 hasSelection -> {
                     // انتخاب سفارشی (split): برنامه‌های انتخاب‌نشده از تونل مستثنی
@@ -278,15 +287,17 @@ class MyVpnService : VpnService() {
         val output = FileOutputStream(vpnIface.fileDescriptor)
         val packet = ByteArray(32767)
 
-        // در حالت تونل کامل، هر پکتی که وارد تون می‌شود بر اساس UID مالکش
-        // تصمیم می‌گیریم: انتخاب‌شده → forward، انتخاب‌نشده → drop.
+        // در حالت تونل کامل، هر پکتی که وارد تون می‌شود متعلق به برنامه‌های
+        // انتخاب‌شده است (چون انتخاب‌نشده‌ها با addDisallowedApplication مستثنا
+        // شده‌اند)؛ پس همه را forward می‌کنیم — بدون هیچ بررسی UID که روی
+        // بعضی دستگاه‌ها اشتباه جواب می‌داد و باعث قطع اینترنتِ همه می‌شد.
         val localEngine: TunnelEngine? = if (fullTunnelMode) {
-            val selected = selectedPackagesForTunnel()
             TunnelEngine(
                 vpnService = this@MyVpnService,
                 output = output,
                 scope = serviceScope,
-                shouldForward = { uid -> isUidTunneled(uid, selected) }
+                outputMutex = outputMutex,
+                shouldForward = { true }
             )
         } else {
             null
@@ -339,35 +350,6 @@ class MyVpnService : VpnService() {
 
     private fun isIpv6(data: ByteArray): Boolean =
         data.isNotEmpty() && ((data[0].toInt() and 0xF0) ushr 4) == 6
-
-    /** لیست انتخاب‌شده‌ها برای فایروال UID (بازخوانی تازه از استور). */
-    private fun selectedPackagesForTunnel(): Set<String> {
-        return TunnelAppsStore.getSelectedPackages(this)
-            ?: packageManager.getInstalledApplications(0).map { it.packageName }.toSet()
-    }
-
-    /**
-     * آیا ترافیکِ این UID باید forward شود؟
-     * fail-open: هر حالت نامشخص → مجاز. این تضمین می‌کند برنامه‌های مجاز
-     * هرگز قطع نشوند (حتی اگر getConnectionOwnerUid مقدار اشتباه بدهد).
-     * فقط وقتی UID با «قطعیّت» به یک برنامه‌ی انتخاب‌نشده نسبت داده شود،
-     * مسدود می‌شود.
-     */
-    private fun isUidTunneled(uid: Int, selected: Set<String>): Boolean {
-        // خودِ برنامه همیشه مجاز
-        if (uid == android.os.Process.myUid()) return true
-        // UID های سیستمی (زیر FIRST_APPLICATION_UID) همیشه مجاز؛ چون خیلی از
-        // اتصال‌های برنامه‌های مجاز توسط اجزای سیستمی انجام می‌شود (مثل GMS)
-        // و مسدود کردن آن‌ها باعث قطع اینترنت برنامه‌های مجاز می‌شد.
-        if (uid < android.os.Process.FIRST_APPLICATION_UID) return true
-
-        val names = try { packageManager.getPackagesForUid(uid) } catch (_: Exception) { null }
-        // نامشخص → مجاز (fail-open)
-        if (names.isNullOrEmpty()) return true
-
-        // اگر هیچ پکیجِ این UID در لیست انتخاب نباشد → مسدود
-        return names.any { selected.contains(it) }
-    }
 
     /** هر پکت غیر-DNS در حالت تونل کامل، بسته به پروتکلش (TCP/UDP) به TunnelEngine سپرده می‌شود. */
     private fun handleGeneralPacketV4(data: ByteArray, engine: TunnelEngine?) {
