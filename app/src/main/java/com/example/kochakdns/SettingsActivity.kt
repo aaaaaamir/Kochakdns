@@ -1,5 +1,6 @@
 package com.example.kochakdns
 
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -59,10 +60,33 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(
             settingSwitch(
                 title = "مسدود کردن اینترنت برنامه‌های تونل‌نشده",
-                subtitle = ".برنامه‌هایی که از لیست «برنامه‌های تونل شده» انتخاب نکردی، اصلاً به اینترنت دسترسی نداشته باشن",
+                subtitle = "برنامه‌هایی که از لیست «برنامه‌های تونل شده» انتخاب نکردی، به اینترنت دسترسی نداشته باشن",
                 initial = AppSettings.isBlockNonTunneledEnabled(this)
             ) { checked ->
                 AppSettings.setBlockNonTunneledEnabled(this, checked)
+                restartVpnIfActive()
+            }
+        )
+
+        list.addView(
+            settingSwitch(
+                title = "تونل کامل",
+                subtitle = "به‌جای فقط DNS، کل ترافیک برنامه‌های انتخاب‌شده از تونل رد بشه و برنامه‌های انتخاب‌نشده در حین اتصال مسدود بشن. (به موتور NAT داخلی وابسته است)",
+                initial = AppSettings.isFullTunnelEnabled(this)
+            ) { checked ->
+                AppSettings.setFullTunnelEnabled(this, checked)
+                restartVpnIfActive()
+            }
+        )
+
+        list.addView(
+            settingSwitch(
+                title = "مسدودسازی از طریق Always-on VPN",
+                subtitle = "قابل‌اعتمادترین روش: فقط برنامه‌های انتخاب‌شده اجازه‌ی VPN دارند و بقیه توسط سیستم اندروید مسدود می‌شن. نیاز به فعال‌سازی Always-on VPN و «Block connections without VPN» در تنظیمات سیستم دارد",
+                initial = AppSettings.isLockdownBlockEnabled(this)
+            ) { checked ->
+                AppSettings.setLockdownBlockEnabled(this, checked)
+                restartVpnIfActive()
             }
         )
 
@@ -90,6 +114,19 @@ class SettingsActivity : AppCompatActivity() {
         column.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(column)
         setContentView(root)
+    }
+
+    /** اگر VPN الان وصله، تغییر تنظیمات فقط با ساخت دوباره‌ی تونل اعمال می‌شود. */
+    private fun restartVpnIfActive() {
+        if (!VpnStats.isVpnActive) return
+        try {
+            startService(
+                Intent(this, MyVpnService::class.java).apply {
+                    action = MyVpnService.ACTION_RESTART
+                }
+            )
+        } catch (_: Exception) {
+        }
     }
 
     private fun settingSwitch(
