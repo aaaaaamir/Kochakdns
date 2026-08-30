@@ -210,7 +210,7 @@ class MyVpnService : VpnService() {
                     // فقط برنامه‌های انتخاب‌شده (و خودِ برنامه) اجازه‌ی استفاده از
                     // VPN دارند؛ بقیه توسط سیستم (Block connections without VPN)
                     // مسدود می‌شوند.
-                    selectedPackages.forEach { pkg ->
+                    (selectedPackages ?: emptySet()).forEach { pkg ->
                         try { addAllowedApplication(pkg) } catch (_: Exception) {}
                     }
                     try { addAllowedApplication(packageName) } catch (_: Exception) {}
