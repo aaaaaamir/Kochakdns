@@ -24,6 +24,11 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- برای بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده در حالت مسدودسازی -->
+    <uses-permission
+        android:name="android.permission.KILL_BACKGROUND_PROCESSES"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
     <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
     <queries>
