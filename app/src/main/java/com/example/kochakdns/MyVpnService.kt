@@ -203,8 +203,9 @@ class MyVpnService : VpnService() {
                     // انتخاب سفارشی (split): برنامه‌های انتخاب‌نشده از تونل مستثنی
                     // می‌شوند → اینترنت معمولی دارند (مسدود نمی‌شوند، فقط DNS سیستم می‌گیرند).
                     try {
+                        val selected = selectedPackages ?: emptySet()
                         val allPackages = packageManager.getInstalledApplications(0).map { it.packageName }
-                        allPackages.filterNot { selectedPackages.contains(it) }.forEach { pkg ->
+                        allPackages.filterNot { selected.contains(it) }.forEach { pkg ->
                             try { addDisallowedApplication(pkg) } catch (_: Exception) {}
                         }
                     } catch (_: Exception) {}
