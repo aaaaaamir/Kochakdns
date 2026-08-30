@@ -53,6 +53,10 @@ import java.net.InetAddress
  */
 enum class VpnUiState { DISCONNECTED, CONNECTING, CONNECTED, DISCONNECTING }
 
+// انواع رکورد DNS برای پرس‌وجوی پینگ
+private const val TYPE_A = 1
+private const val TYPE_NS = 2
+
 /**
  * آیکون پاور، مستقیم با Canvas کشیده می‌شه — دیگه فایل drawable جدا لازم
  * نیست، همه‌چیز همین‌جا توی خودِ DnsActivity.kt کنار همدیگه‌ست.
@@ -1125,49 +1129,88 @@ class DnsActivity : AppCompatActivity() {
 
     private suspend fun pingDns(address: String): Long {
         return withContext(Dispatchers.IO) {
-            try {
-                val socket = DatagramSocket()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    getUnderlyingNetwork()?.let { net ->
-                        try {
-                            net.bindSocket(socket)
-                        } catch (_: Exception) {
-                            cachedUnderlyingNetwork = null // شبکه‌ی کش‌شده احتمالاً مرده، دفعه‌ی بعد دوباره پیدا کن
-                        }
+            // چند پرس‌وجوی مختلف را به ترتیب امتحان می‌کنیم؛ به محض اولین جواب،
+            // همان را برمی‌گردانیم. این کار دو مشکل را حل می‌کند:
+            //  ۱) «پینگ همیشه بالا»: قبلاً فقط کوئری root-NS با RD=0 فرستاده می‌شد که
+            //     بعضی سرورها آن را آهسته جواب می‌دهند (یا با اعتبارسنجی DNSSEC
+            //     کند می‌شود). حالا اول یک A-query معمولی (RD=1) برای دامنه‌ی رایج
+            //     می‌فرستیم که معمولاً از کش جواب می‌گیرد و عدد = RTT واقعی است.
+            //  ۲) «بعضی DNS سالم پینگ ندارند»: اگه یک نوع کوئری جواب نگرفت،
+            //     نوع دیگری را امتحان می‌کنیم به‌جای این‌که بلافاصله -1 برگردانیم.
+            val queries = listOf(
+                buildDnsQuery("google.com", TYPE_A),
+                buildDnsQuery("cloudflare.com", TYPE_A),
+                buildDnsQuery("", TYPE_NS) // root NS به‌عنوان آخرین راه‌حل
+            )
+            for (data in queries) {
+                val ms = pingDnsOnce(address, data)
+                if (ms > 0) return@withContext ms
+            }
+            -1L
+        }
+    }
+
+    /** یک پرس‌وجوی DNS سبک با ID تصادفی و Recursion Desired می‌سازد. */
+    private fun buildDnsQuery(name: String, type: Int): ByteArray {
+        val id = kotlin.random.Random.nextInt(1, 0xFFFF)
+        val out = java.io.ByteArrayOutputStream(64)
+        fun w(v: Int) {
+            out.write((v shr 8) and 0xFF)
+            out.write(v and 0xFF)
+        }
+        w(id)
+        w(0x0100) // flags: RD=1
+        w(1)      // QDCOUNT = 1
+        w(0); w(0); w(0) // ANCOUNT, NSCOUNT, ARCOUNT
+        if (name.isEmpty()) {
+            out.write(0) // نام ریشه
+        } else {
+            for (label in name.split('.')) {
+                val b = label.toByteArray(Charsets.UTF_8)
+                if (b.size > 63) return byteArrayOf()
+                out.write(b.size)
+                out.write(b)
+            }
+            out.write(0)
+        }
+        w(type)
+        w(1) // QCLASS = IN
+        return out.toByteArray()
+    }
+
+    /** یک پرس‌وجوی UDP را می‌فرستد و RTT آن را برمی‌گرداند؛ -1 یعنی بی‌پاسخ. */
+    private fun pingDnsOnce(address: String, data: ByteArray): Long {
+        if (data.isEmpty()) return -1L
+        return try {
+            val socket = DatagramSocket()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                getUnderlyingNetwork()?.let { net ->
+                    try {
+                        net.bindSocket(socket)
+                    } catch (_: Exception) {
+                        cachedUnderlyingNetwork = null // شبکه‌ی کش‌شده احتمالاً مرده، دفعه‌ی بعد دوباره پیدا کن
                     }
                 }
-                socket.soTimeout = 500
-                val data = byteArrayOf(
-                    0x00, 0x01,
-                    0x00, 0x00,
-                    0x00, 0x01,
-                    0x00, 0x00,
-                    0x00, 0x00,
-                    0x00, 0x00,
-                    0x00,
-                    0x00, 0x02,
-                    0x00, 0x01
-                )
-                val packet = DatagramPacket(
-                    data,
-                    data.size,
-                    InetAddress.getByName(address),
-                    53
-                )
-                // تایمر رو دقیقاً همین‌جا شروع می‌کنیم، نه قبل از ساخت سوکت —
-                // اون overhead ساخت/bind سوکت جزو تاخیر شبکه نیست و نباید
-                // توی عدد پینگ حساب بشه (باعث بالاتر دیده شدن از پینگ واقعی می‌شد).
-                val start = System.nanoTime()
-                socket.send(packet)
-                val buffer = ByteArray(512)
-                val response = DatagramPacket(buffer, buffer.size)
-                socket.receive(response)
-                val elapsedMs = (System.nanoTime() - start) / 1_000_000
-                socket.close()
-                elapsedMs
-            } catch (e: Exception) {
-                -1L
             }
+            socket.soTimeout = 1000
+            val packet = DatagramPacket(
+                data,
+                data.size,
+                InetAddress.getByName(address),
+                53
+            )
+            // تایمر را دقیقاً همین‌جا شروع می‌کنیم، نه قبل از ساخت سوکت —
+            // ساخت/bind سوکت جزو تاخیر شبکه نیست.
+            val start = System.nanoTime()
+            socket.send(packet)
+            val buffer = ByteArray(4096)
+            val response = DatagramPacket(buffer, buffer.size)
+            socket.receive(response)
+            val elapsedMs = (System.nanoTime() - start) / 1_000_000
+            socket.close()
+            elapsedMs
+        } catch (e: Exception) {
+            -1L
         }
     }
 
