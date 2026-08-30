@@ -63,7 +63,7 @@ class MyVpnService : VpnService() {
         // آدرس محلی ULA برای رابط تون در حالت IPv6؛ فقط برای خود دستگاه معتبره، مسیریابی نمی‌شه
         private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
         // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
-        private const val MAX_CONCURRENT_RELAYS = 12
+        private const val MAX_CONCURRENT_RELAYS = 16
 
         // کلیدهای ذخیره‌ی آخرین DNS (برای اتصال مجدد خودکار وقتی سیستم
         // سرویس START_STICKY را با intent خالی دوباره راه می‌اندازد)
@@ -81,6 +81,20 @@ class MyVpnService : VpnService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val relayPermits = Semaphore(MAX_CONCURRENT_RELAYS)
     private val outputMutex = Mutex()
+
+    // ===== بهینه‌سازی: مخزن سوکت‌های DNS =====
+    // قبلاً برای هر کوئری DNS یک DatagramSocket جدید ساخته می‌شد و protect()
+    // (که یک IPC به سیستم است) روی آن صدا زده می‌شد — این دو عمل به ازای هر
+    // کوئری، تاخیر محسوسی به رزولوشن DNS اضافه می‌کرد و باعث کندی محسوس
+    // اینترنت می‌شد. حالا سوکت‌های protected شده بازیافت می‌شوند؛ یعنی اکثر
+    // کوئری‌ها دیگر نه ساخت سوکت دارند نه IPC اضافه.
+    private val dnsSocketPool = java.util.concurrent.ConcurrentLinkedQueue<DatagramSocket>()
+    private val dnsSocketPoolLimit = 20
+
+    // کش تصمیم «این UID انتخاب‌شده است یا نه»؛ قبلاً برای هر کوئری DNS
+    // (در حالت مسدودسازی) یک فراخوانی getPackagesForUid انجام می‌شد که آن هم
+    // IPC است. با این کش، تصمیم هر UID فقط یک‌بار گرفته می‌شود.
+    private val uidDecisionCache = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
 
     private var readerJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -165,6 +179,7 @@ class MyVpnService : VpnService() {
         fullTunnelMode = blockActive && !lockdownMode && AppSettings.isFullTunnelEnabled(this)
         blockUnselectedMode = blockActive && !lockdownMode && !fullTunnelMode
         blockSelectedPackages = selectedPackages
+        uidDecisionCache.clear() // انتخاب برنامه‌ها عوض شده؛ کش تصمیم UID باید نو شود
 
         // تلاش تکمیلی: بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده
         if (blockActive) {
@@ -442,14 +457,21 @@ class MyVpnService : VpnService() {
         val uid = dnsOwnerUid(data, isV6)
         if (uid <= 0) return false // مالکیت نامشخص → اجازه بده (fail-open)
 
-        val names = try { packageManager.getPackagesForUid(uid) } catch (_: Exception) { null }
-        if (names.isNullOrEmpty()) return false
+        // اگر این UID انتخاب‌شده باشد (یا خودِ برنامه باشد) → اجازه بده
+        return !isUidSelected(uid, selected)
+    }
 
-        // هرگز خودِ برنامه را مسدود نکن
-        if (names.any { it == packageName }) return false
-
-        // اگر هر کدام از پکیج‌های این UID در لیست انتخاب باشد → اجازه بده
-        return names.none { selected.contains(it) }
+    /** با کش: آیا این UID جزو برنامه‌های انتخاب‌شده (یا خودِ برنامه) است؟ */
+    private fun isUidSelected(uid: Int, selected: Set<String>): Boolean {
+        uidDecisionCache[uid]?.let { return it }
+        val result = try {
+            val names = packageManager.getPackagesForUid(uid) ?: return false
+            names.any { it == packageName || selected.contains(it) }
+        } catch (_: Exception) {
+            false
+        }
+        uidDecisionCache[uid] = result
+        return result
     }
 
     /** مالک (UID) یک کوئری DNS را با استفاده از API رسمی اندروید برمی‌گرداند؛ -1 یعنی نامشخص. */
@@ -480,6 +502,28 @@ class MyVpnService : VpnService() {
         }
     }
 
+    /** گرفتن یک سوکت protected از مخزن (یا ساخت یک سوکت جدید در صورت خالی بودن). */
+    private fun acquireDnsSocket(): DatagramSocket {
+        val s = dnsSocketPool.poll()
+        return if (s != null) {
+            s
+        } else {
+            DatagramSocket().apply {
+                try { protect(this) } catch (_: Exception) {}
+                soTimeout = 5000
+            }
+        }
+    }
+
+    /** بازگرداندن سوکت به مخزن (در صورت پر بودن، بسته می‌شود). */
+    private fun releaseDnsSocket(socket: DatagramSocket) {
+        if (dnsSocketPool.size < dnsSocketPoolLimit) {
+            dnsSocketPool.offer(socket)
+        } else {
+            try { socket.close() } catch (_: Exception) {}
+        }
+    }
+
     private suspend fun relayDnsQueryV4(ipPacket: ByteArray, output: FileOutputStream) {
         try {
             val ihl = (ipPacket[0].toInt() and 0x0F) * 4
@@ -489,9 +533,8 @@ class MyVpnService : VpnService() {
             val udpLength = ((ipPacket[ihl + 4].toInt() and 0xFF) shl 8) or (ipPacket[ihl + 5].toInt() and 0xFF)
             val dnsPayload = ipPacket.copyOfRange(ihl + 8, ihl + udpLength)
 
-            val socket = DatagramSocket()
-            protect(socket) // خیلی مهم: جلوگیری از این‌که این سوکت خودش دوباره وارد تون بشه (حلقه‌ی بی‌نهایت)
-            socket.soTimeout = 5000
+            // سوکت protected از مخزن (بدون ساخت/پروتکت تکراری → سریع‌تر)
+            val socket = acquireDnsSocket()
 
             val responsePacket = try {
                 val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
@@ -501,7 +544,7 @@ class MyVpnService : VpnService() {
                 socket.receive(resp)
                 resp
             } finally {
-                socket.close()
+                releaseDnsSocket(socket)
             }
 
             val replyIpPacket = buildIpv4UdpPacket(
@@ -530,9 +573,8 @@ class MyVpnService : VpnService() {
             val udpLength = ((ipPacket[44].toInt() and 0xFF) shl 8) or (ipPacket[45].toInt() and 0xFF)
             val dnsPayload = ipPacket.copyOfRange(48, 40 + udpLength)
 
-            val socket = DatagramSocket()
-            protect(socket)
-            socket.soTimeout = 5000
+            // سوکت protected از مخزن (بدون ساخت/پروتکت تکراری → سریع‌تر)
+            val socket = acquireDnsSocket()
 
             val responsePacket = try {
                 val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
@@ -542,7 +584,7 @@ class MyVpnService : VpnService() {
                 socket.receive(resp)
                 resp
             } finally {
-                socket.close()
+                releaseDnsSocket(socket)
             }
 
             val replyIpPacket = buildIpv6UdpPacket(
@@ -756,6 +798,12 @@ class MyVpnService : VpnService() {
         fullTunnelMode = false
         blockUnselectedMode = false
         blockSelectedPackages = null
+        uidDecisionCache.clear()
+        // تخلیه‌ی مخزن سوکت‌ها تا در توقف سرویس نشتی نماند
+        while (true) {
+            val s = dnsSocketPool.poll() ?: break
+            try { s.close() } catch (_: Exception) {}
+        }
         try { vpnInterface?.close() } catch (_: Exception) {}
         vpnInterface = null
         statsUpdateHandler?.removeCallbacksAndMessages(null)
