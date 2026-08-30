@@ -41,204 +41,209 @@
 30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:23:5-25:53
 30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:24:9-61
 31
-32    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
-33    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
-34    <queries>
-34-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:29:5-34:15
-35        <intent>
-35-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:9-33:18
-36            <action android:name="android.intent.action.MAIN" />
-36-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:13-65
-36-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:21-62
-37
-38            <category android:name="android.intent.category.LAUNCHER" />
-38-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:13-73
-38-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:23-70
-39        </intent>
-40    </queries>
-41
-42    <permission
-42-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:22:5-24:47
-43        android:name="com.example.kochakdns.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-43-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:23:9-81
-44        android:protectionLevel="signature" />
-44-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
-45
-46    <uses-permission android:name="com.example.kochakdns.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
-46-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
-46-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
-47
-48    <application
-48-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:5-95:19
-49        android:allowBackup="true"
-49-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:9-35
-50        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-50-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
-51        android:extractNativeLibs="true"
-52        android:icon="@mipmap/ic_launcher"
-52-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:38:9-43
-53        android:label="@string/app_name"
-53-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:39:9-41
-54        android:roundIcon="@mipmap/ic_launcher_round"
-54-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-54
-55        android:supportsRtl="true"
-55-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:9-35
-56        android:theme="@style/Theme.AppCompat.NoActionBar" >
-56-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:42:9-59
-57
-58        <!-- فعالیت اصلی برنامه -->
-59        <activity
-59-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:9-53:20
-60            android:name="com.example.kochakdns.MainActivity"
-60-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:46:13-41
-61            android:exported="true"
-61-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:47:13-36
-62            android:screenOrientation="portrait" >
-62-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:48:13-49
-63            <intent-filter>
-63-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:49:13-52:29
-64                <action android:name="android.intent.action.MAIN" />
-64-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:13-65
-64-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:21-62
-65
-66                <category android:name="android.intent.category.LAUNCHER" />
-66-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:13-73
-66-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:23-70
-67            </intent-filter>
-68        </activity>
-69
-70        <!-- صفحه تنظیمات -->
-71        <activity
-71-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:56:9-59:52
-72            android:name="com.example.kochakdns.SettingsActivity"
-72-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:57:13-45
-73            android:exported="false"
-73-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:58:13-37
-74            android:screenOrientation="portrait" />
-74-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:59:13-49
-75
-76        <!-- صفحه تونل برنامه‌ها -->
-77        <activity
-77-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:9-65:52
-78            android:name="com.example.kochakdns.TunnelAppsActivity"
-78-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:63:13-47
-79            android:exported="false"
-79-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:64:13-37
-80            android:screenOrientation="portrait" />
-80-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:65:13-49
-81
-82        <!-- فعالیت مدیریت و تنظیمات DNS -->
-83        <activity
-83-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:9-71:52
-84            android:name="com.example.kochakdns.DnsActivity"
-84-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:69:13-40
-85            android:exported="false"
-85-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:70:13-37
-86            android:screenOrientation="portrait" />
-86-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:71:13-49
-87
-88        <!-- درباره ما -->
-89        <activity
-89-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:9-77:52
-90            android:name="com.example.kochakdns.AboutActivity"
-90-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:75:13-42
-91            android:exported="false"
-91-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:76:13-37
-92            android:screenOrientation="portrait" />
-92-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:77:13-49
-93
-94        <!-- سرویس وی‌پی‌ان -->
-95        <service
-95-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:9-93:19
-96            android:name="com.example.kochakdns.MyVpnService"
-96-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:81:13-41
-97            android:exported="true"
-97-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:82:13-36
-98            android:foregroundServiceType="specialUse"
-98-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:83:13-55
-99            android:permission="android.permission.BIND_VPN_SERVICE" >
-99-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:84:13-69
-100            <intent-filter>
-100-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:13-87:29
-101                <action android:name="android.net.VpnService" />
-101-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:17-65
-101-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:25-62
-102            </intent-filter>
-103
-104            <!-- برای اندروید 14+ - توضیح استفاده از Foreground Service -->
-105            <property
-105-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:90:13-92:66
-106                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-106-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:17-76
-107                android:value="VPN service for DNS management" />
-107-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:92:17-63
-108        </service>
-109
-110        <provider
-110-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
-111            android:name="androidx.startup.InitializationProvider"
-111-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:25:13-67
-112            android:authorities="com.example.kochakdns.androidx-startup"
-112-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:26:13-68
-113            android:exported="false" >
-113-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:27:13-37
-114            <meta-data
-114-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
-115                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-115-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:30:17-75
-116                android:value="androidx.startup" />
-116-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:31:17-49
+32    <!-- برای بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده در حالت مسدودسازی -->
+33    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+33-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:5-30:47
+33-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:29:9-68
+34
+35    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
+36    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
+37    <queries>
+37-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:5-39:15
+38        <intent>
+38-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:9-38:18
+39            <action android:name="android.intent.action.MAIN" />
+39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:13-65
+39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:21-62
+40
+41            <category android:name="android.intent.category.LAUNCHER" />
+41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:13-73
+41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:23-70
+42        </intent>
+43    </queries>
+44
+45    <permission
+45-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:22:5-24:47
+46        android:name="com.example.kochakdns.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+46-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:23:9-81
+47        android:protectionLevel="signature" />
+47-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:24:9-44
+48
+49    <uses-permission android:name="com.example.kochakdns.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+49-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:26:5-97
+49-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
+50
+51    <application
+51-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:5-100:19
+52        android:allowBackup="true"
+52-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:42:9-35
+53        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+53-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
+54        android:extractNativeLibs="true"
+55        android:icon="@mipmap/ic_launcher"
+55-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:43:9-43
+56        android:label="@string/app_name"
+56-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:44:9-41
+57        android:roundIcon="@mipmap/ic_launcher_round"
+57-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:9-54
+58        android:supportsRtl="true"
+58-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:46:9-35
+59        android:theme="@style/Theme.AppCompat.NoActionBar" >
+59-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:47:9-59
+60
+61        <!-- فعالیت اصلی برنامه -->
+62        <activity
+62-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:50:9-58:20
+63            android:name="com.example.kochakdns.MainActivity"
+63-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:51:13-41
+64            android:exported="true"
+64-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:52:13-36
+65            android:screenOrientation="portrait" >
+65-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:53:13-49
+66            <intent-filter>
+66-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:54:13-57:29
+67                <action android:name="android.intent.action.MAIN" />
+67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:13-65
+67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:21-62
+68
+69                <category android:name="android.intent.category.LAUNCHER" />
+69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:13-73
+69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:23-70
+70            </intent-filter>
+71        </activity>
+72
+73        <!-- صفحه تنظیمات -->
+74        <activity
+74-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:61:9-64:52
+75            android:name="com.example.kochakdns.SettingsActivity"
+75-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:13-45
+76            android:exported="false"
+76-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:63:13-37
+77            android:screenOrientation="portrait" />
+77-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:64:13-49
+78
+79        <!-- صفحه تونل برنامه‌ها -->
+80        <activity
+80-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:67:9-70:52
+81            android:name="com.example.kochakdns.TunnelAppsActivity"
+81-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:13-47
+82            android:exported="false"
+82-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:69:13-37
+83            android:screenOrientation="portrait" />
+83-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:70:13-49
+84
+85        <!-- فعالیت مدیریت و تنظیمات DNS -->
+86        <activity
+86-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:73:9-76:52
+87            android:name="com.example.kochakdns.DnsActivity"
+87-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:13-40
+88            android:exported="false"
+88-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:75:13-37
+89            android:screenOrientation="portrait" />
+89-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:76:13-49
+90
+91        <!-- درباره ما -->
+92        <activity
+92-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:79:9-82:52
+93            android:name="com.example.kochakdns.AboutActivity"
+93-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:13-42
+94            android:exported="false"
+94-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:81:13-37
+95            android:screenOrientation="portrait" />
+95-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:82:13-49
+96
+97        <!-- سرویس وی‌پی‌ان -->
+98        <service
+98-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:9-98:19
+99            android:name="com.example.kochakdns.MyVpnService"
+99-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:13-41
+100            android:exported="true"
+100-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:87:13-36
+101            android:foregroundServiceType="specialUse"
+101-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:88:13-55
+102            android:permission="android.permission.BIND_VPN_SERVICE" >
+102-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:13-69
+103            <intent-filter>
+103-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:90:13-92:29
+104                <action android:name="android.net.VpnService" />
+104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:17-65
+104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:25-62
+105            </intent-filter>
+106
+107            <!-- برای اندروید 14+ - توضیح استفاده از Foreground Service -->
+108            <property
+108-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:95:13-97:66
+109                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+109-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:96:17-76
+110                android:value="VPN service for DNS management" />
+110-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:97:17-63
+111        </service>
+112
+113        <provider
+113-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
+114            android:name="androidx.startup.InitializationProvider"
+114-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:25:13-67
+115            android:authorities="com.example.kochakdns.androidx-startup"
+115-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:26:13-68
+116            android:exported="false" >
+116-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:27:13-37
 117            <meta-data
-117-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
-118                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-118-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
+117-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
+118                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+118-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:30:17-75
 119                android:value="androidx.startup" />
-119-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+119-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:31:17-49
 120            <meta-data
-120-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
-121                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-121-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+120-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
+121                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+121-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
 122                android:value="androidx.startup" />
-122-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
-123        </provider>
-124
-125        <receiver
-125-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
-126            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-126-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
-127            android:directBootAware="false"
-127-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
-128            android:enabled="true"
-128-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
-129            android:exported="true"
-129-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
-130            android:permission="android.permission.DUMP" >
-130-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
-131            <intent-filter>
-131-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
-132                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-132-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
-132-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
-133            </intent-filter>
+122-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/vscode/.gradle/caches/8.10.2/transforms/3b371e6b5a25d18277103977145d3395/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+123            <meta-data
+123-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+124                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+125                android:value="androidx.startup" />
+125-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+126        </provider>
+127
+128        <receiver
+128-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+129            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+129-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+130            android:directBootAware="false"
+130-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+131            android:enabled="true"
+131-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+132            android:exported="true"
+132-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+133            android:permission="android.permission.DUMP" >
+133-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
 134            <intent-filter>
-134-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
-135                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-135-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
-135-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+134-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+135                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+135-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+135-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
 136            </intent-filter>
 137            <intent-filter>
-137-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
-138                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-138-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
-138-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+137-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+138                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+138-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+138-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
 139            </intent-filter>
 140            <intent-filter>
-140-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
-141                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-141-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
-141-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+140-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+141                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+141-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+141-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
 142            </intent-filter>
-143        </receiver>
-144    </application>
-145
-146</manifest>
+143            <intent-filter>
+143-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+144                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+144-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+144-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/vscode/.gradle/caches/8.10.2/transforms/8110cbb5afca2c8d6bd7dce4bfee83fc/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+145            </intent-filter>
+146        </receiver>
+147    </application>
+148
+149</manifest>
