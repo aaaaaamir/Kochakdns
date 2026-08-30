@@ -107,20 +107,18 @@ class PowerIconView(context: Context) : View(context) {
 }
 
 /**
- * یک پیکان باز (شبیه یک مثلث که ضلع پایینش رو نداره — فقط دو خط که به هم
- * می‌رسن)، با گوشه‌های نرم (round join/cap). چون شکل همیشه بازه، «پر» بودن
- * با ضخیم‌تر و روشن‌تر شدن خط نشون داده می‌شه (نه واقعاً fill)، «توخالی»
- * با نازک‌تر و کم‌رنگ‌تر شدنش. چرخش برای باز/بسته شدن با `rotation`
- * استاندارد View از بیرون کنترل می‌شه.
+ * یک مثلث رو به پایین (نماد باز شدن جزئیات) که حالت انتخاب را نشان می‌دهد:
+ * انتخاب‌نشده = توخالی (فقط خط دور)، انتخاب‌شده = توپُر (fill). رنگ هم نرم
+ * بین خاکستری و سفید انیمیت می‌شود. چرخش باز/بسته شدن با `rotation` استاندارد
+ * View از بیرون کنترل می‌شود.
  */
 class ExpandArrowView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
     private val path = android.graphics.Path()
-    private var blend = 0f // 0 = انتخاب‌نشده (نازک‌تر، تیره‌تر)، 1 = انتخاب‌شده (ضخیم‌تر، روشن‌تر)
+    private var blend = 0f // 0 = انتخاب‌نشده، 1 = انتخاب‌شده
     private var blendAnimator: android.animation.ValueAnimator? = null
 
     var filled: Boolean = false
@@ -141,19 +139,17 @@ class ExpandArrowView(context: Context) : View(context) {
 
     private fun applyPaint() {
         if (width <= 0 || height <= 0) return
-        val glyphSize = minOf(width, height) * 0.55f
-        val strokeMin = glyphSize * 0.24f
-        val strokeMax = glyphSize * 0.30f
-        paint.strokeWidth = strokeMin + (strokeMax - strokeMin) * blend
-
-        // گرادیانت روشن-به-تیره برای حس نرم و برجسته (soft UI)، بین حالت
-        // انتخاب‌نشده (خاکستری کم‌رنگ) و انتخاب‌شده (تقریباً سفید) نرم بلند می‌شه.
+        val glyphSize = minOf(width, height) * 0.40f
+        paint.strokeWidth = glyphSize * 0.14f
+        // انتخاب‌نشده = توخالی (فقط خط دور)، انتخاب‌شده = توپُر
+        paint.style = if (filled) Paint.Style.FILL else Paint.Style.STROKE
+        paint.shader = null
         val evaluator = android.animation.ArgbEvaluator()
-        val top = evaluator.evaluate(blend, Color.parseColor("#8A8A96"), Color.parseColor("#FFFFFF")) as Int
-        val bottom = evaluator.evaluate(blend, Color.parseColor("#4A4A56"), Color.parseColor("#D8D8DC")) as Int
-        paint.shader = android.graphics.LinearGradient(
-            0f, 0f, 0f, height.toFloat(), top, bottom, android.graphics.Shader.TileMode.CLAMP
-        )
+        paint.color = evaluator.evaluate(
+            blend,
+            Color.parseColor("#7A7A86"),
+            Color.parseColor("#FFFFFF")
+        ) as Int
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -162,15 +158,15 @@ class ExpandArrowView(context: Context) : View(context) {
         path.reset()
         val cx = w / 2f
         val cy = h / 2f
-        val glyph = minOf(w, h) * 0.55f
-        val left = cx - glyph * 0.36f
-        val right = cx + glyph * 0.36f
-        val top = cy - glyph * 0.24f
-        val bottom = cy + glyph * 0.26f
-        // یک «V» نرم و پهن رو به پایین — دو خط باز که پایین به هم می‌رسن
-        path.moveTo(left, top)
+        val glyph = minOf(w, h) * 0.40f
+        val half = glyph * 0.5f
+        val top = cy - glyph * 0.28f
+        val bottom = cy + glyph * 0.32f
+        // مثلث رو به پایین (نماد باز شدن) — توخالی یا توپُر بسته به انتخاب
+        path.moveTo(cx - half, top)
+        path.lineTo(cx + half, top)
         path.lineTo(cx, bottom)
-        path.lineTo(right, top)
+        path.close()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -236,6 +232,9 @@ class DnsActivity : AppCompatActivity() {
     private val dnsItems = mutableListOf<DnsItem>()
     private val dnsItemViews = mutableMapOf<String, DnsItemView>()
     private var previousPings = mutableMapOf<String, Long>()
+    // میانگین متحرک پینگ هر DNS (EMA)؛ به‌جای نمایش پینگ لحظه‌ای، میانگین
+    // نمایش داده می‌شود تا عدد پایدار باشد و بهترین سرور واقعاً معلوم شود.
+    private val pingAverages = mutableMapOf<String, Double>()
     // جیتر مستقیم: مستقل از آیتم‌های لیست DNS محاسبه می‌شه، فقط از روی
     // پینگ‌های واقعی و متوالی خودِ DNS انتخاب‌شده (فرمول هموارسازی RFC 3550).
     private var directJitterMs: Double = 0.0
@@ -844,9 +843,20 @@ class DnsActivity : AppCompatActivity() {
 
     private suspend fun syncDnsData(force: Boolean = false) {
         isSyncing = true
+
+        // ۱) قبل از هر چیز، اگر لیست هنوز خالی است، آخرین کش سالم را فوراً
+        // نمایش بده تا کاربر در حین لودینگ، صفحه‌ی خالی نبیند و بتواند
+        // فوراً وضعیت DNS ها را ببیند (حتی پیش از رسیدن پاسخ سرور).
+        if (dnsItems.isEmpty()) {
+            val cached = withContext(Dispatchers.IO) { readCachedProfiles() }
+            if (cached != null && cached.isNotEmpty()) {
+                loadDnsFromProfiles(cached)
+            }
+        }
+
         showLoading()
 
-        // اول واقعاً تلاش می‌کنیم دیتای تازه از سرور بگیریم. فقط اگه سرور
+        // ۲) حالا واقعاً تلاش می‌کنیم دیتای تازه از سرور بگیریم. فقط اگه سرور
         // خطا داد (نه هر بار)، می‌ریم سراغ آخرین کش سالمی که قبلاً ذخیره شده.
         // force فقط از دکمه‌ی رفرش دستی true می‌شه؛ در حالت عادی (باز شدن
         // صفحه) به همون sync ای که MainActivity از قبل زده join می‌شیم و
@@ -855,6 +865,7 @@ class DnsActivity : AppCompatActivity() {
             DnsSyncCoordinator.startSync(applicationContext, force).await()
         }
 
+        // ۳) بعد از sync، دیتای تازه (یا همون کش در صورت خطا) را نشان بده.
         // نکته: DataStore فقط وقتی sync موفق باشه بازنویسی می‌شه (توی
         // DnsSyncManager.sync)، پس این یک خط همیشه چیز درستی برمی‌گردونه:
         // موفق بود -> دیتای تازه‌ای که همین الان ذخیره شد؛ خطا داد -> همون
@@ -907,6 +918,7 @@ class DnsActivity : AppCompatActivity() {
     private fun loadDnsFromProfiles(profiles: List<DnsProfile>) {
         dnsItems.clear()
         previousPings.clear()
+        pingAverages.clear()
         profiles.forEach { profile ->
             dnsItems.add(
                 DnsItem(
@@ -972,19 +984,37 @@ class DnsActivity : AppCompatActivity() {
                             val index = dnsItems.indexOfFirst { it.name == item.name }
                             if (index >= 0) {
                                 val oldItem = dnsItems[index]
-                                val oldPing = previousPings[item.name] ?: -1
-                                previousPings[item.name] = newPing
+
+                                // ---- میانگین متحرک (EMA) برای نمایش ----
+                                // پینگ لحظه‌ای ممکن است به‌دلیل نویز شبکه بالا/پایین
+                                // بپرد؛ با میانگین وزنی، عددی پایدار و قابل مقایسه
+                                // بین DNSها نمایش داده می‌شود.
+                                val raw = newPing
+                                val prevAvg = pingAverages[item.name]
+                                val newAvg = when {
+                                    raw < 0 -> prevAvg ?: -1.0            // تایم‌اوت: میانگین قبلی حفظ می‌شود
+                                    prevAvg == null || prevAvg < 0 -> raw.toDouble()
+                                    else -> prevAvg * 0.7 + raw * 0.3     // EMA با وزن ۰.۳ برای نمونه‌ی جدید
+                                }
+                                pingAverages[item.name] = newAvg
+                                val displayPing = if (newAvg >= 0) newAvg.toLong() else -1L
+
+                                // پینگ خام قبلی برای محاسبه‌ی جیتر نگه داشته می‌شود
+                                val oldRawPing = previousPings[item.name] ?: -1
+                                previousPings[item.name] = raw
+
+                                val oldDisplayPing = oldItem.ping
                                 val newItem = oldItem.copy(
-                                    ping = newPing,
-                                    previousPing = oldPing
+                                    ping = displayPing,
+                                    previousPing = oldDisplayPing
                                 )
                                 dnsItems[index] = newItem
                                 dnsItemViews[item.name]?.update(newItem, item.name == selectedDnsName)
 
                                 // جیتر مستقیم فقط از روی نمونه‌های واقعی و متوالی خودِ
-                                // DNS انتخاب‌شده محاسبه می‌شه، نه از روی دیتای لیست.
-                                if (item.name == selectedDnsName && oldPing > 0 && newPing > 0) {
-                                    val diff = kotlin.math.abs(newPing - oldPing).toDouble()
+                                // DNS انتخاب‌شده محاسبه می‌شه، نه از روی میانگین.
+                                if (item.name == selectedDnsName && oldRawPing > 0 && raw > 0) {
+                                    val diff = kotlin.math.abs(raw - oldRawPing).toDouble()
                                     directJitterMs += (diff - directJitterMs) / 16.0
                                 }
 
@@ -1425,11 +1455,10 @@ class DnsActivity : AppCompatActivity() {
             infoContainer.addView(nameText)
             infoContainer.addView(pingRow)
 
-            // به‌جای دایره‌ی انتخاب، فقط نوک یک پیکان: پر برای کارت انتخاب‌شده،
-            // خالی برای بقیه. کلیک روش کاملاً جدا از انتخاب کارت عمل می‌کنه —
-            // فقط باز/بسته کردن جزئیات آماره، نه انتخاب DNS.
+            // پیکانِ باز/بسته شدن جزئیات: انتخاب‌نشده توخالی، انتخاب‌شده توپُر.
+            // ویو بزرگ‌تر از خودِ آیکون است تا جای لمس راحت‌تر باشد.
             expandArrow = ExpandArrowView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(88, 88).apply { marginStart = 4 }
+                layoutParams = LinearLayout.LayoutParams(100, 100).apply { marginStart = 0 }
                 isClickable = true
                 isFocusable = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
