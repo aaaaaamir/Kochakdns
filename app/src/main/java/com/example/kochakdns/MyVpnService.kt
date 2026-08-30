@@ -243,6 +243,7 @@ class MyVpnService : VpnService() {
             VpnStats.totalBytesReceived.set(0)
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
+            VpnStats.totalPacketsBlocked.set(0)
             connectStartTime = System.currentTimeMillis()
             readerJob = serviceScope.launch { processPackets() }
             // جلوگیری از تکرار حلقه‌های آمار/چک‌پوینت بعد از ریاستارتِ تونل
@@ -338,7 +339,8 @@ class MyVpnService : VpnService() {
                 when {
                     isIpv4Udp53(data) -> {
                         if (shouldDropDns(data, isV6 = false)) {
-                            VpnStats.totalPacketsLost.incrementAndGet()
+                            // مسدودشده‌ی عمدی؛ گم‌شده حساب نمی‌شود و به سرور هم نمی‌رود
+                            VpnStats.totalPacketsBlocked.incrementAndGet()
                         } else {
                             VpnStats.totalPacketsSent.incrementAndGet()
                             VpnStats.totalBytesSent.addAndGet(length.toLong())
@@ -347,7 +349,8 @@ class MyVpnService : VpnService() {
                     }
                     isIpv6Udp53(data) -> {
                         if (shouldDropDns(data, isV6 = true)) {
-                            VpnStats.totalPacketsLost.incrementAndGet()
+                            // مسدودشده‌ی عمدی؛ گم‌شده حساب نمی‌شود و به سرور هم نمی‌رود
+                            VpnStats.totalPacketsBlocked.incrementAndGet()
                         } else {
                             VpnStats.totalPacketsSent.incrementAndGet()
                             VpnStats.totalBytesSent.addAndGet(length.toLong())
