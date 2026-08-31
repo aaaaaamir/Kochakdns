@@ -157,8 +157,11 @@ class MyVpnService : VpnService() {
         val blockEnabled = AppSettings.isBlockNonTunneledEnabled(this)
 
         // اولویت حالت‌ها: lockdown > full tunnel > split
-        lockdownMode = blockEnabled && hasSelection && AppSettings.isLockdownBlockEnabled(this)
-        fullTunnelMode = blockEnabled && hasSelection && !lockdownMode && AppSettings.isFullTunnelEnabled(this)
+        // «مسدودسازی برنامه‌های تونل‌نشده» حالا یعنی مسدودسازی از طریق
+        // Always-on VPN سیستم (قابل‌اعتمادترین روش). «تونل کامل» مستقل از آن
+        // است و فقط وقتی فعال می‌شود که مسدودسازی (lockdown) روشن نباشد.
+        lockdownMode = blockEnabled && hasSelection
+        fullTunnelMode = !lockdownMode && hasSelection && AppSettings.isFullTunnelEnabled(this)
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
