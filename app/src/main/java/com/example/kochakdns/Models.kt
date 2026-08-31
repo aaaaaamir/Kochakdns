@@ -250,14 +250,15 @@ object AppSettings {
     private const val PREFS = "app_settings"
     private const val KEY_BLOCK_NON_TUNNELED = "block_non_tunneled_internet"
     private const val KEY_FULL_TUNNEL = "full_tunnel"
-    private const val KEY_LOCKDOWN_BLOCK = "block_via_always_on"
     private const val KEY_SHOW_PACKET_PERCENT = "show_packet_percentage"
     private const val KEY_SHOW_NOTIFICATION = "show_notification"
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
 
-    // پیش‌فرض false: الان هیچ اینترنتی مسدود نمی‌شه، این یک قابلیت جدیده.
+    // پیش‌فرض false: مسدودسازی برنامه‌های تونل‌نشده (از طریق Always-on VPN سیستم).
+    // فقط وقتی true می‌شود که کاربر در تنظیمات سیستم، Always-on VPN و
+    // «Block connections without VPN» را برای Kochak DNS فعال کرده باشد.
     fun isBlockNonTunneledEnabled(context: android.content.Context): Boolean =
         prefs(context).getBoolean(KEY_BLOCK_NON_TUNNELED, false)
 
@@ -266,25 +267,13 @@ object AppSettings {
     }
 
     // پیش‌فرض false: تونل کامل خاموش است (فقط DNS relay می‌شود).
-    // وقتی روشن باشد، کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل رد می‌شود
-    // و برنامه‌های انتخاب‌نشده به‌صورت پیوسته (در حین اتصال) مسدود می‌شوند.
+    // وقتی روشن باشد، کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل
+    // رد می‌شود؛ برنامه‌های انتخاب‌نشده اینترنت معمولی دارند.
     fun isFullTunnelEnabled(context: android.content.Context): Boolean =
         prefs(context).getBoolean(KEY_FULL_TUNNEL, false)
 
     fun setFullTunnelEnabled(context: android.content.Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_FULL_TUNNEL, value).apply()
-    }
-
-    // پیش‌فرض false: مسدودسازی از طریق «Always-on VPN + قفل اتصال» خاموش است.
-    // وقتی روشن باشد، فقط برنامه‌های انتخاب‌شده اجازه‌ی استفاده از VPN را دارند و
-    // مسدودسازی برنامه‌های انتخاب‌نشده توسط خودِ سیستم اندروید (قابل‌اعتمادترین روش)
-    // انجام می‌شود. نیاز دارد کاربر در تنظیمات سیستم، Always-on VPN و
-    // «Block connections without VPN» را برای Kochak DNS فعال کند.
-    fun isLockdownBlockEnabled(context: android.content.Context): Boolean =
-        prefs(context).getBoolean(KEY_LOCKDOWN_BLOCK, false)
-
-    fun setLockdownBlockEnabled(context: android.content.Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_LOCKDOWN_BLOCK, value).apply()
     }
 
     // پیش‌فرض true: الان درصد پکت‌ها نمایش داده می‌شه.
