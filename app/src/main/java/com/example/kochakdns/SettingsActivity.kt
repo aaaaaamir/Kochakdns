@@ -84,7 +84,7 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(
             settingSwitch(
                 title = "تونل کامل",
-                subtitle = "به‌جای فقط DNS، کل ترافیک برنامه‌های انتخاب‌شده از تونل رد بشه و برنامه‌های انتخاب‌نشده در حین اتصال مسدود بشن",
+                subtitle = "کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل رد بشه؛ برنامه‌های انتخاب‌نشده اینترنت معمولی دارن. (برای مسدودسازیِ واقعی انتخاب‌نشده‌ها از «Always-on VPN» استفاده کن)",
                 iconPath = ICON_TUNNEL,
                 initial = AppSettings.isFullTunnelEnabled(this)
             ) { checked ->
