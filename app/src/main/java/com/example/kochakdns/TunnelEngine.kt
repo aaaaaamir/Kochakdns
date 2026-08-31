@@ -37,12 +37,12 @@ class TunnelEngine(
     private val vpnService: VpnService,
     private val output: FileOutputStream,
     private val scope: CoroutineScope,
+    private val outputMutex: Mutex,
     private val shouldForward: (uid: Int) -> Boolean
 ) {
     private val udpSessions = ConcurrentHashMap<String, UdpSession>()
     private val tcpSessions = ConcurrentHashMap<String, TcpSession>()
     private val ownershipDecisions = ConcurrentHashMap<String, Boolean>()
-    private val outputMutex = Mutex()
 
     private suspend fun writePacket(packet: ByteArray) {
         outputMutex.withLock {
