@@ -88,8 +88,7 @@ class SettingsActivity : AppCompatActivity() {
                     if (checked) {
                         onBlockEnableRequested()
                     } else {
-                        AppSettings.setBlockNonTunneledEnabled(this, false)
-                        restartVpnIfActive()
+                        onBlockDisableRequested()
                     }
                 }
             )
@@ -157,17 +156,28 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** وقتی کاربر سوییچ مسدودسازی را روشن می‌کند: اول راهنمایی، بعد هدایت به تنظیمات. */
+    /** وقتی کاربر سوییچ مسدودسازی را روشن می‌کند: اول چک می‌کند؛ اگر آماده بود مستقیم فعال می‌شود، وگرنه راهنمایی + هدایت به تنظیمات. */
     private fun onBlockEnableRequested() {
+        if (isFirewallReady()) {
+            // از قبل توی تنظیمات سیستم فعاله؛ بدون دیالوگ مستقیم روشنش کن
+            AppSettings.setBlockNonTunneledEnabled(this, true)
+            Toast.makeText(this, "مسدودسازی فعال شد ✓", Toast.LENGTH_SHORT).show()
+            restartVpnIfActive()
+            return
+        }
+
         AlertDialog.Builder(this)
             .setTitle("مسدودسازی برنامه‌های انتخاب‌نشده")
             .setMessage(
                 "برای مسدودسازیِ واقعیِ اینترنتِ برنامه‌هایی که انتخاب نکردی، باید " +
-                    "در تنظیمات اندروید این دو گزینه را برای Kochak DNS فعال کنی:\n\n" +
+                    "در تنظیمات اندروید این گزینه‌ها را برای Kochak DNS فعال کنی:\n\n" +
                     "• Always-on VPN\n" +
                     "• مسدود کردن اتصال بدون VPN\n\n" +
+                    "توجه مهم: وقتی این حالت روشن باشه و VPN وصل نباشه، هیچ برنامه‌ای " +
+                    "(حتی خودِ اپ) به اینترنت دسترسی نداره — این همان «کشته‌ی اتصال» (kill switch) است.\n\n" +
                     "الان می‌برمت به همون صفحه؛ بعد از فعال‌کردن برگرد."
             )
+            .setCancelable(false)
             .setPositiveButton("برو به تنظیمات") { _, _ ->
                 pendingEnableBlock = true
                 openVpnSettings()
@@ -178,20 +188,28 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    /** وقتی کاربر سوییچ مسدودسازی را خاموش می‌کند: یادآوری وضعیت سیستم. */
+    private fun onBlockDisableRequested() {
+        AppSettings.setBlockNonTunneledEnabled(this, false)
+        restartVpnIfActive()
+        AlertDialog.Builder(this)
+            .setTitle("مسدودسازی خاموش شد")
+            .setMessage(
+                "توجه: گزینه‌ی «مسدود کردن اتصال بدون VPN» در تنظیمات سیستم احتمالاً هنوز روشنه؛ " +
+                    "تا وقتی VPN وصل نباشه، اینترنت همه‌ی برنامه‌ها قطع می‌مونه.\n\n" +
+                    "برای برگردوندن حالت عادی، اون گزینه رو هم در تنظیمات VPN خاموش کن. " +
+                    "می‌خوای الان بری به تنظیمات VPN؟"
+            )
+            .setPositiveButton("برو به تنظیمات") { _, _ -> openVpnSettings() }
+            .setNegativeButton("بعداً", null)
+            .show()
+    }
+
     /** تنظیم سوییچ بدون تحریک listener (برای هماهنگ‌سازی برنامه‌ای). */
     private fun setBlockSwitchChecked(value: Boolean) {
         updatingBlockSwitch = true
         blockSwitch?.isChecked = value
         updatingBlockSwitch = false
-    }
-
-    /** آیا Always-on VPN روی همین برنامه تنظیم شده است؟ */
-    private fun isAlwaysOnForUs(): Boolean {
-        return try {
-            Settings.Secure.getString(contentResolver, "always_on_vpn_app") == packageName
-        } catch (_: Exception) {
-            false
-        }
     }
 
     /** آیا «Block connections without VPN» (قفل اتصال) روشن است؟ */
@@ -203,8 +221,13 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** آیا هر دو شرط فایروال کامل برقرار است؟ */
-    private fun isFirewallReady(): Boolean = isAlwaysOnForUs() && isLockdownEnabled()
+    /**
+     * آیا فایروال آماده است؟ برای مسدودسازی، «قفل اتصال» (Block connections
+     * without VPN) کافی است؛ این گزینه فقط وقتی فعال می‌شود که Always-on VPN
+     * هم روشن باشد، پس چک کردن آن به‌تنهایی مطمئن‌تر است (روی بعضی گوشی‌ها
+     * مقدار always_on_vpn_app فرمت متفاوتی دارد و باعث تشخیص اشتباه می‌شد).
+     */
+    private fun isFirewallReady(): Boolean = isLockdownEnabled()
 
     /** اگر VPN الان وصله، تغییر تنظیمات فقط با ساخت دوباره‌ی تونل اعمال می‌شود. */
     private fun restartVpnIfActive() {
