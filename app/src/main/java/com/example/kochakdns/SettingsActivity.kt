@@ -82,16 +82,17 @@ class SettingsActivity : AppCompatActivity() {
                 subtitle = "برنامه‌هایی که از لیست «برنامه‌های تونل شده» انتخاب نکردی، به اینترنت دسترسی نداشته باشن (از طریق Always-on VPN سیستم)",
                 iconPath = ICON_BLOCK,
                 initial = AppSettings.isBlockNonTunneledEnabled(this),
-                onSwitchCreated = { blockSwitch = it }
-            ) { checked ->
-                if (updatingBlockSwitch) return@settingSwitch
-                if (checked) {
-                    onBlockEnableRequested()
-                } else {
-                    AppSettings.setBlockNonTunneledEnabled(this, false)
-                    restartVpnIfActive()
+                onSwitchCreated = { blockSwitch = it },
+                onChange = { checked ->
+                    if (updatingBlockSwitch) return@settingSwitch
+                    if (checked) {
+                        onBlockEnableRequested()
+                    } else {
+                        AppSettings.setBlockNonTunneledEnabled(this, false)
+                        restartVpnIfActive()
+                    }
                 }
-            }
+            )
         )
 
         list.addView(
@@ -239,8 +240,8 @@ class SettingsActivity : AppCompatActivity() {
         subtitle: String,
         iconPath: String,
         initial: Boolean,
-        onChange: (Boolean) -> Unit,
-        onSwitchCreated: ((Switch) -> Unit)? = null
+        onSwitchCreated: ((Switch) -> Unit)? = null,
+        onChange: (Boolean) -> Unit
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
