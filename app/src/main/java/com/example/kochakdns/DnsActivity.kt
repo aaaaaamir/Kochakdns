@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -280,14 +281,15 @@ class DnsActivity : AppCompatActivity() {
         if (updateCheckStarted) return
         updateCheckStarted = true
         lifecycleScope.launch {
-            delay(900) // بگذار صفحه اول آماده شود
+            // بدون delay: این دو درخواست از همان MainActivity (لحظه‌ی اسپلش)
+            // شروع شده‌اند؛ اینجا فقط به job در حال اجرا ملحق می‌شویم.
 
             // اگر آپدیت قبلاً نصب شده، کش را پاک کن
             UpdateManager.clearCacheIfInstalled(applicationContext)
 
             // اطلاعیه داخل برنامه (در صورت فعال بودن از تنظیمات)
             if (AppSettings.isAnnouncementEnabled(applicationContext)) {
-                val ann = AnnouncementManager.fetch(applicationContext)
+                val ann = StartupTasks.startAnnouncement(applicationContext).await()
                 if (ann != null) showAnnouncementDialog(ann)
             }
 
@@ -310,7 +312,7 @@ class DnsActivity : AppCompatActivity() {
             return
         }
 
-        val info = UpdateManager.fetchInfo(applicationContext) ?: return
+        val info = StartupTasks.startUpdateCheck(applicationContext).await() ?: return
         showUpdateBanner(downloadMode = true, version = info.version)
         showUpdateDialog(info)
     }
