@@ -1762,7 +1762,7 @@ class DnsActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    inner class DnsItemView(context: Context, initial: DnsItem) {
+    inner class DnsItemView(private val context: Context, initial: DnsItem) {
         val view: LinearLayout
         private val nameText: TextView
         private val pingText: TextView
