@@ -10,6 +10,11 @@ import kotlin.math.abs
 /** دامنه‌ی اصلی بک‌اند، یک‌جا تعریف شده تا هم DnsSyncManager هم MyVpnService از همین استفاده کنن. */
 object AppConfig {
     const val BASE_URL = "https://kodns.ir"
+
+    // مسیرهای API (بک‌اند Cloudflare Worker)
+    const val API_APP_INFO = "/api/app/info"          // بررسی بروزرسانی (ورژن/حجم)
+    const val API_APP_DOWNLOAD = "/api/app/download"  // دانلود APK
+    const val API_ANNOUNCEMENT = "/api/app/announcement" // اطلاعیه داخل برنامه
 }
 
 data class DnsServer(
@@ -248,23 +253,12 @@ object StatsReporter {
 /** تنظیمات سراسری برنامه (صفحه‌ی تنظیمات). پیش‌فرض‌ها دقیقاً همون رفتار فعلی برنامه‌ست. */
 object AppSettings {
     private const val PREFS = "app_settings"
-    private const val KEY_BLOCK_NON_TUNNELED = "block_non_tunneled_internet"
     private const val KEY_FULL_TUNNEL = "full_tunnel"
     private const val KEY_SHOW_PACKET_PERCENT = "show_packet_percentage"
     private const val KEY_SHOW_NOTIFICATION = "show_notification"
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
-
-    // پیش‌فرض false: مسدودسازی برنامه‌های تونل‌نشده (از طریق Always-on VPN سیستم).
-    // فقط وقتی true می‌شود که کاربر در تنظیمات سیستم، Always-on VPN و
-    // «Block connections without VPN» را برای Kochak DNS فعال کرده باشد.
-    fun isBlockNonTunneledEnabled(context: android.content.Context): Boolean =
-        prefs(context).getBoolean(KEY_BLOCK_NON_TUNNELED, false)
-
-    fun setBlockNonTunneledEnabled(context: android.content.Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_BLOCK_NON_TUNNELED, value).apply()
-    }
 
     // پیش‌فرض false: تونل کامل خاموش است (فقط DNS relay می‌شود).
     // وقتی روشن باشد، کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل
@@ -284,11 +278,13 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_SHOW_PACKET_PERCENT, value).apply()
     }
 
-    // پیش‌فرض true: الان همیشه نوتیفیکیشن نشون داده می‌شه.
-    fun isShowNotificationEnabled(context: android.content.Context): Boolean =
+    // پیش‌فرض true: اطلاعات پکت‌ها و حجم دیتای منتقل‌شده در نوتیفیکیشن VPN
+    // نمایش داده می‌شود. وقتی خاموش باشد، نوتیفیکیشن همچنان (طبق الزام اندروید)
+    // وجود دارد ولی فقط یک متن ساده (بدون آمار) نشان می‌دهد.
+    fun isShowNotificationInfoEnabled(context: android.content.Context): Boolean =
         prefs(context).getBoolean(KEY_SHOW_NOTIFICATION, true)
 
-    fun setShowNotificationEnabled(context: android.content.Context, value: Boolean) {
+    fun setShowNotificationInfoEnabled(context: android.content.Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_SHOW_NOTIFICATION, value).apply()
     }
 }
