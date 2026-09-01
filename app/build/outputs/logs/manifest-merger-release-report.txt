@@ -1,9 +1,20 @@
 -- Merging decision tree log ---
+provider#androidx.core.content.FileProvider
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:99:9-107:20
+	android:grantUriPermissions
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:103:13-47
+	android:authorities
+		INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:101:13-64
+	android:exported
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:102:13-37
+	android:name
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:100:13-62
 manifest
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-102:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-102:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-102:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-102:12
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-111:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-111:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-111:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-111:12
 MERGED from [androidx.databinding:viewbinding:8.1.0] /home/vscode/.gradle/caches/8.10.2/transforms/4dd46c6f22370cafef75359504bc7aac/transformed/jetified-viewbinding-8.1.0/AndroidManifest.xml:2:1-7:12
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/vscode/.gradle/caches/8.10.2/transforms/0d64e29e8be263b7efa7d1b8118c6a74/transformed/constraintlayout-2.1.4/AndroidManifest.xml:2:1-11:12
@@ -109,27 +120,25 @@ ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:23:5-25:53
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:25:9-50
 	android:name
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:24:9-61
-uses-permission#android.permission.KILL_BACKGROUND_PROCESSES
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:5-30:47
-	tools:ignore
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:9-44
+uses-permission#android.permission.REQUEST_INSTALL_PACKAGES
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:5-83
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:29:9-68
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:22-80
 queries
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:5-39:15
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:5-37:15
 intent#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:9-38:18
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:33:9-36:18
 action#android.intent.action.MAIN
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:13-65
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:13-65
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:21-62
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:21-62
 category#android.intent.category.LAUNCHER
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:13-73
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:13-73
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:23-70
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:23-70
 application
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:5-100:19
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:5-100:19
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:39:5-109:19
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:39:5-109:19
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/vscode/.gradle/caches/8.10.2/transforms/0d64e29e8be263b7efa7d1b8118c6a74/transformed/constraintlayout-2.1.4/AndroidManifest.xml:9:5-20
@@ -151,81 +160,87 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /home/vscode/.gradle/caches
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:46:9-35
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:44:9-35
 	android:label
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:44:9-41
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:42:9-41
 	android:roundIcon
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:9-54
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:43:9-54
 	android:icon
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:43:9-43
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:9-43
 	android:allowBackup
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:42:9-35
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-35
 	android:theme
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:47:9-59
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:9-59
 activity#com.example.kochakdns.MainActivity
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:50:9-58:20
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:48:9-56:20
 	android:screenOrientation
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:53:13-49
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:51:13-49
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:52:13-36
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:50:13-36
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:51:13-41
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:49:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:54:13-57:29
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:52:13-55:29
 activity#com.example.kochakdns.SettingsActivity
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:61:9-64:52
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:59:9-62:52
 	android:screenOrientation
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:64:13-49
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:13-49
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:63:13-37
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:61:13-37
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:13-45
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:60:13-45
 activity#com.example.kochakdns.TunnelAppsActivity
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:67:9-70:52
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:65:9-68:52
 	android:screenOrientation
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:70:13-49
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:13-49
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:69:13-37
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:67:13-37
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:13-47
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:66:13-47
 activity#com.example.kochakdns.DnsActivity
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:73:9-76:52
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:71:9-74:52
 	android:screenOrientation
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:76:13-49
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:13-49
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:75:13-37
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:73:13-37
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:13-40
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:72:13-40
 activity#com.example.kochakdns.AboutActivity
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:79:9-82:52
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:77:9-80:52
 	android:screenOrientation
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:82:13-49
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:13-49
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:81:13-37
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:79:13-37
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:13-42
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:78:13-42
 service#com.example.kochakdns.MyVpnService
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:9-98:19
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:83:9-96:19
 	android:exported
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:87:13-36
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:13-36
 	android:permission
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:13-69
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:87:13-69
 	android:foregroundServiceType
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:88:13-55
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:13-55
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:13-41
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:84:13-41
 intent-filter#action:name:android.net.VpnService
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:90:13-92:29
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:88:13-90:29
 action#android.net.VpnService
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:17-65
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:17-65
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:25-62
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:25-62
 property
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:95:13-97:66
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:93:13-95:66
 	android:value
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:97:17-63
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:95:17-63
 	android:name
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:96:17-76
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:94:17-76
+meta-data#android.support.FILE_PROVIDER_PATHS
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:104:13-106:54
+	android:resource
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:106:17-51
+	android:name
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:105:17-67
 uses-sdk
 INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml

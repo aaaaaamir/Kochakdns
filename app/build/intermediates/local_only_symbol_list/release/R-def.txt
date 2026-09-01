@@ -19,3 +19,4 @@ mipmap ic_launcher_round
 string app_name
 string hello_text
 style Theme.Kochakdns
+xml file_paths
