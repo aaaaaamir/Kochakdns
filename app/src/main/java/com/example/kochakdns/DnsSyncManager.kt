@@ -116,15 +116,20 @@ class DnsSyncManager(private val context: Context) {
         }
     }
 
+    /** آمار کامل یک پروفایل: مجموع پکت‌ها + تفکیک اوپراتورها. */
+    data class DnsStatsData(
+        val sent: Long,
+        val lost: Long,
+        val operators: List<OperatorStat>
+    )
+
     /**
-     * آمار پکت‌های ارسالی/گم‌شده‌ی هر پروفایل رو از سرور می‌گیره (GET
-     * /api/dns/stats). فرض ساختار پاسخ: {"ok":true,"data":[{"profile_name":
-     * "...","packets_sent":N,"packets_lost":N}, ...]} — یعنی همون شکلی که
-     * با POST ذخیره می‌شه. اگه ساختار واقعی سرور فرق داره بگو تا اصلاحش کنم.
+     * آمار پکت‌های ارسالی/گم‌شده‌ی هر پروفایل را از سرور می‌گیرد (GET
+     * /api/dns/stats) همراه با تفکیک اوپراتورها.
      *
-     * @return map از profile_name به Pair(packetsSent, packetsLost)
+     * @return map از profile_name به DnsStatsData
      */
-    suspend fun fetchStats(): Map<String, Pair<Long, Long>> {
+    suspend fun fetchStats(): Map<String, DnsStatsData> {
         return withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
@@ -137,14 +142,33 @@ class DnsSyncManager(private val context: Context) {
                     val body = response.body?.string() ?: return@withContext emptyMap()
                     val root = JSONObject(body)
                     val dataArray = root.optJSONArray("data") ?: return@withContext emptyMap()
-                    val map = mutableMapOf<String, Pair<Long, Long>>()
+                    val map = mutableMapOf<String, DnsStatsData>()
                     for (i in 0 until dataArray.length()) {
                         val item = dataArray.getJSONObject(i)
                         val name = item.optString("profile_name")
                         if (name.isBlank()) continue
                         val sent = item.optLong("packets_sent", 0)
                         val lost = item.optLong("packets_lost", 0)
-                        map[name] = sent to lost
+
+                        val ops = mutableListOf<OperatorStat>()
+                        val opArray = item.optJSONArray("operators")
+                        if (opArray != null) {
+                            for (j in 0 until opArray.length()) {
+                                val op = opArray.getJSONObject(j)
+                                val opName = op.optString("operator")
+                                if (opName.isBlank()) continue
+                                ops.add(
+                                    OperatorStat(
+                                        opName,
+                                        op.optLong("packets_sent", 0),
+                                        op.optLong("packets_lost", 0)
+                                    )
+                                )
+                            }
+                        }
+                        // مرتب‌سازی از بهترین به بدترین
+                        ops.sortByDescending { it.successPercent ?: -1.0 }
+                        map[name] = DnsStatsData(sent, lost, ops)
                     }
                     map
                 }
