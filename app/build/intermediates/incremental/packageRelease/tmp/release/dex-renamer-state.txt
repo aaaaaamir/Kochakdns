@@ -1,4 +1,4 @@
-#Tue Sep 01 12:31:03 UTC 2026
+#Tue Sep 01 15:04:13 UTC 2026
 base.1=/workspaces/Kochakdns/app/build/intermediates/dex/release/mergeDexRelease/classes2.dex
 path.1=classes2.dex
 base.0=/workspaces/Kochakdns/app/build/intermediates/dex/release/mergeDexRelease/classes.dex
