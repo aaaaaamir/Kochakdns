@@ -353,6 +353,10 @@ class DnsActivity : AppCompatActivity() {
     private var activeDialog: AppDialogHolder? = null
     private var activeDownloadDialog: DownloadDialogHolder? = null
 
+    /** تبدیل dp به پیکسل (برای ابعاد دیالوگ‌ها). */
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
     /** یک دیالوگ کارت‌مانند با انیمیشن نرم می‌سازد و نمایش می‌دهد. */
     private fun showAppDialog(
         title: String,
@@ -381,6 +385,7 @@ class DnsActivity : AppCompatActivity() {
             alpha = 0f
             scaleX = 0.85f
             scaleY = 0.85f
+            minimumHeight = dp(200)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
@@ -401,15 +406,17 @@ class DnsActivity : AppCompatActivity() {
         card.addView(TextView(this).apply {
             text = title
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.END
         })
         card.addView(TextView(this).apply {
             text = message
             setTextColor(Color.parseColor("#B0B0BA"))
-            textSize = 14f
-            setPadding(0, 16, 0, 8)
+            textSize = 15f
+            setLineSpacing(0f, 1.25f)
+            setPadding(0, 20, 0, 16)
+            minimumHeight = dp(72)
             gravity = Gravity.END
         })
 
@@ -421,16 +428,16 @@ class DnsActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 16 }
+            ).apply { topMargin = 12 }
         }
 
         fun makeBtn(text: String, primary: Boolean, action: (() -> Unit)?): TextView {
             return TextView(this).apply {
                 this.text = text
-                textSize = 14f
+                textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setPadding(24, 12, 24, 12)
+                setPadding(20, 16, 20, 16)
                 setTextColor(if (primary) Color.WHITE else Color.parseColor("#B0B0BA"))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     background = GradientDrawable().apply {
@@ -447,14 +454,23 @@ class DnsActivity : AppCompatActivity() {
             }
         }
 
-        if (negativeText != null) {
-            row.addView(makeBtn(negativeText, false, onNegative))
+        // دکمه‌ها: هر کدام نیمی از عرض را می‌گیرند (یکی راست، یکی چپ) و بزرگ‌ترند.
+        // اگر فقط یک دکمه باشد، تمام عرض را پر می‌کند.
+        val hasPositive = positiveText != null
+        val hasNegative = negativeText != null
+
+        if (hasNegative) {
+            row.addView(makeBtn(negativeText!!, false, onNegative),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        if (hasNegative && hasPositive) {
             row.addView(View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(14, 1)
+                layoutParams = LinearLayout.LayoutParams(dp(16), 1)
             })
         }
-        if (positiveText != null) {
-            row.addView(makeBtn(positiveText, true, onPositive))
+        if (hasPositive) {
+            row.addView(makeBtn(positiveText!!, true, onPositive),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
         card.addView(row)
 
@@ -485,6 +501,7 @@ class DnsActivity : AppCompatActivity() {
             alpha = 0f
             scaleX = 0.85f
             scaleY = 0.85f
+            minimumHeight = dp(180)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
@@ -504,15 +521,15 @@ class DnsActivity : AppCompatActivity() {
         card.addView(TextView(this).apply {
             text = "بروزرسانی"
             setTextColor(Color.WHITE)
-            textSize = 17f
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.END
         })
         val text = TextView(this).apply {
             this.text = "در حال دانلود بروزرسانی... 0%"
             setTextColor(Color.parseColor("#B0B0BA"))
-            textSize = 13f
-            setPadding(0, 16, 0, 10)
+            textSize = 15f
+            setPadding(0, 20, 0, 16)
             gravity = Gravity.END
         }
         card.addView(text)
@@ -521,7 +538,7 @@ class DnsActivity : AppCompatActivity() {
             progress = 0
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                28
+                32
             )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 progressTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
