@@ -24,10 +24,8 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    <!-- برای بستن فرآیندهای پس‌زمینه‌ی برنامه‌های انتخاب‌نشده در حالت مسدودسازی -->
-    <uses-permission
-        android:name="android.permission.KILL_BACKGROUND_PROCESSES"
-        tools:ignore="ProtectedPermissions" />
+    <!-- برای نصب بروزرسانی APK دانلودشده داخل برنامه -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
     <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
@@ -96,6 +94,17 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="VPN service for DNS management" />
         </service>
+
+        <!-- برای نصب APK دانلودشده (بروزرسانی داخل برنامه) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
