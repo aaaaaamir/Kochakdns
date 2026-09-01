@@ -1,8 +1,5 @@
 package com.example.kochakdns
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -16,7 +13,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class SettingsActivity : AppCompatActivity() {
@@ -29,9 +25,8 @@ class SettingsActivity : AppCompatActivity() {
         private const val ICON_TUNNEL = "M6.99,11L3,15l3.99,4v-3H14v-2H6.99v-3zM21,9l-3.99,-4v3H10v2h7.01v3L21,9z"
         private const val ICON_PERCENT = "M7.5,11C9.43,11 11,9.43 11,7.5S9.43,4 7.5,4 4,5.57 4,7.5 5.57,11 7.5,11zM7.5,6C8.33,6 9,6.67 9,7.5S8.33,9 7.5,9 6,8.33 6,7.5 6.67,6 7.5,6zM16.5,20c1.93,0 3.5,-1.57 3.5,-3.5s-1.57,-3.5 -3.5,-3.5 -3.5,1.57 -3.5,3.5 1.57,3.5 3.5,3.5zM16.5,17c0.83,0 1.5,0.67 1.5,1.5s-0.67,1.5 -1.5,1.5 -1.5,-0.67 -1.5,-1.5 0.67,-1.5 1.5,-1.5zM19,5L5,19"
         private const val ICON_NOTIFICATION = "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
-        private const val ICON_UPDATE = "M21,12a9,9 0,1 1,-2.64,-6.36M21,3v6h-6M21,3l-4,4"
-        private const val ICON_ANNOUNCE = "M4,4h16a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2H4a2,2 0,0 1,-2,-2V6a2,2 0,0 1,2,-2zM22,6l-10,6L2,6"
-        private const val ICON_COPY = "M20,9h-9a2,2 0,0 0,-2 2v9a2,2 0,0 0,2 2h9a2,2 0,0 0,2,-2v-9a2,2 0,0 0,-2,-2zM5,15H4a2,2 0,0 1,-2,-2V4a2,2 0,0 1,2,-2h9a2,2 0,0 1,2 2v1"
+        private const val ICON_ABOUT = "M11,7h2v2h-2zM11,11h2v6h-2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm0,18c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8z"
+        private const val ICON_CHEVRON = "M9,18l6,-6 -6,-6"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,62 +109,12 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
-        // ===== API های جدید =====
-        list.addView(sectionTitle("سرویس‌های آنلاین"))
-
+        // ===== درباره ما =====
         list.addView(
-            glassSwitch(
-                title = "بروزرسانی خودکار",
-                subtitle = "API بروزرسانی: هنگام ورود، ورژن جدید رو از سرور چک می‌کنه و در صورت وجود، پاپ‌آپ دانلود/نصب نمایش می‌ده",
-                iconPath = ICON_UPDATE,
-                initial = AppSettings.isUpdateCheckEnabled(this)
-            ) { checked ->
-                AppSettings.setUpdateCheckEnabled(this, checked)
-            }
-        )
-
-        list.addView(
-            glassSwitch(
-                title = "اطلاعیه‌های داخل برنامه",
-                subtitle = "API اطلاعیه: اعلان‌هایی که از ربات تلگرام می‌سازی رو موقع ورود نمایش می‌ده",
-                iconPath = ICON_ANNOUNCE,
-                initial = AppSettings.isAnnouncementEnabled(this)
-            ) { checked ->
-                AppSettings.setAnnouncementEnabled(this, checked)
-            }
-        )
-
-        // ===== دستورات جدید ربات =====
-        list.addView(sectionTitle("دستورات ربات تلگرام"))
-
-        list.addView(
-            commandCard(
-                command = "/setannounce",
-                description = "ساخت اطلاعیه داخل برنامه: عنوان → متن → دکمه لغو → لینک → متن لینک"
-            )
-        )
-        list.addView(
-            commandCard(
-                command = "/announceinfo",
-                description = "نمایش اطلاعیه فعلی و وضعیت API بروزرسانی"
-            )
-        )
-        list.addView(
-            commandCard(
-                command = "/clearannounce",
-                description = "پاک کردن کامل اطلاعیه داخل برنامه"
-            )
-        )
-        list.addView(
-            commandCard(
-                command = "/setversion",
-                description = "تغییر ورژن APK (مثلاً /setversion 1.2.3)"
-            )
-        )
-        list.addView(
-            commandCard(
-                command = "/apkinfo",
-                description = "نمایش ورژن و حجم APK آپلودشده"
+            glassCard(
+                title = "درباره ما",
+                iconPath = ICON_ABOUT,
+                onClick = { startActivity(Intent(this, AboutActivity::class.java)) }
             )
         )
 
@@ -177,16 +122,6 @@ class SettingsActivity : AppCompatActivity() {
         column.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(column)
         setContentView(root)
-    }
-
-    private fun sectionTitle(text: String): TextView {
-        return TextView(this).apply {
-            this.text = text
-            setTextColor(Color.parseColor("#8A8A9A"))
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(8, 18, 8, 10)
-        }
     }
 
     /** اگر VPN الان وصله، تغییر تنظیمات فقط با ساخت دوباره‌ی تونل اعمال می‌شود. */
@@ -202,69 +137,43 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** کارت شیشه‌ای برای نمایش یک دستور ربات + دکمه کپی. */
-    private fun commandCard(command: String, description: String): LinearLayout {
+    /** کارت کلیک‌پذیر شیشه‌ای (مثل «درباره ما») با فلش سمت چپ. */
+    private fun glassCard(
+        title: String,
+        iconPath: String,
+        onClick: () -> Unit
+    ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 20, 20, 20)
+            setPadding(24, 22, 20, 22)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = 14 }
             applyGlassBackground(this)
+            isClickable = true
+            isFocusable = true
 
-            val textColumn = LinearLayout(this@SettingsActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = 12
-                }
-            }
-            textColumn.addView(TextView(this@SettingsActivity).apply {
-                text = command
-                setTextColor(Color.parseColor("#4C8DFF"))
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
+            })
+
+            addView(TextView(this@SettingsActivity).apply {
+                text = title
+                setTextColor(Color.WHITE)
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
-                // تک‌فاصله تا دستور خواناتر باشد
-                typeface = Typeface.MONOSPACE
-            })
-            textColumn.addView(TextView(this@SettingsActivity).apply {
-                text = description
-                setTextColor(Color.parseColor("#888888"))
-                textSize = 11f
-                setPadding(0, 6, 0, 0)
-            })
-
-            val copyBtn = LinearLayout(this@SettingsActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(16, 10, 16, 10)
-                isClickable = true
-                isFocusable = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    background = GradientDrawable().apply {
-                        cornerRadius = 16f
-                        setColor(Color.parseColor("#1AFFFFFF"))
-                        setStroke(1, Color.parseColor("#33FFFFFF"))
-                    }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 16
                 }
-                setOnClickListener { copyCommand(command) }
-            }
-            copyBtn.addView(ImageView(this@SettingsActivity).apply {
-                setImageDrawable(buildVectorDrawable(ICON_COPY, Color.parseColor("#C8C8D0"), 36))
             })
 
-            addView(textColumn)
-            addView(copyBtn)
-        }
-    }
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(buildVectorDrawable(ICON_CHEVRON, Color.parseColor("#666680"), 36))
+            })
 
-    private fun copyCommand(command: String) {
-        try {
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("command", command))
-            Toast.makeText(this, "کپی شد: $command", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
+            setOnClickListener { onClick() }
         }
     }
 
