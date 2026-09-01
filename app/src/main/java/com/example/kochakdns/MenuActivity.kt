@@ -72,7 +72,6 @@ class MenuActivity(private val host: DnsActivity) {
         private const val PATH_SETTINGS = "M19.14,12.94c0.04,-0.3 0.06,-0.61 0.06,-0.94c0,-0.33 -0.02,-0.64 -0.07,-0.94l2.03,-1.58c0.18,-0.14 0.23,-0.41 0.12,-0.61l-1.92,-3.32c-0.12,-0.22 -0.37,-0.29 -0.59,-0.22l-2.39,0.96c-0.5,-0.38 -1.03,-0.7 -1.62,-0.94l-0.36,-2.54c-0.04,-0.24 -0.24,-0.41 -0.48,-0.41h-3.84c-0.24,0 -0.43,0.17 -0.47,0.41l-0.36,2.54c-0.59,0.24 -1.13,0.57 -1.62,0.94l-2.39,-0.96c-0.22,-0.08 -0.47,0 -0.59,0.22l-1.92,3.32c-0.12,0.2 -0.07,0.47 0.12,0.61l2.03,1.58c-0.05,0.3 -0.09,0.63 -0.09,0.94s0.04,0.64 0.09,0.94l-2.03,1.58c-0.18,0.14 -0.23,0.41 -0.12,0.61l1.92,3.32c0.12,0.22 0.37,0.29 0.59,0.22l2.39,-0.96c0.5,0.38 1.03,0.7 1.62,0.94l0.36,2.54c0.05,0.24 0.24,0.41 0.48,0.41h3.84c0.24,0 0.44,-0.17 0.47,-0.41l0.36,-2.54c0.59,-0.24 1.13,-0.56 1.62,-0.94l2.39,0.96c0.22,0.08 0.47,0 0.59,-0.22l1.92,-3.32c0.12,-0.2 0.07,-0.47 -0.12,-0.61l-2.01,-1.58zM12,15.6c-1.98,0 -3.6,-1.62 -3.6,-3.6s1.62,-3.6 3.6,-3.6s3.6,1.62 3.6,3.6s-1.62,3.6 -3.6,3.6z"
         private const val PATH_IPV6 = "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm-1,17.93c-3.95,-0.49 -7,-3.85 -7,-7.93 0,-0.62 0.08,-1.21 0.21,-1.79L9,15v1c0,1.1 0.9,2 2,2v1.93zm6.9,-2.54c-0.26,-0.81 -1,-1.39 -1.9,-1.39h-1v-3c0,-0.55 -0.45,-1 -1,-1H8v-2h2c0.55,0 1,-0.45 1,-1V7h2c1.1,0 2,-0.9 2,-2v-0.41c2.93,1.19 5,4.06 5,7.41 0,2.08 -0.8,3.97 -2.1,5.39z"
         private const val PATH_TUNNEL_APPS = "M4,11h6a1,1 0,0,0 1,-1V4a1,1 0,0,0 -1,-1H4a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zm10,0h6a1,1 0,0,0 1,-1V4a1,1 0,0,0 -1,-1h-6a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zM4,21h6a1,1 0,0,0 1,-1v-6a1,1 0,0,0 -1,-1H4a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zm10,0h6a1,1 0,0,0 1,-1v-6a1,1 0,0,0 -1,-1h-6a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1z"
-        private const val PATH_ABOUT = "M11,7h2v2h-2zM11,11h2v6h-2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm0,18c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8z"
     }
 
     fun buildView(onItemClick: () -> Unit): LinearLayout {
@@ -107,14 +106,6 @@ class MenuActivity(private val host: DnsActivity) {
             }
         )
 
-        // ۴. گزینه‌ی درباره ما (در انتهای لیست)
-        container.addView(
-            menuItemCard("درباره ما", PATH_ABOUT) {
-                onItemClick()
-                host.startActivity(Intent(host, AboutActivity::class.java))
-            }
-        )
-
         return container
     }
 
@@ -127,7 +118,7 @@ class MenuActivity(private val host: DnsActivity) {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12 }
+            ).apply { bottomMargin = 20 }
 
             applyCardBackground(this)
             applyRipple(this)
@@ -166,7 +157,7 @@ class MenuActivity(private val host: DnsActivity) {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12 }
+            ).apply { bottomMargin = 20 }
 
             applyCardBackground(this)
             applyRipple(this)
