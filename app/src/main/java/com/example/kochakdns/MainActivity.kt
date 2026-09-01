@@ -51,6 +51,16 @@ class MainActivity : AppCompatActivity() {
         // صفحه آماده‌ست و دیگه منتظرش نمی‌مونیم.
         DnsSyncCoordinator.startSync(applicationContext)
 
+        // API های بروزرسانی و اطلاعیه هم «به محض شروع برنامه» صدا زده می‌شوند
+        // تا وقتی کاربر به صفحه‌ی اصلی رسید، نتیجه از قبل آماده باشد و هیچ
+        // کندی حس نکند. DnsActivity بعداً به همین job ها ملحق می‌شود.
+        if (AppSettings.isUpdateCheckEnabled(applicationContext)) {
+            StartupTasks.startUpdateCheck(applicationContext)
+        }
+        if (AppSettings.isAnnouncementEnabled(applicationContext)) {
+            StartupTasks.startAnnouncement(applicationContext)
+        }
+
         // اگه دفعه‌ی قبل برنامه force-stop شده باشه، MyVpnService فرصت نکرده
         // آمار آخرین اتصال رو بفرسته. اینجا چک می‌کنیم آیا از چک‌پوینت پیوسته‌ی
         // روی دیسک چیزی جامونده، و اگه بله (و طبق همون قانون ۳۰ ثانیه واجد
