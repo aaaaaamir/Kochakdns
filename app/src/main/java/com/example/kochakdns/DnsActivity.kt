@@ -28,7 +28,6 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.doOnPreDraw
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -286,12 +285,16 @@ class DnsActivity : AppCompatActivity() {
             // اگر آپدیت قبلاً نصب شده، کش را پاک کن
             UpdateManager.clearCacheIfInstalled(applicationContext)
 
-            // اطلاعیه داخل برنامه
-            val ann = AnnouncementManager.fetch(applicationContext)
-            if (ann != null) showAnnouncementDialog(ann)
+            // اطلاعیه داخل برنامه (در صورت فعال بودن از تنظیمات)
+            if (AppSettings.isAnnouncementEnabled(applicationContext)) {
+                val ann = AnnouncementManager.fetch(applicationContext)
+                if (ann != null) showAnnouncementDialog(ann)
+            }
 
-            // بروزرسانی
-            checkUpdate()
+            // بروزرسانی (در صورت فعال بودن از تنظیمات)
+            if (AppSettings.isUpdateCheckEnabled(applicationContext)) {
+                checkUpdate()
+            }
         }
     }
 
@@ -312,24 +315,254 @@ class DnsActivity : AppCompatActivity() {
         showUpdateDialog(info)
     }
 
+    // ===================================================================
+    // دیالوگ‌های سفارشی (استایل و انیمیشن هماهنگ با برنامه)
+    // ===================================================================
+    private class AppDialogHolder(
+        val overlay: FrameLayout,
+        val card: LinearLayout,
+        val cancelable: Boolean
+    ) {
+        fun dismiss() {
+            card.animate().alpha(0f).scaleX(0.92f).scaleY(0.92f).setDuration(160).withEndAction {
+                overlay.animate().alpha(0f).setDuration(120).withEndAction {
+                    (overlay.parent as? ViewGroup)?.removeView(overlay)
+                }.start()
+            }.start()
+        }
+    }
+
+    private class DownloadDialogHolder(
+        val overlay: FrameLayout,
+        val bar: ProgressBar,
+        val text: TextView
+    ) {
+        fun update(percent: Int) {
+            bar.progress = percent.coerceIn(0, 100)
+            text.text = "در حال دانلود بروزرسانی... $percent%"
+        }
+        fun dismiss() {
+            overlay.animate().alpha(0f).setDuration(160).withEndAction {
+                (overlay.parent as? ViewGroup)?.removeView(overlay)
+            }.start()
+        }
+    }
+
+    private var activeDialog: AppDialogHolder? = null
+    private var activeDownloadDialog: DownloadDialogHolder? = null
+
+    /** یک دیالوگ کارت‌مانند با انیمیشن نرم می‌سازد و نمایش می‌دهد. */
+    private fun showAppDialog(
+        title: String,
+        message: String,
+        cancelable: Boolean,
+        positiveText: String?,
+        onPositive: (() -> Unit)?,
+        negativeText: String?,
+        onNegative: (() -> Unit)? = null
+    ): AppDialogHolder {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            alpha = 0f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            if (cancelable) {
+                setOnClickListener { activeDialog?.dismiss() }
+            }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 32, 36, 28)
+            alpha = 0f
+            scaleX = 0.85f
+            scaleY = 0.85f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                leftMargin = 40
+                rightMargin = 40
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#1E1E2E"))
+                    cornerRadius = 28f
+                    setStroke(2, Color.parseColor("#2A2A3E"))
+                }
+            }
+        }
+
+        card.addView(TextView(this).apply {
+            text = title
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.END
+        })
+        card.addView(TextView(this).apply {
+            text = message
+            setTextColor(Color.parseColor("#B0B0BA"))
+            textSize = 14f
+            setPadding(0, 16, 0, 8)
+            gravity = Gravity.END
+        })
+
+        val holder = AppDialogHolder(overlay, card, cancelable)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 16 }
+        }
+
+        fun makeBtn(text: String, primary: Boolean, action: (() -> Unit)?): TextView {
+            return TextView(this).apply {
+                this.text = text
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setPadding(24, 12, 24, 12)
+                setTextColor(if (primary) Color.WHITE else Color.parseColor("#B0B0BA"))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    background = GradientDrawable().apply {
+                        cornerRadius = 18f
+                        setColor(if (primary) Color.parseColor("#4C8DFF") else Color.parseColor("#2A2A3E"))
+                    }
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    holder.dismiss()
+                    action?.invoke()
+                }
+            }
+        }
+
+        if (negativeText != null) {
+            row.addView(makeBtn(negativeText, false, onNegative))
+            row.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(14, 1)
+            })
+        }
+        if (positiveText != null) {
+            row.addView(makeBtn(positiveText, true, onPositive))
+        }
+        card.addView(row)
+
+        overlay.addView(card)
+        rootLayout.addView(overlay)
+
+        overlay.animate().alpha(1f).setDuration(180).start()
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(280)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.1f)).start()
+
+        activeDialog = holder
+        return holder
+    }
+
+    /** دیالوگ پیشرفت دانلود (درصد واقعی). */
+    private fun showDownloadDialog(): DownloadDialogHolder {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            alpha = 0f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 32, 36, 28)
+            alpha = 0f
+            scaleX = 0.85f
+            scaleY = 0.85f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                leftMargin = 40
+                rightMargin = 40
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#1E1E2E"))
+                    cornerRadius = 28f
+                    setStroke(2, Color.parseColor("#2A2A3E"))
+                }
+            }
+        }
+        card.addView(TextView(this).apply {
+            text = "بروزرسانی"
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.END
+        })
+        val text = TextView(this).apply {
+            this.text = "در حال دانلود بروزرسانی... 0%"
+            setTextColor(Color.parseColor("#B0B0BA"))
+            textSize = 13f
+            setPadding(0, 16, 0, 10)
+            gravity = Gravity.END
+        }
+        card.addView(text)
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                28
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                progressTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#4C8DFF"))
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#2A2A3E"))
+            }
+        }
+        card.addView(bar)
+        overlay.addView(card)
+        rootLayout.addView(overlay)
+
+        overlay.animate().alpha(1f).setDuration(180).start()
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(280)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.1f)).start()
+
+        val holder = DownloadDialogHolder(overlay, bar, text)
+        activeDownloadDialog = holder
+        return holder
+    }
+
     private fun showUpdateDialog(info: UpdateManager.UpdateInfo) {
         val msg = buildString {
             append("ورژن جدید ${info.version} منتشر شده است.")
             info.sizeFormatted?.let { append("\nحجم: $it") }
         }
-        AlertDialog.Builder(this)
-            .setTitle("بروزرسانی جدید")
-            .setMessage(msg)
-            .setCancelable(true)
-            .setPositiveButton("دانلود") { _, _ -> startDownload(info) }
-            .setNegativeButton("لغو") { _, _ -> showUpdateBanner(downloadMode = true, version = info.version) }
-            .show()
+        showAppDialog(
+            title = "بروزرسانی جدید",
+            message = msg,
+            cancelable = true,
+            positiveText = "دانلود",
+            onPositive = { startDownload(info) },
+            negativeText = "لغو",
+            onNegative = { showUpdateBanner(downloadMode = true, version = info.version) }
+        )
     }
 
     private fun startDownload(info: UpdateManager.UpdateInfo) {
-        Toast.makeText(this, "در حال دانلود بروزرسانی...", Toast.LENGTH_SHORT).show()
+        val holder = showDownloadDialog()
+        holder.update(0)
         lifecycleScope.launch {
-            val file = UpdateManager.download(applicationContext)
+            val file = UpdateManager.download(applicationContext) { pct ->
+                runOnUiThread { holder.update(pct) }
+            }
+            holder.dismiss()
             if (file != null) {
                 UpdateManager.saveDownloaded(applicationContext, file, info.version)
                 showUpdateBanner(downloadMode = false, version = info.version)
@@ -342,38 +575,37 @@ class DnsActivity : AppCompatActivity() {
     }
 
     private fun showInstallDialog(file: File, version: String) {
-        AlertDialog.Builder(this)
-            .setTitle("آماده نصب")
-            .setMessage("بروزرسانی ورژن $version دانلود و آماده نصب است.")
-            .setCancelable(true)
-            .setPositiveButton("نصب بروزرسانی") { _, _ -> UpdateManager.install(this@DnsActivity, file) }
-            .setNegativeButton("بعداً") { _, _ -> showUpdateBanner(downloadMode = false, version = version) }
-            .show()
+        showAppDialog(
+            title = "آماده نصب",
+            message = "بروزرسانی ورژن $version دانلود و آماده نصب است.",
+            cancelable = true,
+            positiveText = "نصب بروزرسانی",
+            onPositive = { UpdateManager.install(this@DnsActivity, file) },
+            negativeText = "بعداً",
+            onNegative = { showUpdateBanner(downloadMode = false, version = version) }
+        )
     }
 
     private fun showAnnouncementDialog(ann: AnnouncementManager.Announcement) {
-        val builder = AlertDialog.Builder(this)
-            .setTitle(ann.title)
-            .setMessage(ann.body)
+        showAppDialog(
+            title = ann.title,
+            message = ann.body,
             // اگه دکمه لغو در ربات ست نشده، با هیچ روشی قابل رد شدن نیست
-            .setCancelable(ann.cancel)
-
-        if (ann.link != null) {
-            builder.setPositiveButton(ann.linkText ?: "باز کردن") { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.link)))
-                } catch (_: Exception) {
+            cancelable = ann.cancel,
+            positiveText = if (ann.link != null) (ann.linkText ?: "باز کردن") else null,
+            onPositive = if (ann.link != null) {
+                {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.link)))
+                    } catch (_: Exception) {
+                    }
                 }
-            }
-        }
-        if (ann.cancel) {
-            builder.setNegativeButton("لغو", null)
-        }
-
-        val dialog = builder.create()
-        dialog.setCanceledOnTouchOutside(ann.cancel)
-        dialog.show()
+            } else null,
+            negativeText = if (ann.cancel) "لغو" else null,
+            onNegative = null
+        )
     }
+
 
     private fun setupUpdateBanner() {
         updateBanner = LinearLayout(this).apply {
@@ -1054,11 +1286,14 @@ class DnsActivity : AppCompatActivity() {
             val stats = DnsSyncManager(applicationContext).fetchStats()
             if (stats.isEmpty()) return@launch
             mainHandler.post {
-                stats.forEach { (name, pair) ->
-                    val (sent, lost) = pair
+                stats.forEach { (name, data) ->
                     val index = dnsItems.indexOfFirst { it.name == name }
                     if (index >= 0) {
-                        val updated = dnsItems[index].copy(statsPacketsSent = sent, statsPacketsLost = lost)
+                        val updated = dnsItems[index].copy(
+                            statsPacketsSent = data.sent,
+                            statsPacketsLost = data.lost,
+                            operatorStats = data.operators
+                        )
                         dnsItems[index] = updated
                         dnsItemViews[name]?.update(updated, name == selectedDnsName)
                     }
@@ -1502,6 +1737,13 @@ class DnsActivity : AppCompatActivity() {
     override fun onBackPressed() {
         if (isDrawerOpen) {
             closeDrawer()
+        } else if (activeDownloadDialog != null) {
+            // وسط دانلود اجازه خروج نمی‌دهیم
+        } else if (activeDialog != null) {
+            if (activeDialog!!.cancelable) {
+                activeDialog?.dismiss()
+            }
+            // غیرقابل‌لغو: دکمه بازگشت هم نمی‌تواند ببندد
         } else {
             super.onBackPressed()
         }
@@ -1524,12 +1766,14 @@ class DnsActivity : AppCompatActivity() {
         private val pingText: TextView
         private val loadingDots: LinearLayout
         private val percentBadge: TextView
+        private val operatorBadge: TextView
         private val expandArrow: ExpandArrowView
         private val detailsPanel: LinearLayout
         private val detailSentText: TextView
         private val detailLostText: TextView
         private val detailTotalText: TextView
         private val detailAvgText: TextView
+        private val operatorList: LinearLayout
         private var isSelected = false
         private var isExpanded = false
         private var cardBgColor = Color.parseColor("#1E1E2E")
@@ -1611,9 +1855,23 @@ class DnsActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = 12 }
             }
+            // بج «بهترین عملکرد: نام اوپراتور» — هم‌اندازه و هم‌استایل درصد موفقیت
+            operatorBadge = TextView(context).apply {
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(14, 4, 14, 4)
+                setTextColor(Color.parseColor("#FFD700"))
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = 8 }
+            }
+
             pingRow.addView(pingText)
             pingRow.addView(loadingDots)
             pingRow.addView(percentBadge)
+            pingRow.addView(operatorBadge)
             infoContainer.addView(nameText)
             infoContainer.addView(pingRow)
 
@@ -1686,6 +1944,13 @@ class DnsActivity : AppCompatActivity() {
             detailAvgText = statCell("میانگین")
             detailsPanel.addView(divider)
             detailsPanel.addView(statsGrid)
+
+            // ===== عملکرد اوپراتورها (از بهترین به بدترین) =====
+            operatorList = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+            detailsPanel.addView(operatorList)
 
             view.addView(topRow)
             view.addView(detailsPanel)
@@ -1775,6 +2040,68 @@ class DnsActivity : AppCompatActivity() {
         private var lastKnownPercent: Double? = null
         private var lastKnownStatsSent: Long? = null
         private var lastKnownStatsLost: Long? = null
+        private var lastKnownBestOperator: String? = null
+        private var lastKnownOperatorsSignature: String? = null
+
+        /** ساخت ردیف‌های «عملکرد اوپراتورها» (از بهترین به بدترین) در پنل جزئیات. */
+        private fun rebuildOperatorList(item: DnsItem, statsEnabled: Boolean) {
+            operatorList.removeAllViews()
+            val ops = item.operatorStats
+            if (!statsEnabled || ops.isEmpty()) {
+                operatorList.visibility = View.GONE
+                return
+            }
+            operatorList.visibility = View.VISIBLE
+
+            val header = TextView(context).apply {
+                text = "عملکرد اوپراتورها"
+                setTextColor(Color.parseColor("#888888"))
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 18, 0, 6)
+            }
+            operatorList.addView(header)
+
+            for (op in ops) {
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 6, 0, 6)
+                }
+                val nameView = TextView(context).apply {
+                    text = op.operator
+                    setTextColor(Color.WHITE)
+                    textSize = 13f
+                    setTypeface(null, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val percent = op.successPercent
+                val pctView = TextView(context).apply {
+                    text = if (percent != null) "%${\"%.0f\".format(percent)}" else "--"
+                    textSize = 12f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(when {
+                        percent == null -> Color.parseColor("#666666")
+                        percent >= 95 -> Color.parseColor("#4CAF50")
+                        percent >= 85 -> Color.parseColor("#FFC107")
+                        else -> Color.parseColor("#F44336")
+                    })
+                }
+                val detailView = TextView(context).apply {
+                    text = "  ${op.packetsSent}/${op.total}"
+                    setTextColor(Color.parseColor("#888888"))
+                    textSize = 10f
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { marginStart = 10 }
+                }
+                row.addView(nameView)
+                row.addView(detailView)
+                row.addView(pctView)
+                operatorList.addView(row)
+            }
+        }
 
         fun update(item: DnsItem, isSelected: Boolean) {
             this.isSelected = isSelected
@@ -1837,6 +2164,37 @@ class DnsActivity : AppCompatActivity() {
                 detailLostText.text = item.statsPacketsLost.toString()
                 detailTotalText.text = item.statsTotal.toString()
                 detailAvgText.text = if (percent != null) "%${"%.1f".format(percent)}" else "--"
+            }
+
+            // ===== بج «بهترین عملکرد: نام اوپراتور» =====
+            val bestOp = if (statsEnabled) item.bestOperator else null
+            val bestOpLabel = bestOp?.operator
+            if (lastKnownBestOperator != bestOpLabel) {
+                lastKnownBestOperator = bestOpLabel
+                if (bestOpLabel != null) {
+                    operatorBadge.visibility = View.VISIBLE
+                    operatorBadge.text = "بهترین عملکرد: $bestOpLabel"
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        operatorBadge.background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = 20f
+                            setColor(Color.parseColor("#22FFD700"))
+                            setStroke(1, Color.parseColor("#FFD700"))
+                        }
+                    }
+                } else {
+                    operatorBadge.visibility = View.GONE
+                }
+            }
+
+            // ===== لیست اوپراتورها داخل پنل جزئیات =====
+            val opsSignature = if (statsEnabled) {
+                item.operatorStats.joinToString("|") { "${it.operator}:${it.packetsSent}:${it.packetsLost}" }
+            } else {
+                ""
+            }
+            if (lastKnownOperatorsSignature != opsSignature) {
+                lastKnownOperatorsSignature = opsSignature
+                rebuildOperatorList(item, statsEnabled)
             }
 
             // فقط وقتی خودِ وضعیت انتخاب واقعاً عوض شده انیمیشن رنگ اجرا بشه؛
