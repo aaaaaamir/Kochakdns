@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -27,6 +28,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.doOnPreDraw
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -39,6 +41,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -240,6 +243,11 @@ class DnsActivity : AppCompatActivity() {
     private var directJitterMs: Double = 0.0
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // بنر بروزرسانی (بالای صفحه) و پرچم‌های جریان بروزرسانی/اطلاعیه
+    private lateinit var updateBanner: LinearLayout
+    private lateinit var updateBannerText: TextView
+    private var updateCheckStarted = false
+
     private val vpnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -261,6 +269,159 @@ class DnsActivity : AppCompatActivity() {
             syncDnsData()
             startPingLoop()
             startStatsUpdateLoop()
+        }
+
+        checkUpdateAndAnnouncement()
+    }
+
+    // ===================================================================
+    // بروزرسانی + اطلاعیه
+    // ===================================================================
+    private fun checkUpdateAndAnnouncement() {
+        if (updateCheckStarted) return
+        updateCheckStarted = true
+        lifecycleScope.launch {
+            delay(900) // بگذار صفحه اول آماده شود
+
+            // اگر آپدیت قبلاً نصب شده، کش را پاک کن
+            UpdateManager.clearCacheIfInstalled(applicationContext)
+
+            // اطلاعیه داخل برنامه
+            val ann = AnnouncementManager.fetch(applicationContext)
+            if (ann != null) showAnnouncementDialog(ann)
+
+            // بروزرسانی
+            checkUpdate()
+        }
+    }
+
+    private suspend fun checkUpdate() {
+        val existing = UpdateManager.downloadedFile(applicationContext)
+        val existingVer = UpdateManager.downloadedVersion(applicationContext)
+        if (existing != null && existingVer != null &&
+            UpdateManager.isNewer(existingVer, UpdateManager.currentVersion(applicationContext))
+        ) {
+            // از قبل دانلود شده → دکمه نصب
+            showUpdateBanner(downloadMode = false, version = existingVer)
+            showInstallDialog(existing, existingVer)
+            return
+        }
+
+        val info = UpdateManager.fetchInfo(applicationContext) ?: return
+        showUpdateBanner(downloadMode = true, version = info.version)
+        showUpdateDialog(info)
+    }
+
+    private fun showUpdateDialog(info: UpdateManager.UpdateInfo) {
+        val msg = buildString {
+            append("ورژن جدید ${info.version} منتشر شده است.")
+            info.sizeFormatted?.let { append("\nحجم: $it") }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("بروزرسانی جدید")
+            .setMessage(msg)
+            .setCancelable(true)
+            .setPositiveButton("دانلود") { _, _ -> startDownload(info) }
+            .setNegativeButton("لغو") { _, _ -> showUpdateBanner(downloadMode = true, version = info.version) }
+            .show()
+    }
+
+    private fun startDownload(info: UpdateManager.UpdateInfo) {
+        Toast.makeText(this, "در حال دانلود بروزرسانی...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val file = UpdateManager.download(applicationContext)
+            if (file != null) {
+                UpdateManager.saveDownloaded(applicationContext, file, info.version)
+                showUpdateBanner(downloadMode = false, version = info.version)
+                showInstallDialog(file, info.version)
+            } else {
+                Toast.makeText(this@DnsActivity, "دانلود ناموفق بود. دوباره تلاش کنید.", Toast.LENGTH_LONG).show()
+                showUpdateBanner(downloadMode = true, version = info.version)
+            }
+        }
+    }
+
+    private fun showInstallDialog(file: File, version: String) {
+        AlertDialog.Builder(this)
+            .setTitle("آماده نصب")
+            .setMessage("بروزرسانی ورژن $version دانلود و آماده نصب است.")
+            .setCancelable(true)
+            .setPositiveButton("نصب بروزرسانی") { _, _ -> UpdateManager.install(this@DnsActivity, file) }
+            .setNegativeButton("بعداً") { _, _ -> showUpdateBanner(downloadMode = false, version = version) }
+            .show()
+    }
+
+    private fun showAnnouncementDialog(ann: AnnouncementManager.Announcement) {
+        val builder = AlertDialog.Builder(this)
+            .setTitle(ann.title)
+            .setMessage(ann.body)
+            // اگه دکمه لغو در ربات ست نشده، با هیچ روشی قابل رد شدن نیست
+            .setCancelable(ann.cancel)
+
+        if (ann.link != null) {
+            builder.setPositiveButton(ann.linkText ?: "باز کردن") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.link)))
+                } catch (_: Exception) {
+                }
+            }
+        }
+        if (ann.cancel) {
+            builder.setNegativeButton("لغو", null)
+        }
+
+        val dialog = builder.create()
+        dialog.setCanceledOnTouchOutside(ann.cancel)
+        dialog.show()
+    }
+
+    private fun setupUpdateBanner() {
+        updateBanner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(40, 22, 40, 22)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.parseColor("#4C8DFF"))
+                    cornerRadius = 120f
+                }
+            }
+            isClickable = true
+            isFocusable = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = 150
+            }
+        }
+        updateBannerText = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+        }
+        updateBanner.addView(updateBannerText)
+        rootLayout.addView(updateBanner)
+    }
+
+    private fun showUpdateBanner(downloadMode: Boolean, version: String) {
+        updateBannerText.text =
+            if (downloadMode) "⬇ دانلود بروزرسانی v$version"
+            else "📦 نصب بروزرسانی v$version"
+        updateBanner.visibility = View.VISIBLE
+        updateBanner.setOnClickListener {
+            if (downloadMode) {
+                lifecycleScope.launch {
+                    val info = UpdateManager.fetchInfo(applicationContext)
+                    if (info != null) startDownload(info)
+                    else Toast.makeText(this@DnsActivity, "بروزرسانی در دسترس نیست", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val file = UpdateManager.downloadedFile(applicationContext)
+                if (file != null) UpdateManager.install(this@DnsActivity, file)
+            }
         }
     }
 
@@ -482,6 +643,7 @@ class DnsActivity : AppCompatActivity() {
         mainContainer.addView(scrollView)
         rootLayout.addView(mainContainer)
         buildDrawerMenu(mainContainer)
+        setupUpdateBanner()
         setContentView(rootLayout)
         setVpnState(vpnState) // اعمال ظاهر اولیه‌ی دکمه
     }
