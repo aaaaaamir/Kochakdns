@@ -2079,7 +2079,7 @@ class DnsActivity : AppCompatActivity() {
                 }
                 val percent = op.successPercent
                 val pctView = TextView(context).apply {
-                    text = if (percent != null) "%${\"%.0f\".format(percent)}" else "--"
+                    text = if (percent != null) "%" + Math.round(percent) else "--"
                     textSize = 12f
                     setTypeface(null, Typeface.BOLD)
                     setTextColor(when {
@@ -2133,7 +2133,7 @@ class DnsActivity : AppCompatActivity() {
                 lastKnownPercent = percent
                 if (percent != null) {
                     percentBadge.visibility = View.VISIBLE
-                    percentBadge.text = "%${"%.0f".format(percent)}"
+                    percentBadge.text = "%" + Math.round(percent)
                     val badgeColor = when {
                         percent >= 95 -> Color.parseColor("#4CAF50")
                         percent >= 85 -> Color.parseColor("#FFC107")
@@ -2165,7 +2165,7 @@ class DnsActivity : AppCompatActivity() {
                 detailSentText.text = item.statsPacketsSent.toString()
                 detailLostText.text = item.statsPacketsLost.toString()
                 detailTotalText.text = item.statsTotal.toString()
-                detailAvgText.text = if (percent != null) "%${"%.1f".format(percent)}" else "--"
+                detailAvgText.text = if (percent != null) "%" + "%.1f".format(percent) else "--"
             }
 
             // ===== بج «بهترین عملکرد: نام اوپراتور» =====
