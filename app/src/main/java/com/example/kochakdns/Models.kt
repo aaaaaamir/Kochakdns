@@ -108,6 +108,19 @@ data class DnsProfile(
     }
 }
 
+/** آمار یک اوپراتور خاص برای یک DNS (از GET /api/dns/stats). */
+data class OperatorStat(
+    val operator: String,
+    val packetsSent: Long,
+    val packetsLost: Long
+) {
+    val total: Long get() = packetsSent + packetsLost
+
+    /** درصد موفقیت این اوپراتور؛ null یعنی هنوز آماری نیست. */
+    val successPercent: Double?
+        get() = if (total > 0) (packetsSent * 100.0 / total) else null
+}
+
 data class DnsItem(
     val name: String,
     val servers: List<DnsServer>,
@@ -116,7 +129,9 @@ data class DnsItem(
     // آماری که از سرور (GET /api/dns/stats) خونده می‌شه؛ مجموع پکت‌های
     // ارسالی/گم‌شده‌ای که قبلاً وقتی این پروفایل وصل بوده، ثبت شده.
     val statsPacketsSent: Long = 0,
-    val statsPacketsLost: Long = 0
+    val statsPacketsLost: Long = 0,
+    // آمار به تفکیک اوپراتور (از بهترین به بدترین مرتب می‌شود)
+    val operatorStats: List<OperatorStat> = emptyList()
 ) {
     val jitter: Long
         get() = if (ping > 0 && previousPing > 0) abs(ping - previousPing) else 0
@@ -127,6 +142,11 @@ data class DnsItem(
     /** درصد موفقیت (چند درصد از کل پکت‌ها واقعاً ارسال شدن، نه گم شدن). null یعنی هنوز آماری نیست. */
     val successPercent: Double?
         get() = if (statsTotal > 0) (statsPacketsSent * 100.0 / statsTotal) else null
+
+    /** بهترین اوپراتور (بیشترین درصد موفقیت). null یعنی هنوز آماری نیست. */
+    val bestOperator: OperatorStat?
+        get() = operatorStats.filter { it.successPercent != null }
+            .maxByOrNull { it.successPercent!! }
 }
 
 object VpnStats {
@@ -256,9 +276,27 @@ object AppSettings {
     private const val KEY_FULL_TUNNEL = "full_tunnel"
     private const val KEY_SHOW_PACKET_PERCENT = "show_packet_percentage"
     private const val KEY_SHOW_NOTIFICATION = "show_notification"
+    private const val KEY_UPDATE_CHECK = "update_check_enabled"
+    private const val KEY_ANNOUNCEMENT = "announcement_enabled"
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    // پیش‌فرض true: بررسی خودکار بروزرسانی هنگام ورود به برنامه انجام می‌شود.
+    fun isUpdateCheckEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_UPDATE_CHECK, true)
+
+    fun setUpdateCheckEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_UPDATE_CHECK, value).apply()
+    }
+
+    // پیش‌فرض true: اطلاعیه‌های داخل برنامه (از ربات) نمایش داده می‌شوند.
+    fun isAnnouncementEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_ANNOUNCEMENT, true)
+
+    fun setAnnouncementEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ANNOUNCEMENT, value).apply()
+    }
 
     // پیش‌فرض false: تونل کامل خاموش است (فقط DNS relay می‌شود).
     // وقتی روشن باشد، کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل
