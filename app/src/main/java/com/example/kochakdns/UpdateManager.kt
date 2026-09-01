@@ -81,8 +81,9 @@ object UpdateManager {
         }
     }
 
-    /** APK را دانلود و در cache کش می‌کند؛ فایل را برمی‌گرداند (null یعنی شکست). */
-    suspend fun download(context: Context): File? = withContext(Dispatchers.IO) {
+    /** APK را دانلود و در cache کش می‌کند؛ فایل را برمی‌گرداند (null یعنی شکست).
+     *  @param onProgress درصد پیشرفت (0..100) — برای نمایش به کاربر. */
+    suspend fun download(context: Context, onProgress: ((Int) -> Unit)? = null): File? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
                 .url(AppConfig.BASE_URL + AppConfig.API_APP_DOWNLOAD)
@@ -90,9 +91,27 @@ object UpdateManager {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext null
                 val body = resp.body ?: return@withContext null
+                val total = body.contentLength()
                 val file = File(context.cacheDir, "update.apk")
                 FileOutputStream(file).use { out ->
-                    body.byteStream().use { input -> input.copyTo(out) }
+                    body.byteStream().use { input ->
+                        val buf = ByteArray(8192)
+                        var read = 0L
+                        var lastPct = -1
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            out.write(buf, 0, n)
+                            read += n
+                            if (total > 0) {
+                                val pct = ((read * 100) / total).toInt()
+                                if (pct != lastPct) {
+                                    lastPct = pct
+                                    onProgress?.invoke(pct)
+                                }
+                            }
+                        }
+                    }
                 }
                 if (file.length() <= 0) {
                     file.delete()
