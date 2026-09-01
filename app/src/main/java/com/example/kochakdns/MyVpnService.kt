@@ -30,21 +30,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Semaphore
 
 /**
- * سرویس VPN — بدون هیچ وابستگی به تشخیص UID (که روی برخی دستگاه‌ها برای UDP
- * غیرقابل اعتماد بود و باعث می‌شد برنامه‌های مجاز هم مسدود شوند).
- *
- * همه‌ی منطق «کدام برنامه داخل تونل باشد» به کرنل اندروید (addAllowedApplication /
- * addDisallowedApplication) سپرده شده است — یعنی دقیق و بدون حدس:
+ * سرویس VPN — فقط DNS (و در صورت فعال بودن «تونل کامل»، ترافیک برنامه‌های
+ * انتخاب‌شده) را از تونل عبور می‌دهد.
  *
  * حالت‌ها:
  *  ۱) DEFAULT: هیچ انتخاب سفارشی نیست → همه‌ی برنامه‌ها DNS سفارشی می‌گیرند.
- *  ۲) SPLIT (انتخاب سفارشی، بدون مسدودسازی واقعی): برنامه‌های انتخاب‌نشده با
- *     addDisallowedApplication از تونل مستثنی می‌شوند → DNS سیستم می‌گیرند و
- *     اینترنت‌شان دست‌نخورده می‌ماند. (هرگز برنامه‌ی مجاز مسدود نمی‌شود.)
- *  ۳) LOCKDOWN (Always-on VPN): فقط برنامه‌های انتخاب‌شده (و خودِ برنامه) با
- *     addAllowedApplication اجازه‌ی VPN دارند؛ مسدودسازی بقیه توسط سیستم
- *     (Block connections without VPN) انجام می‌شود — قابل‌اعتمادترین روش.
- *  ۴) FULL TUNNEL: کل ترافیک (0.0.0.0/0) وارد تون می‌شود؛ برنامه‌های
+ *  ۲) SPLIT (انتخاب سفارشی): برنامه‌های انتخاب‌نشده با addDisallowedApplication
+ *     از تونل مستثنی می‌شوند → DNS سیستم می‌گیرند و اینترنت‌شان دست‌نخورده است.
+ *  ۳) FULL TUNNEL: کل ترافیک (0.0.0.0/0) وارد تون می‌شود؛ برنامه‌های
  *     انتخاب‌نشده با addDisallowedApplication مستثنا می‌شوند، پس هر پکتی که
  *     وارد تون شود قطعاً متعلق به برنامه‌های انتخاب‌شده است و بدون هیچ
  *     بررسی UID توسط TunnelEngine relay می‌شود.
@@ -94,7 +87,6 @@ class MyVpnService : VpnService() {
     private var tunnelEngine: TunnelEngine? = null
 
     // حالت‌های فعال
-    private var lockdownMode = false       // Always-on VPN (مسدودسازی توسط سیستم)
     private var fullTunnelMode = false     // تونل کامل (کل ترافیک انتخاب‌شده‌ها)
 
     // آخرین DNSهایی که تونل با آن‌ها ساخته شده
@@ -145,8 +137,15 @@ class MyVpnService : VpnService() {
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
         val ipv6Enabled = getSharedPreferences(PREFS_DNS, MODE_PRIVATE).getBoolean("ipv6_enabled", true)
-        val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }
-        val validV6 = if (ipv6Enabled) dnsServers.filter { it.isNotBlank() && isIpv6(it) } else emptyList()
+        // آدرس‌ها نرمال‌سازی می‌شوند (مثلاً حذف براکت‌های [ ] از IPv6) تا
+        // addRoute/addDnsServer هرگز با آدرسِ بد خطا ندهند.
+        val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }.map { it.trim() }
+        val validV6 = if (ipv6Enabled) {
+            dnsServers.filter { it.isNotBlank() && isIpv6(it) }
+                .map { it.trim().removePrefix("[").removeSuffix("]") }
+        } else {
+            emptyList()
+        }
         if (validV4.isEmpty() && validV6.isEmpty()) { stopSelf(); return }
 
         startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
@@ -154,18 +153,10 @@ class MyVpnService : VpnService() {
         // null یعنی کاربر هیچ انتخاب سفارشی‌ای نکرده → «همه برنامه‌ها».
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
         val hasSelection = selectedPackages != null
-        val blockEnabled = AppSettings.isBlockNonTunneledEnabled(this)
 
-        // اولویت حالت‌ها: lockdown > full tunnel > split
-        // «مسدودسازی برنامه‌های تونل‌نشده» = مسدودسازی از طریق Always-on VPN
-        // سیستم (lockdown). نکته‌ی حیاتی: وقتی lockdown فعال است، فقط برنامه‌های
-        // مجاز داخل تونل می‌روند و سیستم هر ترافیکِ خارج از تونل را مسدود می‌کند
-        // (Block connections without VPN). پس اگر تونل فقط مسیر DNS را بگیرد،
-        // ترافیک غیر-DNS برنامه‌های مجاز هم مسدود می‌شود و آن‌ها اینترنت
-        // نمی‌گیرند. برای همین، lockdown همیشه باید «تونل کامل» باشد
-        // (route 0.0.0.0/0) تا ترافیک مجازها واقعاً forward شود.
-        lockdownMode = blockEnabled && hasSelection
-        fullTunnelMode = hasSelection && (AppSettings.isFullTunnelEnabled(this) || lockdownMode)
+        // تونل کامل: وقتی روشن باشد و انتخاب سفارشی وجود داشته باشد، کل ترافیک
+        // برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل رد می‌شود.
+        fullTunnelMode = hasSelection && AppSettings.isFullTunnelEnabled(this)
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
@@ -193,14 +184,6 @@ class MyVpnService : VpnService() {
 
             // ===== تعیین اینکه کدام برنامه‌ها داخل/خارج تونل باشند =====
             when {
-                lockdownMode -> {
-                    // فقط برنامه‌های انتخاب‌شده (و خودِ برنامه) از VPN استفاده می‌کنند؛
-                    // بقیه توسط قفل سیستم (Block connections without VPN) مسدود می‌شوند.
-                    (selectedPackages ?: emptySet()).forEach { pkg ->
-                        try { addAllowedApplication(pkg) } catch (_: Exception) {}
-                    }
-                    try { addAllowedApplication(packageName) } catch (_: Exception) {}
-                }
                 fullTunnelMode -> {
                     // تونل کامل: برنامه‌های انتخاب‌نشده از تونل مستثنی می‌شوند
                     // (اینترنت معمولی دارند) و ترافیک برنامه‌های انتخاب‌شده
@@ -513,9 +496,10 @@ class MyVpnService : VpnService() {
     }
 
     private fun isIpv6(address: String): Boolean {
-        if (!address.contains(":")) return false
+        val clean = address.trim().removePrefix("[").removeSuffix("]")
+        if (!clean.contains(":")) return false
         return try {
-            InetAddress.getByName(address) is Inet6Address
+            InetAddress.getByName(clean) is Inet6Address
         } catch (_: Exception) {
             false
         }
@@ -669,7 +653,6 @@ class MyVpnService : VpnService() {
         readerJob = null
         tunnelEngine?.shutdown()
         tunnelEngine = null
-        lockdownMode = false
         fullTunnelMode = false
         // تخلیه‌ی مخزن سوکت‌ها
         while (true) {
@@ -715,7 +698,7 @@ class MyVpnService : VpnService() {
     }
 
     private fun activeChannelId(): String =
-        if (AppSettings.isShowNotificationEnabled(this)) CHANNEL_ID else CHANNEL_ID_MIN
+        if (AppSettings.isShowNotificationInfoEnabled(this)) CHANNEL_ID else CHANNEL_ID_MIN
 
     private fun buildNotification(contentText: String): Notification {
         val pendingIntent = PendingIntent.getActivity(this, 0,
@@ -736,11 +719,17 @@ class MyVpnService : VpnService() {
     }
 
     private fun updateNotification() {
-        val bytesSent = VpnStats.totalBytesSent.get()
-        val bytesReceived = VpnStats.totalBytesReceived.get()
-        val packetsSent = VpnStats.totalPacketsSent.get()
-        val packetsLost = VpnStats.totalPacketsLost.get()
-        val contentText = "↑ ${formatBytes(bytesSent)} | ↓ ${formatBytes(bytesReceived)}\n📦 $packetsSent | ❌ $packetsLost"
+        // وقتی «نمایش اطلاعات در نوتیفیکیشن» خاموش باشد، فقط یک متن ساده
+        // نشان می‌دهیم؛ اطلاعات پکت‌ها و حجم دیتای منتقل‌شده مخفی می‌شود.
+        val contentText = if (AppSettings.isShowNotificationInfoEnabled(this)) {
+            val bytesSent = VpnStats.totalBytesSent.get()
+            val bytesReceived = VpnStats.totalBytesReceived.get()
+            val packetsSent = VpnStats.totalPacketsSent.get()
+            val packetsLost = VpnStats.totalPacketsLost.get()
+            "↑ ${formatBytes(bytesSent)} | ↓ ${formatBytes(bytesReceived)}\n📦 $packetsSent | ❌ $packetsLost"
+        } else {
+            VpnStats.activeDnsName?.let { "متصل به $it" } ?: "Kochak DNS فعال است"
+        }
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification(contentText))
     }
 
