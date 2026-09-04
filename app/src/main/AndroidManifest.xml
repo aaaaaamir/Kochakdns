@@ -19,16 +19,12 @@
     <!-- برای اندروید 13+ (API 33+) - نمایش نوتیفیکیشن VPN -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- برای اندروید 11+ (API 30+) - جهت نمایش کامل لیست برنامه‌ها در TunnelAppsActivity -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-
     <!-- برای نصب بروزرسانی APK دانلودشده داخل برنامه -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
-    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
+    <!-- فقط اپ‌های دارای لانچر دیده می‌شوند؛ به مجوز QUERY_ALL_PACKAGES
+         (که توسط Google Play محدود و توسط آنتی‌ویروس‌ها پرچم می‌خورد) نیازی نیست. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
