@@ -22,7 +22,7 @@ class SettingsActivity : AppCompatActivity() {
         private const val ICON_BACK = "M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z"
 
         // آیکون‌های وکتور (سبک Material، رنگ خاکستری)
-        private const val ICON_TUNNEL = "M6.99,11L3,15l3.99,4v-3H14v-2H6.99v-3zM21,9l-3.99,-4v3H10v2h7.01v3L21,9z"
+        private const val ICON_CACHE = "M12,4V1L7,5l5,4V6c3.31,0 6,2.69 6,6 0,1.01 -0.25,1.97 -0.7,2.8l1.46,1.46C20.42,14.78 21,13.47 21,12 21,7.03 16.97,3 12,3zM6,12c0,-1.01 0.25,-1.97 0.7,-2.8L5.24,7.74C4.58,9.22 4,10.53 4,12c0,4.97 4.03,9 9,9v3l5,-4 -5,-4v3c-3.31,0 -6,-2.69 -6,-6z"
         private const val ICON_PERCENT = "M7.5,11C9.43,11 11,9.43 11,7.5S9.43,4 7.5,4 4,5.57 4,7.5 5.57,11 7.5,11zM7.5,6C8.33,6 9,6.67 9,7.5S8.33,9 7.5,9 6,8.33 6,7.5 6.67,6 7.5,6zM16.5,20c1.93,0 3.5,-1.57 3.5,-3.5s-1.57,-3.5 -3.5,-3.5 -3.5,1.57 -3.5,3.5 1.57,3.5 3.5,3.5zM16.5,17c0.83,0 1.5,0.67 1.5,1.5s-0.67,1.5 -1.5,1.5 -1.5,-0.67 -1.5,-1.5 0.67,-1.5 1.5,-1.5zM19,5L5,19"
         private const val ICON_NOTIFICATION = "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
         private const val ICON_ABOUT = "M11,7h2v2h-2zM11,11h2v6h-2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm0,18c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8z"
@@ -70,12 +70,12 @@ class SettingsActivity : AppCompatActivity() {
 
         list.addView(
             glassSwitch(
-                title = "تونل کامل",
-                subtitle = "کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل رد بشه؛ برنامه‌های انتخاب‌نشده اینترنت معمولی دارن",
-                iconPath = ICON_TUNNEL,
-                initial = AppSettings.isFullTunnelEnabled(this)
+                title = "کش DNS",
+                subtitle = "باعث بهبود پینگ و سرعت می‌شود: پاسخ‌های تکراری DNS از حافظه خوانده می‌شوند (با TTL واقعی) و نیازی به رفت‌وآمد به سرور نیست",
+                iconPath = ICON_CACHE,
+                initial = AppSettings.isDnsCacheEnabled(this)
             ) { checked ->
-                AppSettings.setFullTunnelEnabled(this, checked)
+                AppSettings.setDnsCacheEnabled(this, checked)
                 restartVpnIfActive()
             }
         )
