@@ -62,6 +62,49 @@ fun buildVectorDrawable(pathData: String, color: Int, sizePx: Int): Drawable {
 }
 
 /**
+ * نسخه‌ی گرادیانی buildVectorDrawable: گوشه‌ها (پایین/راست) کمی تیره‌تر از
+ * بالا هستند تا حس عمق و گوشه‌ی رنگی ایجاد شود — مناسب آیکون‌های شناور اسپلش.
+ */
+fun buildVectorDrawableGradient(pathData: String, topColor: Int, bottomColor: Int, sizePx: Int): Drawable {
+    val path = PathParser.createPathFromPathData(pathData)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+
+    return object : Drawable() {
+        override fun draw(canvas: Canvas) {
+            val saveCount = canvas.save()
+            canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+            val scaleX = bounds.width().toFloat() / 24f
+            val scaleY = bounds.height().toFloat() / 24f
+            canvas.scale(scaleX, scaleY)
+            paint.shader = android.graphics.LinearGradient(
+                0f, 0f, 24f, 24f,
+                topColor, bottomColor,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            canvas.drawPath(path, paint)
+            paint.shader = null
+            canvas.restoreToCount(saveCount)
+        }
+
+        override fun getIntrinsicWidth(): Int = sizePx
+        override fun getIntrinsicHeight(): Int = sizePx
+
+        override fun setAlpha(alpha: Int) {
+            paint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            paint.colorFilter = colorFilter
+        }
+
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+}
+
+/**
  * مدیریت محتوای منوی کشویی؛ هر آیتم داخل یک کادر کارتمانند (هماهنگ با
  * کارت‌های DNS در DnsActivity) قرار می‌گیرد و آیکون‌ها خاکستری هستند.
  */
