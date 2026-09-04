@@ -9,7 +9,6 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
@@ -190,19 +189,21 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
         }
 
-        // ===== لوگوی برنامه: بزرگ، blur شده، در پس‌زمینه =====
-        val logoSize = dp(260)
+        // ===== لوگوی برنامه: تمام‌صفحه، برش‌خورده و blur شده در پس‌زمینه =====
         val bgLogo = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_launcher)
+            // تارشدگی واقعی با downscale/upscale (روی همه نسخه‌ها کار می‌کند،
+            // برخلاف RenderEffect که فقط اندروید ۱۲+ است) + CENTER_CROP برای
+            // پر کردن تمام صفحه و برش خودکار اضافه‌ها.
+            setImageDrawable(
+                createBlurredLogoDrawable()
+                    ?: ContextCompat.getDrawable(this@MainActivity, R.mipmap.ic_launcher)
+            )
             scaleType = ImageView.ScaleType.CENTER_CROP
             alpha = 0f
-            layoutParams = FrameLayout.LayoutParams(logoSize, logoSize, Gravity.CENTER)
-            // بلور شدید برای حس «پشت صحنه»
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                setRenderEffect(RenderEffect.createBlurEffect(28f, 28f, Shader.TileMode.CLAMP))
-            } else {
-                alpha = 0.18f // روی نسخه‌های قدیمی فقط محو
-            }
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
         rootLayout.addView(bgLogo)
 
@@ -253,6 +254,31 @@ class MainActivity : AppCompatActivity() {
         // لوگوی پس‌زمینه به‌آرامی محو و نمایان می‌شود
         bgLogo.animate().alpha(0.5f).setDuration(1400)
             .setInterpolator(AccelerateDecelerateInterpolator()).start()
+    }
+
+    /** ساخت نسخه‌ی blur شده‌ی لوگو بدون وابستگی به RenderEffect (روی همه نسخه‌ها کار می‌کند). */
+    private fun createBlurredLogoDrawable(): android.graphics.drawable.Drawable? {
+        return try {
+            val src = android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+                ?: return null
+
+            // ۱) downscale شدید → تارشدگی شبه‌گاوسی
+            val small = android.graphics.Bitmap.createScaledBitmap(src, 28, 28, true)
+            if (small !== src) src.recycle()
+
+            // ۲) upscale به مربعی بزرگ‌تر از صفحه؛ CENTER_CROP خودش آن را
+            //    تمام‌صفحه و برش‌خورده نمایش می‌دهد (اضافه‌ها بیرون می‌زند).
+            val screenMax = maxOf(
+                resources.displayMetrics.widthPixels,
+                resources.displayMetrics.heightPixels
+            )
+            val blurred = android.graphics.Bitmap.createScaledBitmap(small, screenMax, screenMax, true)
+            small.recycle()
+
+            android.graphics.drawable.BitmapDrawable(resources, blurred)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور + چرخش ملایم. */
