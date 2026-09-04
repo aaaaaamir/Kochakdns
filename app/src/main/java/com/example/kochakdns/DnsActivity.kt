@@ -61,6 +61,23 @@ private const val TYPE_A = 1
 private const val TYPE_NS = 2
 
 /**
+ * رنگ گرادیانی برای درصد موفقیت: از قرمز (0%) به زرد (50%) و سپس سبز (100%)
+ * به‌صورت پیوسته — نه فقط سه رنگ ثابت.
+ */
+private fun colorForPercent(percent: Double): Int {
+    val p = percent.coerceIn(0.0, 100.0)
+    val evaluator = android.animation.ArgbEvaluator()
+    val red = Color.parseColor("#F44336")
+    val yellow = Color.parseColor("#FFC107")
+    val green = Color.parseColor("#4CAF50")
+    return if (p <= 50.0) {
+        evaluator.evaluate((p / 50.0).toFloat(), red, yellow) as Int
+    } else {
+        evaluator.evaluate(((p - 50.0) / 50.0).toFloat(), yellow, green) as Int
+    }
+}
+
+/**
  * آیکون پاور، مستقیم با Canvas کشیده می‌شه — دیگه فایل drawable جدا لازم
  * نیست، همه‌چیز همین‌جا توی خودِ DnsActivity.kt کنار همدیگه‌ست.
  * سبک: خطی (stroke)، سفید، گوشه‌ها و سرِ خط‌ها گرد — دقیقاً شبیه آیکون
@@ -374,6 +391,7 @@ class DnsActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
+            // لمس بیرون کارت فقط وقتی «قابل‌لغو» است دیالوگ را می‌بندد.
             if (cancelable) {
                 setOnClickListener { activeDialog?.dismiss() }
             }
@@ -386,6 +404,10 @@ class DnsActivity : AppCompatActivity() {
             scaleX = 0.85f
             scaleY = 0.85f
             minimumHeight = dp(200)
+            // کارت clickable است تا لمس روی متن/داخل کارت به overlay نرسد
+            // و فقط دکمه‌ی «لغو» (یا لمس بیرون در حالت قابل‌لغو) ببندد.
+            isClickable = true
+            isFocusable = true
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
@@ -410,15 +432,39 @@ class DnsActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.END
         })
-        card.addView(TextView(this).apply {
+
+        // پیام داخل ScrollView: متن‌های طولانی قابل اسکرول می‌شوند و دکمه‌ها
+        // همیشه پایین و در دید باقی می‌مانند (از صفحه بیرون نمی‌روند).
+        val messageText = TextView(this).apply {
             text = message
             setTextColor(Color.parseColor("#B0B0BA"))
             textSize = 15f
             setLineSpacing(0f, 1.25f)
-            setPadding(0, 20, 0, 16)
-            minimumHeight = dp(72)
+            setPadding(0, 4, 0, 8)
             gravity = Gravity.END
-        })
+        }
+        val messageScroll = ScrollView(this).apply {
+            isFillViewport = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(20)
+            }
+        }
+        messageScroll.addView(messageText,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        card.addView(messageScroll)
+
+        // محدود کردن حداکثر ارتفاع پیام تا دکمه‌ها همیشه دیده شوند
+        messageScroll.post {
+            val maxH = dp(300)
+            if (messageText.height > maxH) {
+                val lp = messageScroll.layoutParams as LinearLayout.LayoutParams
+                lp.height = maxH
+                messageScroll.layoutParams = lp
+            }
+        }
 
         val holder = AppDialogHolder(overlay, card, cancelable)
 
@@ -2066,7 +2112,7 @@ class DnsActivity : AppCompatActivity() {
         private fun rebuildOperatorList(item: DnsItem, statsEnabled: Boolean) {
             operatorList.removeAllViews()
             val ops = item.operatorStats
-            if (!statsEnabled || ops.isEmpty()) {
+            if (!statsEnabled) {
                 operatorList.visibility = View.GONE
                 return
             }
@@ -2077,49 +2123,118 @@ class DnsActivity : AppCompatActivity() {
                 setTextColor(Color.parseColor("#888888"))
                 textSize = 11f
                 setTypeface(null, Typeface.BOLD)
-                setPadding(0, 18, 0, 6)
+                setPadding(0, 18, 0, 8)
             }
             operatorList.addView(header)
+
+            // ===== گراف کلی موفقیت (سبز) در برابر گم‌شده (قرمز) =====
+            operatorList.addView(
+                buildStackedBar(item.statsPacketsSent, item.statsPacketsLost)
+            )
 
             for (op in ops) {
                 val row = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, 6, 0, 6)
+                    setPadding(0, 8, 0, 8)
                 }
                 val nameView = TextView(context).apply {
                     text = op.operator
                     setTextColor(Color.WHITE)
                     textSize = 13f
                     setTypeface(null, Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(dp(100), LinearLayout.LayoutParams.WRAP_CONTENT)
                 }
                 val percent = op.successPercent
+
+                // نوار گرافیکی درصد (گرادیان قرمز→سبز)
+                val bar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 100
+                    progress = (percent ?: 0.0).toInt()
+                    layoutParams = LinearLayout.LayoutParams(0, dp(12), 1f).apply {
+                        marginStart = dp(10)
+                        marginEnd = dp(10)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        progressTintList = android.content.res.ColorStateList.valueOf(
+                            if (percent != null) colorForPercent(percent) else Color.parseColor("#666666")
+                        )
+                        progressBackgroundTintList = android.content.res.ColorStateList.valueOf(
+                            Color.parseColor("#2A2A3E")
+                        )
+                    }
+                }
                 val pctView = TextView(context).apply {
                     text = if (percent != null) "%" + Math.round(percent) else "--"
                     textSize = 12f
                     setTypeface(null, Typeface.BOLD)
-                    setTextColor(when {
-                        percent == null -> Color.parseColor("#666666")
-                        percent >= 95 -> Color.parseColor("#4CAF50")
-                        percent >= 85 -> Color.parseColor("#FFC107")
-                        else -> Color.parseColor("#F44336")
-                    })
-                }
-                val detailView = TextView(context).apply {
-                    text = "  ${op.packetsSent}/${op.total}"
-                    setTextColor(Color.parseColor("#888888"))
-                    textSize = 10f
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { marginStart = 10 }
+                    setTextColor(if (percent != null) colorForPercent(percent) else Color.parseColor("#666666"))
+                    layoutParams = LinearLayout.LayoutParams(dp(46), LinearLayout.LayoutParams.WRAP_CONTENT)
                 }
                 row.addView(nameView)
-                row.addView(detailView)
+                row.addView(bar)
                 row.addView(pctView)
                 operatorList.addView(row)
             }
+        }
+
+        /** نوار ترکیبی موفقیت (سبز) / گم‌شده (قرمز) برای نمایش گرافیکی آمار کلی. */
+        private fun buildStackedBar(sent: Long, lost: Long): LinearLayout {
+            val total = sent + lost
+            val bar = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(14)
+                ).apply {
+                    bottomMargin = dp(6)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(7).toFloat()
+                        setColor(Color.parseColor("#2A2A3E"))
+                    }
+                }
+            }
+            if (total > 0) {
+                if (sent > 0) {
+                    bar.addView(View(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, sent.toFloat())
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            background = GradientDrawable().apply {
+                                setColor(Color.parseColor("#4CAF50"))
+                                cornerRadius = dp(7).toFloat()
+                            }
+                        }
+                    })
+                }
+                if (lost > 0) {
+                    bar.addView(View(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, lost.toFloat())
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            background = GradientDrawable().apply {
+                                setColor(Color.parseColor("#F44336"))
+                                cornerRadius = dp(7).toFloat()
+                            }
+                        }
+                    })
+                }
+            }
+            return bar
+        }
+
+        /** انیمیشن ورود بج‌ها: با تاخیر نسبت به کارت ظاهر می‌شوند. */
+        private fun animateBadgeIn(view: View) {
+            view.alpha = 0f
+            view.scaleX = 0.6f
+            view.scaleY = 0.6f
+            view.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setStartDelay(250)
+                .setDuration(320)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
+                .start()
         }
 
         fun update(item: DnsItem, isSelected: Boolean) {
@@ -2149,13 +2264,9 @@ class DnsActivity : AppCompatActivity() {
             if (lastKnownPercent != percent) {
                 lastKnownPercent = percent
                 if (percent != null) {
+                    val badgeColor = colorForPercent(percent) // گرادیان قرمز→زرد→سبز
                     percentBadge.visibility = View.VISIBLE
                     percentBadge.text = "%" + Math.round(percent)
-                    val badgeColor = when {
-                        percent >= 95 -> Color.parseColor("#4CAF50")
-                        percent >= 85 -> Color.parseColor("#FFC107")
-                        else -> Color.parseColor("#F44336")
-                    }
                     percentBadge.setTextColor(badgeColor)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         percentBadge.background = android.graphics.drawable.GradientDrawable().apply {
@@ -2164,6 +2275,7 @@ class DnsActivity : AppCompatActivity() {
                             setStroke(1, badgeColor)
                         }
                     }
+                    animateBadgeIn(percentBadge)
                 } else {
                     percentBadge.visibility = View.GONE
                 }
@@ -2185,7 +2297,7 @@ class DnsActivity : AppCompatActivity() {
                 detailAvgText.text = if (percent != null) "%" + "%.1f".format(percent) else "--"
             }
 
-            // ===== بج «بهترین عملکرد: نام اوپراتور» =====
+            // ===== بج «بهترین عملکرد: نام اوپراتور» (سبز) =====
             val bestOp = if (statsEnabled) item.bestOperator else null
             val bestOpLabel = bestOp?.operator
             if (lastKnownBestOperator != bestOpLabel) {
@@ -2193,13 +2305,15 @@ class DnsActivity : AppCompatActivity() {
                 if (bestOpLabel != null) {
                     operatorBadge.visibility = View.VISIBLE
                     operatorBadge.text = "بهترین عملکرد: $bestOpLabel"
+                    operatorBadge.setTextColor(Color.parseColor("#4CAF50"))
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         operatorBadge.background = android.graphics.drawable.GradientDrawable().apply {
                             cornerRadius = 20f
-                            setColor(Color.parseColor("#22FFD700"))
-                            setStroke(1, Color.parseColor("#FFD700"))
+                            setColor(Color.parseColor("#224CAF50"))
+                            setStroke(1, Color.parseColor("#4CAF50"))
                         }
                     }
+                    animateBadgeIn(operatorBadge)
                 } else {
                     operatorBadge.visibility = View.GONE
                 }
