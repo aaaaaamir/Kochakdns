@@ -1,26 +1,23 @@
 package com.example.kochakdns
 
 import android.Manifest
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.RelativeLayout
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
@@ -106,6 +103,75 @@ class MainActivity : AppCompatActivity() {
         finish()
     }
 
+    // ===================================================================
+    // آیکون‌های شناور صفحه اسپلش
+    // هر آیکون یک «عمق» دارد: اندازه، شفافیت (پررنگ/کم‌رنگ)، و تارشدگی (بلور)
+    // با هم فرق می‌کنند تا حس عمق و پخش شدن در فضا ایجاد شود.
+    // ===================================================================
+    private data class FloatingIcon(
+        val path: String,
+        val xFraction: Float,   // موقعیت افقی (۰..۱)
+        val yFraction: Float,   // موقعیت عمودی (۰..۱)
+        val sizeDp: Int,        // اندازه (نزدیک‌تر = بزرگ‌تر)
+        val alpha: Float,       // پررنگی (۱ = خیلی پررنگ، کمتر = محو)
+        val blurRadius: Float,  // تارشدگی (۰ = واضح، بیشتر = تارتر)
+        val driftX: Float,      // دامنه‌ی حرکت افقی (px)
+        val driftY: Float,      // دامنه‌ی حرکت عمودی (px)
+        val duration: Long,     // طول یک سیکل شناوری
+        val startDelay: Long
+    )
+
+    private fun floatingIcons(): List<FloatingIcon> {
+        // آیکون‌های قابلیت‌های برنامه (فقط مسیر SVG؛ رنگ از تم خاکستری گرفته می‌شود)
+        val paths = listOf(
+            "M13,2 3,14h7l-1,8 10,-12h-7l1,-8z",                                                    // رعد (سرعت)
+            "M12,22s8,-4 8,-10V5l-8,-3 -8,3v7c0,6 8,10 8,10z",                                       // سپر (ضد تحریم)
+            "M6,9h4v2H8v2H6zM15,11h2v2h-2zM18,9h2v2h-2zM2,7h20v10H2z",                              // دسته بازی
+            "M2,20h.01M7,20v-4M12,20v-8M17,20V8M22,4v16",                                           // سیگنال (پینگ)
+            "M18,20V10M12,20V4M6,20v-6",                                                            // نمودار (آمار)
+            "M12,2a10,10 0 1,0 0,20 10,10 0 1,0 0,-20M2,12h20M12,2c3,3 3,17 0,20c-3,-3 -3,-17 0,-20", // کره (DNS)
+            "M6,9H4.5a2.5,2.5 0 0 1 0,-5H6M18,9h1.5a2.5,2.5 0 0 0 0,-5H18M4,22h16M10,14.7V17c0,.6 -.5,1 -1,1.2c-1.2,.5 -2,2 -2,3.8M14,14.7V17c0,.6 .5,1 1,1.2c1.2,.5 2,2 2,3.8M18,2H6v7a6,6 0 0 0 12,0V2z", // جام (بهترین)
+            "M12,12m-10,0a10,10 0 1,1 20,0a10,10 0 1,1 -20,0M12,12m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0M12,12m-2,0a2,2 0 1,1 4,0a2,2 0 1,1 -4,0" // هدف (دقت)
+        )
+
+        val rnd = kotlin.random.Random(System.currentTimeMillis())
+        val icons = mutableListOf<FloatingIcon>()
+
+        paths.forEachIndexed { i, path ->
+            // ===== عمق تصادفی: 0 = دور، 1 = نزدیک =====
+            // دور: کوچک + محو + تار | نزدیک: بزرگ + پررنگ + واضح
+            val depth = rnd.nextFloat()
+            val sizeDp = lerp(34f, 68f, depth).roundToInt()
+            val alpha = lerp(0.22f, 0.95f, depth)
+            val blurRadius = lerp(9f, 0f, depth)
+
+            // موقعیت تصادفی، با پرهیز از مرکز (جایی که لوگو است)
+            var x = rnd.nextFloat() * 0.88f + 0.04f
+            var y = rnd.nextFloat() * 0.82f + 0.08f
+            if (x in 0.34f..0.66f && y in 0.32f..0.62f) {
+                // خیلی به مرکز نزدیک شد؛ به یکی از گوشه‌ها هدایتش کن
+                if (x < 0.5f) {
+                    x = rnd.nextFloat() * 0.28f + 0.04f
+                } else {
+                    x = rnd.nextFloat() * 0.28f + 0.68f
+                }
+            }
+
+            val driftX = lerp(14f, 34f, rnd.nextFloat())
+            val driftY = lerp(14f, 34f, rnd.nextFloat())
+            val duration = rnd.nextLong(4200L, 6800L)
+            val startDelay = (i * 90L) + rnd.nextLong(0L, 220L)
+
+            icons.add(
+                FloatingIcon(path, x, y, sizeDp, alpha, blurRadius, driftX, driftY, duration, startDelay)
+            )
+        }
+        return icons
+    }
+
+    /** درون‌یابی خطی ساده برای اعداد float. */
+    private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
     @Suppress("NewApi")
     private fun setupSplashScreen() {
         val rootLayout = RelativeLayout(this).apply {
@@ -113,18 +179,45 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             alpha = 0f
         }
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            layoutParams = RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-            )
+
+        // ===== آیکون‌های شناور (پشت لوگو) =====
+        val density = resources.displayMetrics.density
+        floatingIcons().forEach { icon ->
+            val sizePx = (icon.sizeDp * density).toInt()
+            val iconView = ImageView(this).apply {
+                // رنگ خاکستری هماهنگ با آیکون‌های تم برنامه (ICON_GRAY)
+                setImageDrawable(buildVectorDrawable(icon.path, Color.parseColor("#A0A0AC"), icon.sizeDp))
+                alpha = 0f
+                scaleX = 0.6f
+                scaleY = 0.6f
+                layoutParams = RelativeLayout.LayoutParams(sizePx, sizePx).apply {
+                    leftMargin = ((resources.displayMetrics.widthPixels - sizePx) * icon.xFraction).toInt()
+                    topMargin = ((resources.displayMetrics.heightPixels - sizePx) * icon.yFraction).toInt()
+                }
+                // تارشدگی برای آیکون‌های دور (فقط اندروید ۱۲+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && icon.blurRadius > 0f) {
+                    setRenderEffect(RenderEffect.createBlurEffect(icon.blurRadius, icon.blurRadius, Shader.TileMode.CLAMP))
+                }
+            }
+            rootLayout.addView(iconView)
+
+            // ورود نرم + شناوری پیوسته
+            iconView.animate()
+                .alpha(icon.alpha)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setStartDelay(icon.startDelay)
+                .setDuration(900)
+                .setInterpolator(OvershootInterpolator(1.2f))
+                .start()
+            startFloating(iconView, icon)
         }
 
-        // یک هاله‌ی نرم و درخشان پشت کارت لوگو، برای حس پرمیوم‌تر
+        // ===== کارت لوگو (وسط) =====
         val cardStack = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(420, 420).apply { setMargins(0, 0, 0, 32) }
+            layoutParams = RelativeLayout.LayoutParams(420, 420).apply {
+                addRule(RelativeLayout.CENTER_IN_PARENT)
+            }
         }
         val glowView = View(this).apply {
             layoutParams = FrameLayout.LayoutParams(420, 420).apply { gravity = Gravity.CENTER }
@@ -173,38 +266,8 @@ class MainActivity : AppCompatActivity() {
 
         cardStack.addView(glowView)
         cardStack.addView(cardView)
+        rootLayout.addView(cardStack)
 
-        val titleText = TextView(this).apply {
-            text = "کُچک دی ان اس"
-            textSize = 30f
-            setTextColor(Color.WHITE)
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            alpha = 0f
-            translationY = -80f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 24, 0, 0) }
-        }
-        val descText = TextView(this).apply {
-            text = "VIP GAMING DNS"
-            textSize = 16f
-            setTextColor(Color.parseColor("#FFD700"))
-            setTypeface(null, Typeface.BOLD)
-            letterSpacing = 0.2f
-            gravity = Gravity.CENTER
-            alpha = 0f
-            translationY = -80f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 12, 0, 0) }
-        }
-        container.addView(cardStack)
-        container.addView(titleText)
-        container.addView(descText)
-        rootLayout.addView(container)
         setContentView(rootLayout)
 
         // کل صفحه از سیاه محو به رنگ اصلی می‌رسه، به‌جای این‌که یهو ظاهر بشه
@@ -231,11 +294,28 @@ class MainActivity : AppCompatActivity() {
                 start()
             }
         }
-        titleText.animate().alpha(1f).translationY(0f).setDuration(900)
-            .setStartDelay(300).setInterpolator(OvershootInterpolator(1.1f)).start()
-        descText.animate().alpha(1f).translationY(0f).setDuration(900)
-            .setStartDelay(600).setInterpolator(OvershootInterpolator(1.1f))
-            .withEndAction { startLuxuryGlowEffect(descText) }.start()
+    }
+
+    /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور با سرعت‌های متفاوت. */
+    private fun startFloating(view: View, icon: FloatingIcon) {
+        // ValueAnimator بعد از start توسط AnimationHandler نگه داشته می‌شود،
+        // پس نیازی به نگه‌داشتن مرجع نیست.
+        ValueAnimator.ofFloat(0f, icon.driftX, 0f, -icon.driftX, 0f).apply {
+            duration = icon.duration
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            startDelay = icon.startDelay
+            addUpdateListener { view.translationX = it.animatedValue as Float }
+            start()
+        }
+        ValueAnimator.ofFloat(0f, -icon.driftY, 0f, icon.driftY, 0f).apply {
+            duration = icon.duration * 5 / 4
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            startDelay = icon.startDelay + 150
+            addUpdateListener { view.translationY = it.animatedValue as Float }
+            start()
+        }
     }
 
     /** هاله‌ی پشت کارت به‌آرومی و پیوسته بزرگ/کوچک و کم/زیاد می‌شه، مثل نفس کشیدن. */
@@ -266,14 +346,5 @@ class MainActivity : AppCompatActivity() {
                 shimmerView.postDelayed({ runShimmerSweep(shimmerView) }, 2600)
             }
             .start()
-    }
-
-    private fun startLuxuryGlowEffect(textView: TextView) {
-        ObjectAnimator.ofFloat(textView, "alpha", 1f, 0.6f, 1f).apply {
-            duration = 2000
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            start()
-        }
     }
 }
