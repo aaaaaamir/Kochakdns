@@ -189,23 +189,38 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
         }
 
-        // ===== لوگوی برنامه: تمام‌صفحه، برش‌خورده و blur شده در پس‌زمینه =====
-        val bgLogo = ImageView(this).apply {
-            // تارشدگی واقعی با downscale/upscale (روی همه نسخه‌ها کار می‌کند،
-            // برخلاف RenderEffect که فقط اندروید ۱۲+ است) + CENTER_CROP برای
-            // پر کردن تمام صفحه و برش خودکار اضافه‌ها.
-            setImageDrawable(
-                createBlurredLogoDrawable()
-                    ?: ContextCompat.getDrawable(this@MainActivity, R.mipmap.ic_launcher)
-            )
+        // ===== تصویر پس‌زمینه: تمام‌صفحه، برش‌خورده =====
+        // لایه‌ی واضح (پایین) + لایه‌ی blur (بالا) که با انیمیشن محو می‌شود:
+        // یعنی تصویر اول blur است و کم‌کم «از blur در می‌آید».
+        val backResId = resources.getIdentifier("back", "backimg", packageName)
+        val clearDrawable = if (backResId != 0) {
+            ContextCompat.getDrawable(this, backResId)
+        } else {
+            ContextCompat.getDrawable(this, R.mipmap.ic_launcher)
+        }
+
+        val bgClear = ImageView(this).apply {
+            setImageDrawable(clearDrawable)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            alpha = 0f
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
-        rootLayout.addView(bgLogo)
+        rootLayout.addView(bgClear)
+
+        val bgBlur = ImageView(this).apply {
+            setImageDrawable(
+                createBlurredBackgroundDrawable(backResId)
+                    ?: ContextCompat.getDrawable(this@MainActivity, R.mipmap.ic_launcher)
+            )
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        rootLayout.addView(bgBlur)
 
         // ===== آیکون‌های شناور مینیمال (روی لوگوی blur) =====
         floatingIcons().forEach { icon ->
@@ -251,28 +266,41 @@ class MainActivity : AppCompatActivity() {
         // کل صفحه از سیاه محو به رنگ اصلی می‌رسه، به‌جای این‌که یهو ظاهر بشه
         rootLayout.animate().alpha(1f).setDuration(500).setInterpolator(LinearInterpolator()).start()
 
-        // لوگوی پس‌زمینه به‌آرامی محو و نمایان می‌شود
-        bgLogo.animate().alpha(0.5f).setDuration(1400)
-            .setInterpolator(AccelerateDecelerateInterpolator()).start()
+        // ===== انیمیشن de-blur =====
+        // لایه‌ی blur ابتدا کاملاً روی تصویر است؛ با محو شدن تدریجی،
+        // تصویر واضح زیرش نمایان می‌شود → حس «از blur در آمدن».
+        bgBlur.postDelayed({
+            bgBlur.animate()
+                .alpha(0f)
+                .setDuration(1600)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .start()
+        }, 350)
     }
 
-    /** ساخت نسخه‌ی blur شده‌ی لوگو بدون وابستگی به RenderEffect (روی همه نسخه‌ها کار می‌کند). */
-    private fun createBlurredLogoDrawable(): android.graphics.drawable.Drawable? {
+    /** ساخت نسخه‌ی blur شده‌ی تصویر پس‌زمینه — با حفظ نسبت تصویر (بدون کشیدگی). */
+    private fun createBlurredBackgroundDrawable(backResId: Int): android.graphics.drawable.Drawable? {
         return try {
-            val src = android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
-                ?: return null
+            val src = if (backResId != 0) {
+                android.graphics.BitmapFactory.decodeResource(resources, backResId)
+            } else {
+                android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
+            } ?: return null
 
-            // ۱) downscale شدید → تارشدگی شبه‌گاوسی
-            val small = android.graphics.Bitmap.createScaledBitmap(src, 28, 28, true)
+            // ۱) downscale شدید → تارشدگی شبه‌گاوسی (با حفظ نسبت)
+            val smallW = maxOf(1, src.width / 40)
+            val smallH = maxOf(1, src.height / 40)
+            val small = android.graphics.Bitmap.createScaledBitmap(src, smallW, smallH, true)
             if (small !== src) src.recycle()
 
-            // ۲) upscale به مربعی بزرگ‌تر از صفحه؛ CENTER_CROP خودش آن را
-            //    تمام‌صفحه و برش‌خورده نمایش می‌دهد (اضافه‌ها بیرون می‌زند).
-            val screenMax = maxOf(
-                resources.displayMetrics.widthPixels,
-                resources.displayMetrics.heightPixels
-            )
-            val blurred = android.graphics.Bitmap.createScaledBitmap(small, screenMax, screenMax, true)
+            // ۲) upscale با حفظ نسبت تا جایی که کل صفحه را بپوشاند؛
+            //    CENTER_CROP خودش برش می‌زند (اضافه‌ها بیرون می‌زند).
+            val screenW = resources.displayMetrics.widthPixels
+            val screenH = resources.displayMetrics.heightPixels
+            val scale = maxOf(screenW.toFloat() / smallW, screenH.toFloat() / smallH)
+            val newW = (smallW * scale).toInt()
+            val newH = (smallH * scale).toInt()
+            val blurred = android.graphics.Bitmap.createScaledBitmap(small, newW, newH, true)
             small.recycle()
 
             android.graphics.drawable.BitmapDrawable(resources, blurred)
