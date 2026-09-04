@@ -101,9 +101,8 @@ class DnsSyncManager(private val context: Context) {
             }
             saveProfiles(profiles)
 
-            withContext(Dispatchers.Main) {
-                showToast("✓ لیست DNS با موفقیت بروزرسانی شد (${profiles.size} پروفایل)", false)
-            }
+            // Toast سبز «موفقیت» حذف شد؛ موفقیت بی‌صدا اعمال می‌شود و فقط
+            // خطاها به کاربر نمایش داده می‌شوند.
             onSuccess?.invoke(profiles)
             true
         } catch (e: Exception) {
