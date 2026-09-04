@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -19,7 +18,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
@@ -192,7 +190,23 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
         }
 
-        // ===== آیکون‌های شناور مینیمال (پشت لوگو) =====
+        // ===== لوگوی برنامه: بزرگ، blur شده، در پس‌زمینه =====
+        val logoSize = dp(260)
+        val bgLogo = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            alpha = 0f
+            layoutParams = FrameLayout.LayoutParams(logoSize, logoSize, Gravity.CENTER)
+            // بلور شدید برای حس «پشت صحنه»
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setRenderEffect(RenderEffect.createBlurEffect(28f, 28f, Shader.TileMode.CLAMP))
+            } else {
+                alpha = 0.18f // روی نسخه‌های قدیمی فقط محو
+            }
+        }
+        rootLayout.addView(bgLogo)
+
+        // ===== آیکون‌های شناور مینیمال (روی لوگوی blur) =====
         floatingIcons().forEach { icon ->
             val sizePx = dp(icon.sizeDp)
             val iconView = ImageView(this).apply {
@@ -231,93 +245,14 @@ class MainActivity : AppCompatActivity() {
             startFloating(iconView, icon)
         }
 
-        // ===== کارت لوگو — اندازه هوشمند (نسبتی از کوچک‌ترین بعد صفحه) =====
-        // حدود: بین ۹۰dp و ۱۵۰dp؛ یعنی روی هر گوشی نه خیلی بزرگ است نه خیلی کوچک.
-        val screenMin = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-        val smartCard = (screenMin * 0.20f).toInt().coerceIn(dp(90), dp(150))
-        val cardSize = smartCard
-        val innerSize = (smartCard * 0.82f).toInt()
-        val cardStack = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(cardSize, cardSize, Gravity.CENTER)
-        }
-        val glowView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(cardSize, cardSize).apply { gravity = Gravity.CENTER }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    gradientType = GradientDrawable.RADIAL_GRADIENT
-                    gradientRadius = (cardSize / 2f)
-                    setColors(intArrayOf(Color.parseColor("#55FFD700"), Color.parseColor("#00FFD700")))
-                }
-            }
-            scaleX = 0.75f
-            scaleY = 0.75f
-            alpha = 0f
-        }
-        val cardView = CardView(this).apply {
-            radius = (innerSize * 0.24f)
-            cardElevation = dp(4).toFloat()
-            setCardBackgroundColor(Color.parseColor("#1E1E2E"))
-            layoutParams = FrameLayout.LayoutParams(innerSize, innerSize).apply { gravity = Gravity.CENTER }
-        }
-        val logoIcon = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_launcher)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            // padding داخلی تا آیکون داخل کارت جمع‌وجور باشد و «زوم‌شده» دیده نشود
-            val pad = (innerSize * 0.16f).toInt()
-            setPadding(pad, pad, pad, pad)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        cardView.addView(logoIcon)
-
-        // یک نوار نور مورب که یک‌بار روی کارت سر می‌خوره (افکت shimmer ملایم)
-        val shimmerView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(20), FrameLayout.LayoutParams.MATCH_PARENT)
-            rotation = 20f
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                background = GradientDrawable(
-                    GradientDrawable.Orientation.LEFT_RIGHT,
-                    intArrayOf(Color.TRANSPARENT, Color.parseColor("#33FFFFFF"), Color.TRANSPARENT)
-                )
-            }
-            translationX = -cardSize.toFloat()
-            alpha = 0f
-        }
-        cardView.addView(shimmerView)
-
-        cardStack.addView(glowView)
-        cardStack.addView(cardView)
-        rootLayout.addView(cardStack)
-
         setContentView(rootLayout)
 
         // کل صفحه از سیاه محو به رنگ اصلی می‌رسه، به‌جای این‌که یهو ظاهر بشه
         rootLayout.animate().alpha(1f).setDuration(500).setInterpolator(LinearInterpolator()).start()
 
-        cardView.scaleX = 0.3f
-        cardView.scaleY = 0.3f
-        cardView.alpha = 0f
-        cardView.animate().scaleX(1f).scaleY(1f).alpha(1f)
-            .setDuration(1200).setInterpolator(OvershootInterpolator(1.5f))
-            .withEndAction {
-                startGlowPulse(glowView)
-                runShimmerSweep(shimmerView, cardSize)
-            }.start()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ValueAnimator.ofFloat(30f, 0f).apply {
-                duration = 1200
-                addUpdateListener { anim ->
-                    val radius = anim.animatedValue as Float
-                    if (radius > 0.5f) logoIcon.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP))
-                    else logoIcon.setRenderEffect(null)
-                }
-                start()
-            }
-        }
+        // لوگوی پس‌زمینه به‌آرامی محو و نمایان می‌شود
+        bgLogo.animate().alpha(0.5f).setDuration(1400)
+            .setInterpolator(AccelerateDecelerateInterpolator()).start()
     }
 
     /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور + چرخش ملایم. */
@@ -349,35 +284,5 @@ class MainActivity : AppCompatActivity() {
             addUpdateListener { view.rotation = it.animatedValue as Float }
             start()
         }
-    }
-
-    /** هاله‌ی پشت کارت به‌آرومی و پیوسته بزرگ/کوچک و کم/زیاد می‌شه، مثل نفس کشیدن. */
-    private fun startGlowPulse(glowView: View) {
-        glowView.animate().alpha(1f).setDuration(600).start()
-        ValueAnimator.ofFloat(0.85f, 1.1f).apply {
-            duration = 2400
-            repeatMode = ValueAnimator.REVERSE
-            repeatCount = ValueAnimator.INFINITE
-            addUpdateListener {
-                val scale = it.animatedValue as Float
-                glowView.scaleX = scale
-                glowView.scaleY = scale
-            }
-            start()
-        }
-    }
-
-    /** یک خط نور مورب هر چند ثانیه یک‌بار به‌آرومی روی کارت سر می‌خوره. */
-    private fun runShimmerSweep(shimmerView: View, cardSize: Int) {
-        shimmerView.translationX = -cardSize.toFloat()
-        shimmerView.alpha = 1f
-        shimmerView.animate()
-            .translationX(cardSize.toFloat())
-            .setDuration(1300)
-            .setInterpolator(LinearInterpolator())
-            .withEndAction {
-                shimmerView.postDelayed({ runShimmerSweep(shimmerView, cardSize) }, 2600)
-            }
-            .start()
     }
 }
