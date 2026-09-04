@@ -13,7 +13,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -204,6 +203,8 @@ class SettingsActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = 14 }
             applyGlassBackground(this)
+            isClickable = true
+            isFocusable = true
 
             addView(ImageView(this@SettingsActivity).apply {
                 setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
@@ -229,40 +230,19 @@ class SettingsActivity : AppCompatActivity() {
                 setPadding(0, 6, 0, 0)
             })
 
-            val switchView = SwitchCompat(this@SettingsActivity).apply {
-                isChecked = initial
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    // رنگ‌های thumb و track با ColorStateList — جابه‌جایی thumb و
-                    // تغییر رنگ به‌صورت خودکار انیمیت می‌شوند (استایل جدید).
-                    thumbTintList = android.content.res.ColorStateList(
-                        arrayOf(
-                            intArrayOf(android.R.attr.state_checked),
-                            intArrayOf()
-                        ),
-                        intArrayOf(
-                            Color.WHITE,
-                            Color.parseColor("#9A9AA6")
-                        )
-                    )
-                    trackTintList = android.content.res.ColorStateList(
-                        arrayOf(
-                            intArrayOf(android.R.attr.state_checked),
-                            intArrayOf()
-                        ),
-                        intArrayOf(
-                            Color.parseColor("#4C8DFF"),
-                            Color.parseColor("#2E2E3E")
-                        )
-                    )
-                }
-                // کمی بزرگ‌تر و خواناتر
-                scaleX = 1.1f
-                scaleY = 1.1f
-                setOnCheckedChangeListener { _, checked -> onChange(checked) }
+            val switchView = AnimatedSwitchView(this@SettingsActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(26))
+                setChecked(initial)
+                onCheckedChangeListener = { checked -> onChange(checked) }
             }
 
             addView(textColumn)
             addView(switchView)
+
+            // لمس هرجای کارت = روشن/خاموش
+            setOnClickListener { switchView.performClick() }
         }
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
