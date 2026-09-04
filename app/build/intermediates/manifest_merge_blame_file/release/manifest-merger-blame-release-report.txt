@@ -36,29 +36,27 @@
 27-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:20:5-77
 27-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:20:22-74
 28
-29    <!-- برای اندروید 11+ (API 30+) - جهت نمایش کامل لیست برنامه‌ها در TunnelAppsActivity -->
-30    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:23:5-25:53
-30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:24:9-61
+29    <!-- برای نصب بروزرسانی APK دانلودشده داخل برنامه -->
+30    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:23:5-83
+30-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:23:22-80
 31
-32    <!-- برای نصب بروزرسانی APK دانلودشده داخل برنامه -->
-33    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-33-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:5-83
-33-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:22-80
-34
-35    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
-36    <!-- جایگزین/مکمل QUERY_ALL_PACKAGES برای دیدن اپ‌های دارای لانچر -->
+32    <!-- ========== دیدپذیری برنامه‌ها (اندروید 11+) ========== -->
+33    <!--
+34         فقط اپ‌های دارای لانچر دیده می‌شوند؛ به مجوز QUERY_ALL_PACKAGES
+35         (که توسط Google Play محدود و توسط آنتی‌ویروس‌ها پرچم می‌خورد) نیازی نیست.
+36    -->
 37    <queries>
-37-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:32:5-37:15
+37-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:28:5-33:15
 38        <intent>
-38-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:33:9-36:18
+38-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:29:9-32:18
 39            <action android:name="android.intent.action.MAIN" />
-39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:13-65
-39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:21-62
+39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:13-65
+39-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:21-62
 40
 41            <category android:name="android.intent.category.LAUNCHER" />
-41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:13-73
-41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:23-70
+41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:13-73
+41-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:23-70
 42        </intent>
 43    </queries>
 44
@@ -74,127 +72,127 @@
 49-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:26:22-94
 50
 51    <application
-51-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:39:5-109:19
+51-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:5-105:19
 52        android:allowBackup="true"
-52-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-35
+52-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:36:9-35
 53        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 53-->[androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
 54        android:extractNativeLibs="true"
 55        android:icon="@mipmap/ic_launcher"
-55-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:9-43
+55-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:37:9-43
 56        android:label="@string/app_name"
-56-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:42:9-41
+56-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:38:9-41
 57        android:roundIcon="@mipmap/ic_launcher_round"
-57-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:43:9-54
+57-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:39:9-54
 58        android:supportsRtl="true"
-58-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:44:9-35
+58-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-35
 59        android:theme="@style/Theme.AppCompat.NoActionBar" >
-59-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:9-59
+59-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:41:9-59
 60
 61        <!-- فعالیت اصلی برنامه -->
 62        <activity
-62-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:48:9-56:20
+62-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:44:9-52:20
 63            android:name="com.example.kochakdns.MainActivity"
-63-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:49:13-41
+63-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:45:13-41
 64            android:exported="true"
-64-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:50:13-36
+64-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:46:13-36
 65            android:screenOrientation="portrait" >
-65-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:51:13-49
+65-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:47:13-49
 66            <intent-filter>
-66-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:52:13-55:29
+66-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:48:13-51:29
 67                <action android:name="android.intent.action.MAIN" />
-67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:13-65
-67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:34:21-62
+67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:13-65
+67-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:30:21-62
 68
 69                <category android:name="android.intent.category.LAUNCHER" />
-69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:13-73
-69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:23-70
+69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:13-73
+69-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:23-70
 70            </intent-filter>
 71        </activity>
 72
 73        <!-- صفحه تنظیمات -->
 74        <activity
-74-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:59:9-62:52
+74-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:55:9-58:52
 75            android:name="com.example.kochakdns.SettingsActivity"
-75-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:60:13-45
+75-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:56:13-45
 76            android:exported="false"
-76-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:61:13-37
+76-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:57:13-37
 77            android:screenOrientation="portrait" />
-77-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:13-49
+77-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:58:13-49
 78
 79        <!-- صفحه تونل برنامه‌ها -->
 80        <activity
-80-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:65:9-68:52
+80-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:61:9-64:52
 81            android:name="com.example.kochakdns.TunnelAppsActivity"
-81-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:66:13-47
+81-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:62:13-47
 82            android:exported="false"
-82-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:67:13-37
+82-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:63:13-37
 83            android:screenOrientation="portrait" />
-83-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:13-49
+83-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:64:13-49
 84
 85        <!-- فعالیت مدیریت و تنظیمات DNS -->
 86        <activity
-86-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:71:9-74:52
+86-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:67:9-70:52
 87            android:name="com.example.kochakdns.DnsActivity"
-87-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:72:13-40
+87-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:68:13-40
 88            android:exported="false"
-88-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:73:13-37
+88-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:69:13-37
 89            android:screenOrientation="portrait" />
-89-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:13-49
+89-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:70:13-49
 90
 91        <!-- درباره ما -->
 92        <activity
-92-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:77:9-80:52
+92-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:73:9-76:52
 93            android:name="com.example.kochakdns.AboutActivity"
-93-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:78:13-42
+93-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:74:13-42
 94            android:exported="false"
-94-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:79:13-37
+94-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:75:13-37
 95            android:screenOrientation="portrait" />
-95-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:13-49
+95-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:76:13-49
 96
 97        <!-- سرویس وی‌پی‌ان -->
 98        <service
-98-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:83:9-96:19
+98-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:79:9-92:19
 99            android:name="com.example.kochakdns.MyVpnService"
-99-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:84:13-41
+99-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:80:13-41
 100            android:exported="true"
-100-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:13-36
+100-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:81:13-36
 101            android:foregroundServiceType="specialUse"
-101-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:86:13-55
+101-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:82:13-55
 102            android:permission="android.permission.BIND_VPN_SERVICE" >
-102-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:87:13-69
+102-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:83:13-69
 103            <intent-filter>
-103-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:88:13-90:29
+103-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:84:13-86:29
 104                <action android:name="android.net.VpnService" />
-104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:17-65
-104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:25-62
+104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:17-65
+104-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:85:25-62
 105            </intent-filter>
 106
 107            <!-- برای اندروید 14+ - توضیح استفاده از Foreground Service -->
 108            <property
-108-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:93:13-95:66
+108-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:13-91:66
 109                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-109-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:94:17-76
+109-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:90:17-76
 110                android:value="VPN service for DNS management" />
-110-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:95:17-63
+110-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:17-63
 111        </service>
 112
 113        <!-- برای نصب APK دانلودشده (بروزرسانی داخل برنامه) -->
 114        <provider
 115            android:name="androidx.core.content.FileProvider"
-115-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:100:13-62
+115-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:96:13-62
 116            android:authorities="com.example.kochakdns.fileprovider"
-116-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:101:13-64
+116-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:97:13-64
 117            android:exported="false"
-117-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:102:13-37
+117-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:98:13-37
 118            android:grantUriPermissions="true" >
-118-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:103:13-47
+118-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:99:13-47
 119            <meta-data
-119-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:104:13-106:54
+119-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:100:13-102:54
 120                android:name="android.support.FILE_PROVIDER_PATHS"
-120-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:105:17-67
+120-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:101:17-67
 121                android:resource="@xml/file_paths" />
-121-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:106:17-51
+121-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:102:17-51
 122        </provider>
 123        <provider
 123-->[androidx.emoji2:emoji2:1.4.0] /home/vscode/.gradle/caches/8.10.2/transforms/666fa3d82858398f029097ddf483fbdb/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
