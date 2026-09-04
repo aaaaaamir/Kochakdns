@@ -121,45 +121,56 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun floatingIcons(): List<FloatingIcon> {
-        // آیکون‌های قابلیت‌های برنامه (فقط مسیر SVG؛ رنگ از تم خاکستری گرفته می‌شود)
+        // آیکون‌های قابلیت‌های برنامه — مسیرهای پرجزئیات‌تر (سبک Material)
         val paths = listOf(
-            "M13,2 3,14h7l-1,8 10,-12h-7l1,-8z",                                                    // رعد (سرعت)
-            "M12,22s8,-4 8,-10V5l-8,-3 -8,3v7c0,6 8,10 8,10z",                                       // سپر (ضد تحریم)
-            "M6,9h4v2H8v2H6zM15,11h2v2h-2zM18,9h2v2h-2zM2,7h20v10H2z",                              // دسته بازی
-            "M2,20h.01M7,20v-4M12,20v-8M17,20V8M22,4v16",                                           // سیگنال (پینگ)
-            "M18,20V10M12,20V4M6,20v-6",                                                            // نمودار (آمار)
-            "M12,2a10,10 0 1,0 0,20 10,10 0 1,0 0,-20M2,12h20M12,2c3,3 3,17 0,20c-3,-3 -3,-17 0,-20", // کره (DNS)
-            "M6,9H4.5a2.5,2.5 0 0 1 0,-5H6M18,9h1.5a2.5,2.5 0 0 0 0,-5H18M4,22h16M10,14.7V17c0,.6 -.5,1 -1,1.2c-1.2,.5 -2,2 -2,3.8M14,14.7V17c0,.6 .5,1 1,1.2c1.2,.5 2,2 2,3.8M18,2H6v7a6,6 0 0 0 12,0V2z", // جام (بهترین)
-            "M12,12m-10,0a10,10 0 1,1 20,0a10,10 0 1,1 -20,0M12,12m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0M12,12m-2,0a2,2 0 1,1 4,0a2,2 0 1,1 -4,0" // هدف (دقت)
+            "M13,2 3,14h7l-1,8 10,-12h-7l1,-8z",                                                          // رعد
+            "M12,22s8,-4 8,-10V5l-8,-3 -8,3v7c0,6 8,10 8,10z",                                           // سپر
+            "M6,9h4v2H8v2H6zM15,11h2v2h-2zM18,9h2v2h-2zM2,7h20v10H2z",                                  // دسته بازی
+            "M2,20h.01M7,20v-4M12,20v-8M17,20V8M22,4v16",                                               // سیگنال
+            "M18,20V10M12,20V4M6,20v-6",                                                                // نمودار
+            "M12,2a10,10 0 1,0 0,20 10,10 0 1,0 0,-20M2,12h20M12,2c3,3 3,17 0,20c-3,-3 -3,-17 0,-20", // کره
+            "M6,9H4.5a2.5,2.5 0 0 1 0,-5H6M18,9h1.5a2.5,2.5 0 0 0 0,-5H18M4,22h16M10,14.7V17c0,.6 -.5,1 -1,1.2c-1.2,.5 -2,2 -2,3.8M14,14.7V17c0,.6 .5,1 1,1.2c1.2,.5 2,2 2,3.8M18,2H6v7a6,6 0 0 0 12,0V2z", // جام
+            "M12,12m-10,0a10,10 0 1,1 20,0a10,10 0 1,1 -20,0M12,12m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0M12,12m-2,0a2,2 0 1,1 4,0a2,2 0 1,1 -4,0", // هدف
+            "M18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10c0,-1.1 -0.9,-2 -2,-2zM12,17c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2z", // قفل
+            "M12,3a6,6 0 0 0,6 6c0.4,0 0.8,-0.05 1.2,-0.15L20,10.2A8,8 0 0 1 12,2a8,8 0 0 1 -7.9,6.9L5,8.8A6,6 0 0 0,12,3zM18.5,13.5L21,11a8,8 0 0 1 -2.4,7.4l1.4,1.4a10,10 0 0 0,1.5 -6.3zM7.9,5.1A6,6 0 0 0,6 9a6,6 0 0 0,2.2 4.6l-1.5 1.5A8,8 0 0 1,4 11a8,8 0 0 1,2.4 -5.7z", // وای‌فای
+            "M5,17h14v2H5zM5,11h14v2H5zM5,5h14v2H5z",                                                    // لایه‌ها
+            "M12,2l2.4,4.9 5.4,0.8 -3.9,3.8 0.9,5.4 -4.8,-2.5 -4.8,2.5 0.9,-5.4 -3.9,-3.8 5.4,-0.8z", // ستاره
+            "M20.8,4.6a5.5,5.5 0 0 0 -7.8,0L12,5.6l-1,-1a5.5,5.5 0 0 0 -7.8,7.8l1,1L12,21.2l7.8,-7.8 1,-1a5.5,5.5 0 0 0,0 -7.8z", // قلب
+            "M12,4.5C7,4.5 2.7,7.6 1,12c1.7,4.4 6,7.5 11,7.5s9.3,-3.1 11,-7.5C21.3,7.6 17,4.5 12,4.5zM12,17a5,5 0 1 1 0,-10 5,5 0 0 1,0 10zM12,9.5a2.5,2.5 0 1 0,0 5 2.5,2.5 0 0 0,0 -5z", // چشم
+            "M12,2l2.5,5.5L20,8l-4,4 1,5.5 -5,-3 -5,3L8,12 4,8l5.5,-0.5z",                                 // الماس
+            "M13.5,5.5c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM9.9,19.1c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM18.5,20c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM10.5,13c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM18,11c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM16.5,16c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM7,7.5c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM7,16c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2z", // نقاط شبکه
+            "M12,2a10,10 0 1,0 0,20 10,10 0 0,0 0,-20zM10,17l-5,-5 1.4,-1.4L10,14.2l7.6,-7.6L19,8z",        // تیک دایره
+            "M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6z"                                                          // بعلاوه
         )
 
         val rnd = kotlin.random.Random(System.currentTimeMillis())
         val icons = mutableListOf<FloatingIcon>()
 
-        paths.forEachIndexed { i, path ->
-            // ===== عمق تصادفی: 0 = دور، 1 = نزدیک =====
-            // آیکون‌ها مینیمال و ریز نگه داشته می‌شوند (۱۲ تا ۲۴dp) و محو
+        // پخش شبکه‌ای تا کل صفحه پر شود + جابجایی تصادفی در هر خانه
+        val cols = 4
+        val rows = 5
+        val shuffled = paths.shuffled(kotlin.random.Random(rnd.nextLong()))
+
+        shuffled.take(cols * rows).forEachIndexed { i, path ->
+            val col = i % cols
+            val row = i / cols
+            val cellW = 1f / cols
+            val cellH = 1f / rows
+            val jx = (rnd.nextFloat() - 0.5f) * cellW * 0.7f
+            val jy = (rnd.nextFloat() - 0.5f) * cellH * 0.7f
+            val x = ((col + 0.5f) * cellW + jx).coerceIn(0.04f, 0.96f)
+            val y = ((row + 0.5f) * cellH + jy).coerceIn(0.06f, 0.94f)
+
+            // عمق تصادفی: دور = کوچک + محو + تار | نزدیک = بزرگ‌تر + پررنگ + واضح
             val depth = rnd.nextFloat()
-            val sizeDp = lerp(12f, 24f, depth).toInt()
-            val alpha = lerp(0.10f, 0.38f, depth)
-            val blurRadius = lerp(4f, 0f, depth)
+            val sizeDp = lerp(11f, 20f, depth).toInt()
+            val alpha = lerp(0.08f, 0.30f, depth)
+            val blurRadius = lerp(3f, 0f, depth)
 
-            // موقعیت تصادفی، با پرهیز از مرکز (جایی که لوگو است)
-            var x = rnd.nextFloat() * 0.88f + 0.04f
-            var y = rnd.nextFloat() * 0.82f + 0.08f
-            if (x in 0.34f..0.66f && y in 0.32f..0.62f) {
-                // خیلی به مرکز نزدیک شد؛ به یکی از گوشه‌ها هدایتش کن
-                if (x < 0.5f) {
-                    x = rnd.nextFloat() * 0.28f + 0.04f
-                } else {
-                    x = rnd.nextFloat() * 0.28f + 0.68f
-                }
-            }
-
-            val driftX = lerp(10f, 22f, rnd.nextFloat())
-            val driftY = lerp(10f, 22f, rnd.nextFloat())
+            val driftX = lerp(8f, 20f, rnd.nextFloat())
+            val driftY = lerp(8f, 20f, rnd.nextFloat())
             val duration = rnd.nextLong(4200L, 6800L)
-            val startDelay = (i * 90L) + rnd.nextLong(0L, 220L)
+            val startDelay = (i * 60L) + rnd.nextLong(0L, 200L)
 
             icons.add(
                 FloatingIcon(path, x, y, sizeDp, alpha, blurRadius, driftX, driftY, duration, startDelay)
@@ -185,8 +196,15 @@ class MainActivity : AppCompatActivity() {
         floatingIcons().forEach { icon ->
             val sizePx = dp(icon.sizeDp)
             val iconView = ImageView(this).apply {
-                // رنگ خاکستری هماهنگ با آیکون‌های تم برنامه (ICON_GRAY)
-                setImageDrawable(buildVectorDrawable(icon.path, Color.parseColor("#A0A0AC"), icon.sizeDp))
+                // گرادیان خاکستری: گوشه‌ی پایین/راست کمی تیره‌تر (حس عمق)
+                setImageDrawable(
+                    buildVectorDrawableGradient(
+                        icon.path,
+                        Color.parseColor("#A6A6B2"),
+                        Color.parseColor("#55555F"),
+                        icon.sizeDp
+                    )
+                )
                 alpha = 0f
                 scaleX = 0.6f
                 scaleY = 0.6f
@@ -213,9 +231,12 @@ class MainActivity : AppCompatActivity() {
             startFloating(iconView, icon)
         }
 
-        // ===== کارت لوگو — دقیقاً وسط صفحه =====
-        val cardSize = dp(120)
-        val innerSize = dp(100)
+        // ===== کارت لوگو — اندازه هوشمند (نسبتی از کوچک‌ترین بعد صفحه) =====
+        // حدود: بین ۹۰dp و ۱۵۰dp؛ یعنی روی هر گوشی نه خیلی بزرگ است نه خیلی کوچک.
+        val screenMin = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        val smartCard = (screenMin * 0.20f).toInt().coerceIn(dp(90), dp(150))
+        val cardSize = smartCard
+        val innerSize = (smartCard * 0.82f).toInt()
         val cardStack = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(cardSize, cardSize, Gravity.CENTER)
         }
@@ -234,7 +255,7 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
         }
         val cardView = CardView(this).apply {
-            radius = dp(24).toFloat()
+            radius = (innerSize * 0.24f)
             cardElevation = dp(4).toFloat()
             setCardBackgroundColor(Color.parseColor("#1E1E2E"))
             layoutParams = FrameLayout.LayoutParams(innerSize, innerSize).apply { gravity = Gravity.CENTER }
@@ -242,6 +263,9 @@ class MainActivity : AppCompatActivity() {
         val logoIcon = ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
             scaleType = ImageView.ScaleType.CENTER_CROP
+            // padding داخلی تا آیکون داخل کارت جمع‌وجور باشد و «زوم‌شده» دیده نشود
+            val pad = (innerSize * 0.16f).toInt()
+            setPadding(pad, pad, pad, pad)
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -296,7 +320,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور با سرعت‌های متفاوت. */
+    /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور + چرخش ملایم. */
     private fun startFloating(view: View, icon: FloatingIcon) {
         // ValueAnimator بعد از start توسط AnimationHandler نگه داشته می‌شود،
         // پس نیازی به نگه‌داشتن مرجع نیست.
@@ -314,6 +338,15 @@ class MainActivity : AppCompatActivity() {
             interpolator = AccelerateDecelerateInterpolator()
             startDelay = icon.startDelay + 150
             addUpdateListener { view.translationY = it.animatedValue as Float }
+            start()
+        }
+        // چرخش ملایم (نوسان ±۶ درجه) برای حس زنده‌بودن آیکون‌ها
+        ValueAnimator.ofFloat(-6f, 6f, -6f).apply {
+            duration = icon.duration * 3 / 2
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            startDelay = icon.startDelay + 300
+            addUpdateListener { view.rotation = it.animatedValue as Float }
             start()
         }
     }
