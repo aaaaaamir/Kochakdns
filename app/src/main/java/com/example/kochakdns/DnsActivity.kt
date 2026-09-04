@@ -19,9 +19,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.Animation
 import android.view.animation.LinearInterpolator
-import android.view.animation.RotateAnimation
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -218,6 +216,61 @@ class HamburgerIconView(context: Context) : View(context) {
     }
 }
 
+/**
+ * اسپینر لودینگ به سبک جدید گوگل (Material): یک قوس مورب با سر گرد که به‌طور
+ * پیوسته می‌چرخد. رنگ آن با تم برنامه (آبی #4C8DFF) هماهنگ است.
+ */
+class MaterialLoadingView(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        color = Color.parseColor("#4C8DFF")
+    }
+    private var rotation = 0f
+    private var animator: android.animation.ValueAnimator? = null
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        paint.strokeWidth = minOf(w, h) * 0.10f
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val size = minOf(width, height).toFloat()
+        if (size <= 0f) return
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = size / 2f - paint.strokeWidth
+        val rectF = RectF(cx - r, cy - r, cx + r, cy + r)
+        // قوس ۲۷۰ درجه‌ای که می‌چرخد (همان حس «لودینگ مورب» گوگل)
+        canvas.drawArc(rectF, rotation, 270f, false, paint)
+    }
+
+    fun startSpinning() {
+        stopSpinning()
+        animator = android.animation.ValueAnimator.ofFloat(0f, 360f).apply {
+            duration = 1100
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener {
+                rotation = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    fun stopSpinning() {
+        animator?.cancel()
+        animator = null
+    }
+
+    override fun onDetachedFromWindow() {
+        stopSpinning()
+        super.onDetachedFromWindow()
+    }
+}
+
 class DnsActivity : AppCompatActivity() {
 
     private lateinit var rootLayout: FrameLayout
@@ -240,7 +293,7 @@ class DnsActivity : AppCompatActivity() {
     private lateinit var dnsListContainer: LinearLayout
     private lateinit var statusIndicator: FrameLayout
     private lateinit var retryButton: Button
-    private lateinit var loadingSpinner: ProgressBar
+    private lateinit var loadingSpinner: MaterialLoadingView
 
     private var pingJob: Job? = null
     private var statsJob: Job? = null
@@ -776,8 +829,7 @@ class DnsActivity : AppCompatActivity() {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
             }
         }
-        loadingSpinner = ProgressBar(this).apply {
-            isIndeterminate = true
+        loadingSpinner = MaterialLoadingView(this).apply {
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -1741,22 +1793,13 @@ class DnsActivity : AppCompatActivity() {
         runOnUiThread {
             retryButton.visibility = View.GONE
             loadingSpinner.visibility = View.VISIBLE
-            val rotation = RotateAnimation(
-                0f, 360f,
-                Animation.RELATIVE_TO_SELF, 0.5f,
-                Animation.RELATIVE_TO_SELF, 0.5f
-            ).apply {
-                duration = 1000
-                repeatCount = Animation.INFINITE
-                interpolator = LinearInterpolator()
-            }
-            loadingSpinner.startAnimation(rotation)
+            loadingSpinner.startSpinning()
         }
     }
 
     private fun hideLoading() {
         runOnUiThread {
-            loadingSpinner.clearAnimation()
+            loadingSpinner.stopSpinning()
             loadingSpinner.visibility = View.GONE
             retryButton.visibility = View.GONE
         }
@@ -1764,7 +1807,7 @@ class DnsActivity : AppCompatActivity() {
 
     private fun showError() {
         runOnUiThread {
-            loadingSpinner.clearAnimation()
+            loadingSpinner.stopSpinning()
             loadingSpinner.visibility = View.GONE
             retryButton.visibility = View.VISIBLE
             Toast.makeText(this, "خطا در دریافت DNS. دکمه ↻ را بزنید.", Toast.LENGTH_LONG).show()
