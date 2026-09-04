@@ -15,7 +15,6 @@ import android.os.Build
 import android.view.Gravity
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.PathParser
@@ -219,17 +218,20 @@ class MenuActivity(private val host: DnsActivity) {
                 }
             })
 
-            val switchView = Switch(host).apply {
-                isChecked = initialState
-                setOnCheckedChangeListener { _, checked -> onToggle(checked) }
+            val switchView = AnimatedSwitchView(host).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(26))
+                setChecked(initialState)
+                onCheckedChangeListener = { checked -> onToggle(checked) }
             }
             addView(switchView)
 
             isClickable = true
             isFocusable = true
-            setOnClickListener { switchView.toggle() }
+            setOnClickListener { switchView.performClick() }
         }
     }
+
+    private fun dp(value: Int): Int = (value * host.resources.displayMetrics.density).toInt()
 
     /** پس‌زمینه‌ی کارتمانند هماهنگ با کارت‌های DNS در DnsActivity. */
     private fun applyCardBackground(view: android.view.View) {
