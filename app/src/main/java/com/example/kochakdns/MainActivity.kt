@@ -190,9 +190,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         // ===== تصویر پس‌زمینه: تمام‌صفحه، برش‌خورده =====
-        // لایه‌ی واضح (پایین) + لایه‌ی blur (بالا) که با انیمیشن محو می‌شود:
-        // یعنی تصویر اول blur است و کم‌کم «از blur در می‌آید».
-        val backResId = resources.getIdentifier("back", "backimg", packageName)
+        // تصویر باید در یک پوشه‌ی معتبر منابع باشد (drawable-nodpi یا drawable).
+        // پوشه‌ی «backimg» معتبر نیست و در build نادیده گرفته می‌شود.
+        val backResId = findBackImageResId()
         val clearDrawable = if (backResId != 0) {
             ContextCompat.getDrawable(this, backResId)
         } else {
@@ -276,6 +276,17 @@ class MainActivity : AppCompatActivity() {
                 .setInterpolator(AccelerateDecelerateInterpolator())
                 .start()
         }, 350)
+    }
+
+    /** پیدا کردن تصویر پس‌زمینه در پوشه‌های معتبر (drawable یا mipmap). */
+    private fun findBackImageResId(): Int {
+        // اول در drawable (شامل drawable-nodpi / drawable-xxhdpi و…)
+        val drawableId = resources.getIdentifier("back", "drawable", packageName)
+        if (drawableId != 0) return drawableId
+        // سپس mipmap
+        val mipmapId = resources.getIdentifier("back", "mipmap", packageName)
+        if (mipmapId != 0) return mipmapId
+        return 0
     }
 
     /** ساخت نسخه‌ی blur شده‌ی تصویر پس‌زمینه — با حفظ نسبت تصویر (بدون کشیدگی). */
