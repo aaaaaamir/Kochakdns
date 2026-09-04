@@ -298,23 +298,32 @@ class MainActivity : AppCompatActivity() {
                 android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
             } ?: return null
 
-            // ۱) downscale شدید → تارشدگی شبه‌گاوسی (با حفظ نسبت)
-            val smallW = maxOf(1, src.width / 40)
-            val smallH = maxOf(1, src.height / 40)
-            val small = android.graphics.Bitmap.createScaledBitmap(src, smallW, smallH, true)
-            if (small !== src) src.recycle()
+            // بلور گاوسی واقعی با RenderScript (بدون افت کیفیت)
+            val input = src.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+            val output = android.graphics.Bitmap.createBitmap(
+                input.width, input.height, android.graphics.Bitmap.Config.ARGB_8888
+            )
+            val rs = android.renderscript.RenderScript.create(this)
+            try {
+                val allocIn = android.renderscript.Allocation.createFromBitmap(rs, input)
+                val allocOut = android.renderscript.Allocation.createFromBitmap(rs, output)
+                val script = android.renderscript.ScriptIntrinsicBlur.create(
+                    rs, android.renderscript.Element.U8_4(rs)
+                )
+                script.setRadius(22f)
+                script.setInput(allocIn)
+                script.forEach(allocOut)
+                allocOut.copyTo(output)
+                allocIn.destroy()
+                allocOut.destroy()
+                script.destroy()
+            } finally {
+                rs.destroy()
+                if (input !== src) input.recycle()
+            }
+            if (output !== src) src.recycle()
 
-            // ۲) upscale با حفظ نسبت تا جایی که کل صفحه را بپوشاند؛
-            //    CENTER_CROP خودش برش می‌زند (اضافه‌ها بیرون می‌زند).
-            val screenW = resources.displayMetrics.widthPixels
-            val screenH = resources.displayMetrics.heightPixels
-            val scale = maxOf(screenW.toFloat() / smallW, screenH.toFloat() / smallH)
-            val newW = (smallW * scale).toInt()
-            val newH = (smallH * scale).toInt()
-            val blurred = android.graphics.Bitmap.createScaledBitmap(small, newW, newH, true)
-            small.recycle()
-
-            android.graphics.drawable.BitmapDrawable(resources, blurred)
+            android.graphics.drawable.BitmapDrawable(resources, output)
         } catch (e: Exception) {
             null
         }
