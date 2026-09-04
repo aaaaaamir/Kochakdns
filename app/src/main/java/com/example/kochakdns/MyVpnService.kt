@@ -30,17 +30,15 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Semaphore
 
 /**
- * سرویس VPN — فقط DNS (و در صورت فعال بودن «تونل کامل»، ترافیک برنامه‌های
- * انتخاب‌شده) را از تونل عبور می‌دهد.
+ * سرویس VPN — فقط DNS را از تونل عبور می‌دهد (پایدار و بدون NAT).
  *
  * حالت‌ها:
  *  ۱) DEFAULT: هیچ انتخاب سفارشی نیست → همه‌ی برنامه‌ها DNS سفارشی می‌گیرند.
  *  ۲) SPLIT (انتخاب سفارشی): برنامه‌های انتخاب‌نشده با addDisallowedApplication
  *     از تونل مستثنی می‌شوند → DNS سیستم می‌گیرند و اینترنت‌شان دست‌نخورده است.
- *  ۳) FULL TUNNEL: کل ترافیک (0.0.0.0/0) وارد تون می‌شود؛ برنامه‌های
- *     انتخاب‌نشده با addDisallowedApplication مستثنا می‌شوند، پس هر پکتی که
- *     وارد تون شود قطعاً متعلق به برنامه‌های انتخاب‌شده است و بدون هیچ
- *     بررسی UID توسط TunnelEngine relay می‌شود.
+ *
+ * فقط مسیر IP سرورهای DNS وارد تون می‌شود؛ بقیه‌ی ترافیک از مسیر عادی شبکه
+ * رد می‌شود. برای همین اینترنت همه‌ی برنامه‌ها همیشه برقرار است.
  */
 class MyVpnService : VpnService() {
 
@@ -84,7 +82,6 @@ class MyVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var connectStartTime: Long = 0L
     private var statsUpdateHandler: Handler? = null
-    private var tunnelEngine: TunnelEngine? = null
 
     // کش DNS (با TTL واقعی) — پاسخ‌های تکراری از حافظه خوانده می‌شوند.
     private val dnsCache = DnsCache()
@@ -129,8 +126,6 @@ class MyVpnService : VpnService() {
     private fun restartVpn() {
         readerJob?.cancel()
         readerJob = null
-        tunnelEngine?.shutdown()
-        tunnelEngine = null
         try { vpnInterface?.close() } catch (_: Exception) {}
         vpnInterface = null
         startVpn(lastDnsServers, lastDnsName)
@@ -162,16 +157,21 @@ class MyVpnService : VpnService() {
             addAddress(TUN_ADDRESS, 32)
             try { addAddress(TUN_ADDRESS_V6, 128) } catch (_: Exception) {}
 
-            // ===== تونل کامل (همیشه فعال) =====
-            // کل ترافیک وارد تون می‌شود تا «همه پکت‌ها» شمارش شوند.
-            try { addRoute("0.0.0.0", 0) } catch (_: Exception) {}
-            try { addRoute("::", 0) } catch (_: Exception) {}
-            validV4.take(4).forEach { dns -> try { addDnsServer(dns) } catch (_: Exception) {} }
-            validV6.take(4).forEach { dns -> try { addDnsServer(dns) } catch (_: Exception) {} }
+            // ===== فقط DNS (حالت امن و پایدار) =====
+            // فقط مسیر خودِ سرورهای DNS وارد تون می‌شود؛ بقیه‌ی ترافیک هر اپی
+            // از مسیر عادی شبکه رد می‌شود. برای همین به هیچ NAT/موتور تونل
+            // نیاز نیست و اینترنت همه‌ی برنامه‌ها دست‌نخورده می‌ماند.
+            // (قبلاً اینجا addRoute("0.0.0.0",0) بود که کل ترافیک را وارد تون
+            // می‌کرد و چون موتور NAT دست‌نویس خراب بود، هیچ صفحه‌ای باز نمی‌شد.)
+            validV4.take(4).forEach { dns ->
+                try { addRoute(dns, 32); addDnsServer(dns) } catch (_: Exception) {}
+            }
+            validV6.take(4).forEach { dns ->
+                try { addRoute(dns, 128); addDnsServer(dns) } catch (_: Exception) {}
+            }
 
             // اگر انتخاب سفارشی وجود دارد، برنامه‌های انتخاب‌نشده از تونل مستثنی
-            // می‌شوند (اینترنت معمولی دارند) و ترافیک برنامه‌های انتخاب‌شده بدون
-            // هیچ بررسی UID forward می‌شود.
+            // می‌شوند (DNS سیستم می‌گیرند و اینترنت‌شان دست‌نخورده می‌ماند).
             if (hasSelection) {
                 try {
                     val selected = selectedPackages ?: emptySet()
@@ -204,7 +204,6 @@ class MyVpnService : VpnService() {
                 override fun run() {
                     if (VpnStats.isVpnActive) {
                         updateNotification()
-                        tunnelEngine?.cleanupIdleSessions()
                         statsUpdateHandler?.postDelayed(this, 2000)
                     }
                 }
@@ -234,28 +233,15 @@ class MyVpnService : VpnService() {
     }
 
     // ------------------------------------------------------------
-    // فقط پکت‌های UDP روی پورت 53 (DNS) را relay می‌کند؛ در حالت تونل کامل،
-    // بقیه‌ی TCP/UDP هم به TunnelEngine سپرده می‌شود. چون برنامه‌های
-    // انتخاب‌نشده در سطح کرنل مستثنا شده‌اند، هر پکتی که به اینجا برسد
-    // متعلق به برنامه‌های مجاز است — بدون هیچ بررسی UID.
+    // فقط پکت‌های UDP روی پورت 53 (DNS) را تشخیص می‌دهد و relay می‌کند.
+    // چون فقط مسیر IP سرورهای DNS وارد تون می‌شود، ترافیک دیگری به اینجا
+    // نمی‌رسد و اینترنت برنامه‌ها همیشه برقرار است.
     // ------------------------------------------------------------
     private suspend fun processPackets() = withContext(Dispatchers.IO) {
         val vpnIface = vpnInterface ?: return@withContext
         val input = FileInputStream(vpnIface.fileDescriptor)
         val output = FileOutputStream(vpnIface.fileDescriptor)
         val packet = ByteArray(32767)
-
-        // تونل کامل همیشه فعال است؛ هر پکتی که وارد تون می‌شود متعلق به
-        // برنامه‌های داخل تونل است (انتخاب‌نشده‌ها با addDisallowedApplication
-        // مستثنا شده‌اند)؛ پس همه را forward می‌کنیم — بدون هیچ بررسی UID.
-        val localEngine = TunnelEngine(
-            vpnService = this@MyVpnService,
-            output = output,
-            scope = serviceScope,
-            outputMutex = outputMutex,
-            shouldForward = { true }
-        )
-        tunnelEngine = localEngine
 
         try {
             while (VpnStats.isVpnActive) {
@@ -278,46 +264,15 @@ class MyVpnService : VpnService() {
                         VpnStats.totalBytesSent.addAndGet(length.toLong())
                         launchRelay { relayDnsQueryV6(data, output) }
                     }
-                    isIpv4(data) -> {
-                        handleGeneralPacketV4(data, localEngine)
-                    }
-                    isIpv6(data) -> {
-                        handleGeneralPacketV6(data, localEngine)
-                    }
                     else -> {
+                        // فقط DNS وارد تون می‌شود؛ هر چیز دیگر غیرمنتظره است
                         VpnStats.totalPacketsLost.incrementAndGet()
                     }
                 }
             }
         } finally {
-            localEngine.shutdown()
-            if (tunnelEngine === localEngine) tunnelEngine = null
             try { input.close() } catch (_: Exception) {}
             try { output.close() } catch (_: Exception) {}
-        }
-    }
-
-    private fun isIpv4(data: ByteArray): Boolean =
-        data.isNotEmpty() && ((data[0].toInt() and 0xF0) ushr 4) == 4
-
-    private fun isIpv6(data: ByteArray): Boolean =
-        data.isNotEmpty() && ((data[0].toInt() and 0xF0) ushr 4) == 6
-
-    /** هر پکت غیر-DNS در حالت تونل کامل، بسته به پروتکلش (TCP/UDP) به TunnelEngine سپرده می‌شود. */
-    private fun handleGeneralPacketV4(data: ByteArray, engine: TunnelEngine?) {
-        if (data.size < 20) return
-        val ihl = (data[0].toInt() and 0x0F) * 4
-        when (data[9].toInt() and 0xFF) {
-            6 -> engine?.handleTcpV4(data, ihl)
-            17 -> engine?.handleUdpV4(data, ihl)
-        }
-    }
-
-    private fun handleGeneralPacketV6(data: ByteArray, engine: TunnelEngine?) {
-        if (data.size < 40) return
-        when (data[6].toInt() and 0xFF) {
-            6 -> engine?.handleTcpV6(data)
-            17 -> engine?.handleUdpV6(data)
         }
     }
 
@@ -651,8 +606,6 @@ class MyVpnService : VpnService() {
         VpnStats.isVpnActive = false
         readerJob?.cancel()
         readerJob = null
-        tunnelEngine?.shutdown()
-        tunnelEngine = null
         // تخلیه‌ی مخزن سوکت‌ها
         while (true) {
             val s = dnsSocketPool.poll() ?: break
