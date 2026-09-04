@@ -53,8 +53,9 @@ com.example.kochakdns.app-jetified-activity-1.8.0-51 /home/vscode/.gradle/caches
 com.example.kochakdns.app-jetified-appcompat-resources-1.7.0-52 /home/vscode/.gradle/caches/8.10.2/transforms/fc857ccc1e7dfeab596a47d849015b2e/transformed/jetified-appcompat-resources-1.7.0/res
 com.example.kochakdns.app-pngs-53 /workspaces/Kochakdns/app/build/generated/res/pngs/release
 com.example.kochakdns.app-resValues-54 /workspaces/Kochakdns/app/build/generated/res/resValues/release
-com.example.kochakdns.app-packageReleaseResources-55 /workspaces/Kochakdns/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
-com.example.kochakdns.app-packageReleaseResources-56 /workspaces/Kochakdns/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
-com.example.kochakdns.app-merged_res-57 /workspaces/Kochakdns/app/build/intermediates/merged_res/release
-com.example.kochakdns.app-main-58 /workspaces/Kochakdns/app/src/main/res
-com.example.kochakdns.app-release-59 /workspaces/Kochakdns/app/src/release/res
+com.example.kochakdns.app-rs-55 /workspaces/Kochakdns/app/build/generated/res/rs/release
+com.example.kochakdns.app-packageReleaseResources-56 /workspaces/Kochakdns/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+com.example.kochakdns.app-packageReleaseResources-57 /workspaces/Kochakdns/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+com.example.kochakdns.app-merged_res-58 /workspaces/Kochakdns/app/build/intermediates/merged_res/release
+com.example.kochakdns.app-main-59 /workspaces/Kochakdns/app/src/main/res
+com.example.kochakdns.app-release-60 /workspaces/Kochakdns/app/src/release/res
