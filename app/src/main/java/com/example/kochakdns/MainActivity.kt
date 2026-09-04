@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
             // ===== عمق تصادفی: 0 = دور، 1 = نزدیک =====
             // دور: کوچک + محو + تار | نزدیک: بزرگ + پررنگ + واضح
             val depth = rnd.nextFloat()
-            val sizeDp = lerp(34f, 68f, depth).roundToInt()
+            val sizeDp = lerp(34f, 68f, depth).toInt()
             val alpha = lerp(0.22f, 0.95f, depth)
             val blurRadius = lerp(9f, 0f, depth)
 
