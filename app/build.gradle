@@ -53,6 +53,8 @@ android {
         viewBinding true
         // ===== Jetpack Compose =====
         compose true
+        // ===== RenderScript (برای بلور باکیفیت اسپلش) =====
+        renderScript true
     }
 
     // ===== کامپایلر Compose — هماهنگ با Kotlin 1.8.10 (که در build.gradle ریشه است) =====
