@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-55:/values/values.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-56:/values/values.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/3fe23684b4c07ea5c5a9ef229fc341a2/transformed/drawerlayout-1.1.1/res/values/values.xml",

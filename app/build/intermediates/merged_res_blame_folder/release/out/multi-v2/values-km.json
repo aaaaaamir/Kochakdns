@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-55:/values-km/values-km.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-56:/values-km/values-km.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/1d7d3beb558a50282129062d75b197d1/transformed/jetified-material3-1.1.2/res/values-km/values-km.xml",

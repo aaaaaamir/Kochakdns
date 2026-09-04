@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-55:/values-en-rAU/values-en-rAU.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-56:/values-en-rAU/values-en-rAU.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/f4ef87c192ca50f8b064b5e43facd49b/transformed/appcompat-1.7.0/res/values-en-rAU/values-en-rAU.xml",

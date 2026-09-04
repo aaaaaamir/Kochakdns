@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-55:/values-hy/values-hy.xml",
+            "outputFile": "com.example.kochakdns.app-mergeReleaseResources-56:/values-hy/values-hy.xml",
             "map": [
                 {
                     "source": "/home/vscode/.gradle/caches/8.10.2/transforms/859facd7fa4049600aa471db4f2fd6ff/transformed/jetified-ui-release/res/values-hy/values-hy.xml",
