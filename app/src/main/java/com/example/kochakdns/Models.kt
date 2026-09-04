@@ -273,7 +273,7 @@ object StatsReporter {
 /** تنظیمات سراسری برنامه (صفحه‌ی تنظیمات). پیش‌فرض‌ها دقیقاً همون رفتار فعلی برنامه‌ست. */
 object AppSettings {
     private const val PREFS = "app_settings"
-    private const val KEY_FULL_TUNNEL = "full_tunnel"
+    private const val KEY_DNS_CACHE = "dns_cache"
     private const val KEY_SHOW_PACKET_PERCENT = "show_packet_percentage"
     private const val KEY_SHOW_NOTIFICATION = "show_notification"
     private const val KEY_UPDATE_CHECK = "update_check_enabled"
@@ -281,6 +281,15 @@ object AppSettings {
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+    // پیش‌فرض true: کش DNS فعال است. پاسخ‌های تکراری DNS از حافظه خوانده می‌شوند
+    // (با TTL واقعی رکورد) که باعث بهبود پینگ و سرعت می‌شود.
+    fun isDnsCacheEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_DNS_CACHE, true)
+
+    fun setDnsCacheEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DNS_CACHE, value).apply()
+    }
 
     // پیش‌فرض true: بررسی خودکار بروزرسانی هنگام ورود به برنامه انجام می‌شود.
     fun isUpdateCheckEnabled(context: android.content.Context): Boolean =
@@ -296,16 +305,6 @@ object AppSettings {
 
     fun setAnnouncementEnabled(context: android.content.Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_ANNOUNCEMENT, value).apply()
-    }
-
-    // پیش‌فرض false: تونل کامل خاموش است (فقط DNS relay می‌شود).
-    // وقتی روشن باشد، کل ترافیک برنامه‌های انتخاب‌شده (نه فقط DNS) از تونل
-    // رد می‌شود؛ برنامه‌های انتخاب‌نشده اینترنت معمولی دارند.
-    fun isFullTunnelEnabled(context: android.content.Context): Boolean =
-        prefs(context).getBoolean(KEY_FULL_TUNNEL, false)
-
-    fun setFullTunnelEnabled(context: android.content.Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_FULL_TUNNEL, value).apply()
     }
 
     // پیش‌فرض true: الان درصد پکت‌ها نمایش داده می‌شه.
