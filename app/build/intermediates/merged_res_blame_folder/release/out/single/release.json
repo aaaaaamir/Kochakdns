@@ -1,11 +1,23 @@
 [
     {
-        "merged": "com.example.kochakdns.app-merged_res-57:/xml_file_paths.xml.flat",
-        "source": "com.example.kochakdns.app-main-58:/xml/file_paths.xml"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/xml_file_paths.xml.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/xml/file_paths.xml"
     },
     {
         "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-mdpi_ic_launcher.png.flat",
         "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-hdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.example.kochakdns.app-merged_res-57:/drawable-nodpi_back.png.flat",
+        "source": "com.example.kochakdns.app-main-58:/drawable-nodpi/back.png"
     },
     {
         "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-xhdpi_ic_launcher_round.png.flat",
@@ -22,14 +34,6 @@
     {
         "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-xxxhdpi_ic_launcher.png.flat",
         "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-xxxhdpi/ic_launcher.png"
-    },
-    {
-        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-hdpi_ic_launcher_round.png.flat",
-        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-hdpi/ic_launcher_round.png"
-    },
-    {
-        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-hdpi_ic_launcher.png.flat",
-        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-58:/mipmap-hdpi/ic_launcher.png"
     },
     {
         "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-57:/mipmap-xxhdpi_ic_launcher.png.flat",
