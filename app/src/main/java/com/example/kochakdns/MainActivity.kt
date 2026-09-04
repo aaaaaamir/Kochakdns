@@ -17,7 +17,6 @@ import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.RelativeLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
@@ -139,11 +138,11 @@ class MainActivity : AppCompatActivity() {
 
         paths.forEachIndexed { i, path ->
             // ===== عمق تصادفی: 0 = دور، 1 = نزدیک =====
-            // دور: کوچک + محو + تار | نزدیک: بزرگ + پررنگ + واضح
+            // آیکون‌ها مینیمال و ریز نگه داشته می‌شوند (۱۲ تا ۲۴dp) و محو
             val depth = rnd.nextFloat()
-            val sizeDp = lerp(34f, 68f, depth).toInt()
-            val alpha = lerp(0.22f, 0.95f, depth)
-            val blurRadius = lerp(9f, 0f, depth)
+            val sizeDp = lerp(12f, 24f, depth).toInt()
+            val alpha = lerp(0.10f, 0.38f, depth)
+            val blurRadius = lerp(4f, 0f, depth)
 
             // موقعیت تصادفی، با پرهیز از مرکز (جایی که لوگو است)
             var x = rnd.nextFloat() * 0.88f + 0.04f
@@ -157,8 +156,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            val driftX = lerp(14f, 34f, rnd.nextFloat())
-            val driftY = lerp(14f, 34f, rnd.nextFloat())
+            val driftX = lerp(10f, 22f, rnd.nextFloat())
+            val driftY = lerp(10f, 22f, rnd.nextFloat())
             val duration = rnd.nextLong(4200L, 6800L)
             val startDelay = (i * 90L) + rnd.nextLong(0L, 220L)
 
@@ -174,23 +173,24 @@ class MainActivity : AppCompatActivity() {
 
     @Suppress("NewApi")
     private fun setupSplashScreen() {
-        val rootLayout = RelativeLayout(this).apply {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        val rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
-            gravity = Gravity.CENTER
             alpha = 0f
         }
 
-        // ===== آیکون‌های شناور (پشت لوگو) =====
-        val density = resources.displayMetrics.density
+        // ===== آیکون‌های شناور مینیمال (پشت لوگو) =====
         floatingIcons().forEach { icon ->
-            val sizePx = (icon.sizeDp * density).toInt()
+            val sizePx = dp(icon.sizeDp)
             val iconView = ImageView(this).apply {
                 // رنگ خاکستری هماهنگ با آیکون‌های تم برنامه (ICON_GRAY)
                 setImageDrawable(buildVectorDrawable(icon.path, Color.parseColor("#A0A0AC"), icon.sizeDp))
                 alpha = 0f
                 scaleX = 0.6f
                 scaleY = 0.6f
-                layoutParams = RelativeLayout.LayoutParams(sizePx, sizePx).apply {
+                layoutParams = FrameLayout.LayoutParams(sizePx, sizePx).apply {
                     leftMargin = ((resources.displayMetrics.widthPixels - sizePx) * icon.xFraction).toInt()
                     topMargin = ((resources.displayMetrics.heightPixels - sizePx) * icon.yFraction).toInt()
                 }
@@ -213,19 +213,19 @@ class MainActivity : AppCompatActivity() {
             startFloating(iconView, icon)
         }
 
-        // ===== کارت لوگو (وسط) =====
+        // ===== کارت لوگو — دقیقاً وسط صفحه =====
+        val cardSize = dp(120)
+        val innerSize = dp(100)
         val cardStack = FrameLayout(this).apply {
-            layoutParams = RelativeLayout.LayoutParams(420, 420).apply {
-                addRule(RelativeLayout.CENTER_IN_PARENT)
-            }
+            layoutParams = FrameLayout.LayoutParams(cardSize, cardSize, Gravity.CENTER)
         }
         val glowView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(420, 420).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(cardSize, cardSize).apply { gravity = Gravity.CENTER }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     gradientType = GradientDrawable.RADIAL_GRADIENT
-                    gradientRadius = 210f
+                    gradientRadius = (cardSize / 2f)
                     setColors(intArrayOf(Color.parseColor("#55FFD700"), Color.parseColor("#00FFD700")))
                 }
             }
@@ -234,10 +234,10 @@ class MainActivity : AppCompatActivity() {
             alpha = 0f
         }
         val cardView = CardView(this).apply {
-            radius = 64f
-            cardElevation = 16f
+            radius = dp(24).toFloat()
+            cardElevation = dp(4).toFloat()
             setCardBackgroundColor(Color.parseColor("#1E1E2E"))
-            layoutParams = FrameLayout.LayoutParams(340, 340).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(innerSize, innerSize).apply { gravity = Gravity.CENTER }
         }
         val logoIcon = ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
@@ -251,7 +251,7 @@ class MainActivity : AppCompatActivity() {
 
         // یک نوار نور مورب که یک‌بار روی کارت سر می‌خوره (افکت shimmer ملایم)
         val shimmerView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(70, FrameLayout.LayoutParams.MATCH_PARENT)
+            layoutParams = FrameLayout.LayoutParams(dp(20), FrameLayout.LayoutParams.MATCH_PARENT)
             rotation = 20f
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 background = GradientDrawable(
@@ -259,7 +259,7 @@ class MainActivity : AppCompatActivity() {
                     intArrayOf(Color.TRANSPARENT, Color.parseColor("#33FFFFFF"), Color.TRANSPARENT)
                 )
             }
-            translationX = -420f
+            translationX = -cardSize.toFloat()
             alpha = 0f
         }
         cardView.addView(shimmerView)
@@ -280,7 +280,7 @@ class MainActivity : AppCompatActivity() {
             .setDuration(1200).setInterpolator(OvershootInterpolator(1.5f))
             .withEndAction {
                 startGlowPulse(glowView)
-                runShimmerSweep(shimmerView)
+                runShimmerSweep(shimmerView, cardSize)
             }.start()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -335,15 +335,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** یک خط نور مورب هر چند ثانیه یک‌بار به‌آرومی روی کارت سر می‌خوره. */
-    private fun runShimmerSweep(shimmerView: View) {
-        shimmerView.translationX = -420f
+    private fun runShimmerSweep(shimmerView: View, cardSize: Int) {
+        shimmerView.translationX = -cardSize.toFloat()
         shimmerView.alpha = 1f
         shimmerView.animate()
-            .translationX(420f)
+            .translationX(cardSize.toFloat())
             .setDuration(1300)
             .setInterpolator(LinearInterpolator())
             .withEndAction {
-                shimmerView.postDelayed({ runShimmerSweep(shimmerView) }, 2600)
+                shimmerView.postDelayed({ runShimmerSweep(shimmerView, cardSize) }, 2600)
             }
             .start()
     }
