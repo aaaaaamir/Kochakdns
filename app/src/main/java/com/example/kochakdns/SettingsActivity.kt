@@ -11,9 +11,9 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -229,8 +229,35 @@ class SettingsActivity : AppCompatActivity() {
                 setPadding(0, 6, 0, 0)
             })
 
-            val switchView = Switch(this@SettingsActivity).apply {
+            val switchView = SwitchCompat(this@SettingsActivity).apply {
                 isChecked = initial
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    // رنگ‌های thumb و track با ColorStateList — جابه‌جایی thumb و
+                    // تغییر رنگ به‌صورت خودکار انیمیت می‌شوند (استایل جدید).
+                    thumbTintList = android.content.res.ColorStateList(
+                        arrayOf(
+                            intArrayOf(android.R.attr.state_checked),
+                            intArrayOf()
+                        ),
+                        intArrayOf(
+                            Color.WHITE,
+                            Color.parseColor("#9A9AA6")
+                        )
+                    )
+                    trackTintList = android.content.res.ColorStateList(
+                        arrayOf(
+                            intArrayOf(android.R.attr.state_checked),
+                            intArrayOf()
+                        ),
+                        intArrayOf(
+                            Color.parseColor("#4C8DFF"),
+                            Color.parseColor("#2E2E3E")
+                        )
+                    )
+                }
+                // کمی بزرگ‌تر و خواناتر
+                scaleX = 1.1f
+                scaleY = 1.1f
                 setOnCheckedChangeListener { _, checked -> onChange(checked) }
             }
 
