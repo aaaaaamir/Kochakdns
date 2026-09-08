@@ -9,6 +9,7 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
@@ -187,6 +188,9 @@ class MainActivity : AppCompatActivity() {
         val rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
             alpha = 0f
+            // مستقل از زبان سیستم: چیدمان اسپلش همیشه از چپ باشد تا در RTL
+            // (فارسی) آیکون‌ها به گوشه‌ی راست نپرند.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         // ===== تصویر پس‌زمینه: تمام‌صفحه، برش‌خورده =====
@@ -238,7 +242,7 @@ class MainActivity : AppCompatActivity() {
                 alpha = 0f
                 scaleX = 0.6f
                 scaleY = 0.6f
-                layoutParams = FrameLayout.LayoutParams(sizePx, sizePx).apply {
+                layoutParams = FrameLayout.LayoutParams(sizePx, sizePx, Gravity.TOP or Gravity.LEFT).apply {
                     leftMargin = ((resources.displayMetrics.widthPixels - sizePx) * icon.xFraction).toInt()
                     topMargin = ((resources.displayMetrics.heightPixels - sizePx) * icon.yFraction).toInt()
                 }
