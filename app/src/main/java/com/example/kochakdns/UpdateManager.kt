@@ -29,7 +29,8 @@ object UpdateManager {
     data class UpdateInfo(
         val version: String,
         val size: Long?,
-        val sizeFormatted: String?
+        val sizeFormatted: String?,
+        val changelog: String? = null
     )
 
     private val client by lazy { OkHttpClient() }
@@ -74,7 +75,12 @@ object UpdateManager {
                 if (!isNewer(version, currentVersion(context))) return@withContext null
                 val size = if (json.has("size")) json.optLong("size") else null
                 val sizeFormatted = json.optString("size_formatted", null).takeIf { it.isNotBlank() && it != "null" }
-                UpdateInfo(version, size, sizeFormatted)
+                // متن تغییرات نسخه (که از ربات با /updatetext تنظیم می‌شود)؛
+                // در سه نام فیلد ارسال می‌شود تا هرکدام موجود بود خوانده شود.
+                val changelog = json.optString("changelog", null).takeIf { it.isNotBlank() && it != "null" }
+                    ?: json.optString("update_text", null).takeIf { it.isNotBlank() && it != "null" }
+                    ?: json.optString("message", null).takeIf { it.isNotBlank() && it != "null" }
+                UpdateInfo(version, size, sizeFormatted, changelog)
             }
         } catch (_: Exception) {
             null
