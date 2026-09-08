@@ -125,22 +125,24 @@ class PowerIconView(context: Context) : View(context) {
 }
 
 /**
- * یک مثلث رو به پایین (نماد باز شدن جزئیات) که حالت انتخاب را نشان می‌دهد:
- * انتخاب‌نشده = توخالی (فقط خط دور)، انتخاب‌شده = توپُر (fill). رنگ هم نرم
- * بین خاکستری و سفید انیمیت می‌شود. چرخش باز/بسته شدن با `rotation` استاندارد
- * View از بیرون کنترل می‌شود.
+ * شورون رو به پایین (نماد باز شدن جزئیات) با نسبت‌های دقیق آیکون مرجع:
+ * دو بازوی ۴۵ درجه با سر و ته گرد. انتخاب‌نشده = توخالی (فقط حاشیه)،
+ * انتخاب‌شده = توپُر. رنگ هم نرم بین خاکستری و سفید انیمیت می‌شود و چرخشِ
+ * باز/بسته شدن با `rotation` استاندارد View از بیرون کنترل می‌شود.
+ *
+ * ساختار: از روی خط مرکزیِ V (یک polyline سه‌نقطه‌ای) با getFillPath ناحیه‌ی
+ * توپُرِ بازوها ساخته می‌شود؛ حالت توخالی هم اختلاف همین ناحیه با نسخه‌ی
+ * باریک‌ترش است (Path.Op.DIFFERENCE). نتیجه این که هر دو حالت دقیقاً یک
+ * اندازه‌ی بیرونی دارند و موقع انتخاب شدن آیکون کوچک/بزرگ نمی‌شود.
  */
 class ExpandArrowView(context: Context) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeJoin = Paint.Join.ROUND
-        strokeCap = Paint.Cap.ROUND
-    }
-    private val path = android.graphics.Path()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val vPath = android.graphics.Path()
+    private var filledRegion = android.graphics.Path()
+    private var hollowRegion = android.graphics.Path()
+    private var pathsReady = false
     private var blend = 0f // 0 = انتخاب‌نشده، 1 = انتخاب‌شده
     private var blendAnimator: android.animation.ValueAnimator? = null
-    // ابعاد مثلث و شعاع گردی گوشه‌ها — هر بار که اندازه تغییر کرد دوباره محاسبه می‌شوند.
-    private var glyphSize = 0f
-    private var cornerRadius = 0f
 
     var filled: Boolean = false
         set(value) {
@@ -151,62 +153,66 @@ class ExpandArrowView(context: Context) : View(context) {
                 duration = 260
                 addUpdateListener {
                     blend = it.animatedValue as Float
-                    applyPaint()
                     invalidate()
                 }
                 start()
             }
         }
 
-    private fun applyPaint() {
-        if (width <= 0 || height <= 0) return
-        glyphSize = minOf(width, height) * 0.50f
-        cornerRadius = glyphSize * 0.12f
-        paint.shader = null
-        val evaluator = android.animation.ArgbEvaluator()
-        paint.color = evaluator.evaluate(
-            blend,
-            Color.parseColor("#7A7A86"),
-            Color.parseColor("#FFFFFF")
-        ) as Int
-    }
-
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        applyPaint()
-        path.reset()
+        buildPaths(w, h)
+    }
+
+    /** خط مرکزیِ V و ناحیه‌های توخالی/توپُر را بر اساس ابعاد ویو می‌سازد. */
+    private fun buildPaths(w: Int, h: Int) {
+        if (w <= 0 || h <= 0) return
+        val s = minOf(w, h).toFloat()
+        // نسبت‌های استخراج‌شده از آیکون مرجع (نسبت به ارتفاع جوهر H):
+        val H = s * 0.55f        // ارتفاع کل شورون
+        val armW = H * 0.319f    // ضخامت بازوها
+        val halfW = H * 0.68f    // نیم‌عرض خط مرکزی (بازوهای ۴۵ درجه)
+        val border = armW * 0.26f // ضخامت حاشیه در حالت توخالی
         val cx = w / 2f
-        val cy = h / 2f
-        val glyph = minOf(w, h) * 0.50f
-        val half = glyph * 0.5f
-        val top = cy - glyph * 0.28f
-        val bottom = cy + glyph * 0.32f
-        // مثلث رو به پایین (نماد باز شدن) — توخالی یا توپُر بسته به انتخاب
-        path.moveTo(cx - half, top)
-        path.lineTo(cx + half, top)
-        path.lineTo(cx, bottom)
-        path.close()
+        val inkTop = h / 2f - H / 2f
+        val endpointY = inkTop + armW / 2f          // مرکز سرِ گردِ بازوها
+        val vertexY = inkTop + H - armW / 2f        // مرکز رأس پایین
+
+        vPath.reset()
+        vPath.moveTo(cx - halfW, endpointY)
+        vPath.lineTo(cx, vertexY)
+        vPath.lineTo(cx + halfW, endpointY)
+
+        // ناحیه‌ی توپُر = همون V ولی به‌صورت stroke با ضخامت armW (سر/ته گرد).
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        filledRegion = android.graphics.Path()
+        strokePaint.strokeWidth = armW
+        strokePaint.getFillPath(vPath, filledRegion)
+
+        // حالت توخالی = اختلاف ناحیه‌ی توپُر با نسخه‌ی باریک‌تر (حاشیه‌ای با ضخامت border).
+        val inner = android.graphics.Path()
+        strokePaint.strokeWidth = (armW - 2f * border).coerceAtLeast(1f)
+        strokePaint.getFillPath(vPath, inner)
+        hollowRegion = android.graphics.Path()
+        hollowRegion.op(filledRegion, inner, android.graphics.Path.Op.DIFFERENCE)
+
+        pathsReady = true
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (glyphSize <= 0f) return
-        if (filled) {
-            // حالت انتخاب‌شده: توپُر + یک خط دورِ گرد هم‌رنگ که گوشه‌های تیز
-            // مثلث را نرم می‌کند (شعاع گردی = cornerRadius).
-            paint.style = Paint.Style.FILL
-            paint.strokeWidth = 0f
-            canvas.drawPath(path, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = cornerRadius * 2f
-            canvas.drawPath(path, paint)
-        } else {
-            // حالت انتخاب‌نشده: فقط خط دور؛ گوشه‌ها خودبه‌خود با strokeJoin/strokeCap
-            // گرد ترسیم می‌شوند.
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = glyphSize * 0.16f
-            canvas.drawPath(path, paint)
-        }
+        if (!pathsReady) return
+        paint.style = Paint.Style.FILL
+        paint.color = android.animation.ArgbEvaluator().evaluate(
+            blend,
+            Color.parseColor("#7A7A86"),
+            Color.parseColor("#FFFFFF")
+        ) as Int
+        canvas.drawPath(if (filled) filledRegion else hollowRegion, paint)
     }
 }
 
@@ -823,6 +829,9 @@ class DnsActivity : AppCompatActivity() {
     private fun buildUI() {
         rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
+            // چیدمان همیشه LTR (مثل انگلیسی) بماند؛ فارسی بودنِ متن‌ها نباید
+            // ترتیب اجزا را در گوشی‌های فارسی‌زبان برعکس کند.
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -1022,9 +1031,9 @@ class DnsActivity : AppCompatActivity() {
      * روی اندروید ۱۲/API 31 به بالا ممکنه؛ روی نسخه‌های قدیمی‌تر یک پرده‌ی
      * نیمه‌شفاف تیره جایگزینش می‌شه چون RenderEffect قبل از آن نسخه وجود نداره).
      */
-    /** ترنسلیشنِ حالت بسته‌ی دراور؛ در RTL پنل سمت راست است پس به راست بیرون می‌رود. */
+    /** ترنسلیشنِ حالت بسته‌ی دراور؛ بر اساس جهتِ واقعیِ رندر (نه زبان سیستم). */
     private fun drawerHiddenTranslation(): Float {
-        val isRtl = resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val isRtl = rootLayout.layoutDirection == View.LAYOUT_DIRECTION_RTL
         return if (isRtl) drawerWidthPx.toFloat() else -drawerWidthPx.toFloat()
     }
 
@@ -1065,8 +1074,8 @@ class DnsActivity : AppCompatActivity() {
         hamburgerButton = HamburgerIconView(this).apply {
             layoutParams = FrameLayout.LayoutParams(80, 80).apply {
                 gravity = Gravity.TOP or Gravity.START
-                // در RTL دکمه سمت راست است، پس فاصله از سمت راست باشد
-                if (resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+                // فاصله از لبه بر اساس جهتِ واقعیِ رندر (نه زبان سیستم)
+                if (rootLayout.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
                     rightMargin = 40
                 } else {
                     leftMargin = 40
