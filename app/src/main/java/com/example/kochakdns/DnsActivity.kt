@@ -138,6 +138,9 @@ class ExpandArrowView(context: Context) : View(context) {
     private val path = android.graphics.Path()
     private var blend = 0f // 0 = انتخاب‌نشده، 1 = انتخاب‌شده
     private var blendAnimator: android.animation.ValueAnimator? = null
+    // ابعاد مثلث و شعاع گردی گوشه‌ها — هر بار که اندازه تغییر کرد دوباره محاسبه می‌شوند.
+    private var glyphSize = 0f
+    private var cornerRadius = 0f
 
     var filled: Boolean = false
         set(value) {
@@ -157,10 +160,8 @@ class ExpandArrowView(context: Context) : View(context) {
 
     private fun applyPaint() {
         if (width <= 0 || height <= 0) return
-        val glyphSize = minOf(width, height) * 0.40f
-        paint.strokeWidth = glyphSize * 0.14f
-        // انتخاب‌نشده = توخالی (فقط خط دور)، انتخاب‌شده = توپُر
-        paint.style = if (filled) Paint.Style.FILL else Paint.Style.STROKE
+        glyphSize = minOf(width, height) * 0.50f
+        cornerRadius = glyphSize * 0.12f
         paint.shader = null
         val evaluator = android.animation.ArgbEvaluator()
         paint.color = evaluator.evaluate(
@@ -176,7 +177,7 @@ class ExpandArrowView(context: Context) : View(context) {
         path.reset()
         val cx = w / 2f
         val cy = h / 2f
-        val glyph = minOf(w, h) * 0.40f
+        val glyph = minOf(w, h) * 0.50f
         val half = glyph * 0.5f
         val top = cy - glyph * 0.28f
         val bottom = cy + glyph * 0.32f
@@ -189,7 +190,23 @@ class ExpandArrowView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawPath(path, paint)
+        if (glyphSize <= 0f) return
+        if (filled) {
+            // حالت انتخاب‌شده: توپُر + یک خط دورِ گرد هم‌رنگ که گوشه‌های تیز
+            // مثلث را نرم می‌کند (شعاع گردی = cornerRadius).
+            paint.style = Paint.Style.FILL
+            paint.strokeWidth = 0f
+            canvas.drawPath(path, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = cornerRadius * 2f
+            canvas.drawPath(path, paint)
+        } else {
+            // حالت انتخاب‌نشده: فقط خط دور؛ گوشه‌ها خودبه‌خود با strokeJoin/strokeCap
+            // گرد ترسیم می‌شوند.
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = glyphSize * 0.16f
+            canvas.drawPath(path, paint)
+        }
     }
 }
 
@@ -390,6 +407,16 @@ class DnsActivity : AppCompatActivity() {
     // ===================================================================
     // دیالوگ‌های سفارشی (استایل و انیمیشن هماهنگ با برنامه)
     // ===================================================================
+    /** ScrollView با سقف ارتفاع: بلندتر از maxHeight نمی‌شود تا دکمه‌ها همیشه پایین بمانند. */
+    private class MaxHeightScrollView(context: Context, private val maxHeight: Int) : ScrollView(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(
+                widthMeasureSpec,
+                View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST)
+            )
+        }
+    }
+
     private class AppDialogHolder(
         val overlay: FrameLayout,
         val card: LinearLayout,
@@ -452,11 +479,10 @@ class DnsActivity : AppCompatActivity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 32, 36, 28)
+            setPadding(36, 32, 36, 20)
             alpha = 0f
             scaleX = 0.85f
             scaleY = 0.85f
-            minimumHeight = dp(200)
             // کارت clickable است تا لمس روی متن/داخل کارت به overlay نرسد
             // و فقط دکمه‌ی «لغو» (یا لمس بیرون در حالت قابل‌لغو) ببندد.
             isClickable = true
@@ -496,7 +522,9 @@ class DnsActivity : AppCompatActivity() {
             setPadding(0, 4, 0, 8)
             gravity = Gravity.END
         }
-        val messageScroll = ScrollView(this).apply {
+        // پیام داخل ScrollView با سقف ارتفاع (dp(300)): متن طولانی اسکرول می‌شود
+        // و کارت بزرگ‌تر از صفحه نمی‌شود؛ دکمه‌ها همیشه به پایین کارت چسبیده‌اند.
+        val messageScroll = MaxHeightScrollView(this, dp(300)).apply {
             isFillViewport = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -508,16 +536,6 @@ class DnsActivity : AppCompatActivity() {
         messageScroll.addView(messageText,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(messageScroll)
-
-        // محدود کردن حداکثر ارتفاع پیام تا دکمه‌ها همیشه دیده شوند
-        messageScroll.post {
-            val maxH = dp(300)
-            if (messageText.height > maxH) {
-                val lp = messageScroll.layoutParams as LinearLayout.LayoutParams
-                lp.height = maxH
-                messageScroll.layoutParams = lp
-            }
-        }
 
         val holder = AppDialogHolder(overlay, card, cancelable)
 
@@ -661,6 +679,7 @@ class DnsActivity : AppCompatActivity() {
         val msg = buildString {
             append("ورژن جدید ${info.version} منتشر شده است.")
             info.sizeFormatted?.let { append("\nحجم: $it") }
+            info.changelog?.let { append("\n\n$it") }
         }
         showAppDialog(
             title = "بروزرسانی جدید",
@@ -1003,6 +1022,12 @@ class DnsActivity : AppCompatActivity() {
      * روی اندروید ۱۲/API 31 به بالا ممکنه؛ روی نسخه‌های قدیمی‌تر یک پرده‌ی
      * نیمه‌شفاف تیره جایگزینش می‌شه چون RenderEffect قبل از آن نسخه وجود نداره).
      */
+    /** ترنسلیشنِ حالت بسته‌ی دراور؛ در RTL پنل سمت راست است پس به راست بیرون می‌رود. */
+    private fun drawerHiddenTranslation(): Float {
+        val isRtl = resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        return if (isRtl) drawerWidthPx.toFloat() else -drawerWidthPx.toFloat()
+    }
+
     private fun buildDrawerMenu(mainContainer: View) {
         mainContainerRef = mainContainer
         val screenWidth = resources.displayMetrics.widthPixels
@@ -1029,7 +1054,8 @@ class DnsActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(drawerWidthPx, FrameLayout.LayoutParams.MATCH_PARENT).apply {
                 gravity = Gravity.START
             }
-            translationX = -drawerWidthPx.toFloat()
+            // در RTL پنل سمت راست است، پس باید به سمت راست بیرون برود (نه چپ)
+            translationX = drawerHiddenTranslation()
             elevation = 24f
         }
         val menuContent = MenuActivity(this).buildView(onItemClick = { closeDrawer() })
@@ -1039,7 +1065,12 @@ class DnsActivity : AppCompatActivity() {
         hamburgerButton = HamburgerIconView(this).apply {
             layoutParams = FrameLayout.LayoutParams(80, 80).apply {
                 gravity = Gravity.TOP or Gravity.START
-                leftMargin = 40
+                // در RTL دکمه سمت راست است، پس فاصله از سمت راست باشد
+                if (resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+                    rightMargin = 40
+                } else {
+                    leftMargin = 40
+                }
                 topMargin = 64
             }
             isClickable = true
@@ -1101,7 +1132,7 @@ class DnsActivity : AppCompatActivity() {
         drawerScrim.animate().alpha(0f).setDuration(240)
             .withEndAction { drawerScrim.visibility = View.GONE }.start()
         drawerPanel.animate()
-            .translationX(-drawerWidthPx.toFloat())
+            .translationX(drawerHiddenTranslation())
             .setDuration(280)
             .setInterpolator(android.view.animation.AccelerateInterpolator())
             .start()
@@ -1986,7 +2017,7 @@ class DnsActivity : AppCompatActivity() {
             // پیکانِ باز/بسته شدن جزئیات: انتخاب‌نشده توخالی، انتخاب‌شده توپُر.
             // ویو بزرگ‌تر از خودِ آیکون است تا جای لمس راحت‌تر باشد.
             expandArrow = ExpandArrowView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(100, 100).apply { marginStart = 0 }
+                layoutParams = LinearLayout.LayoutParams(120, 120).apply { marginStart = 0 }
                 isClickable = true
                 isFocusable = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
