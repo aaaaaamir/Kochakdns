@@ -154,7 +154,7 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /home/vscode/.gradle/caches
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.0] /home/vscode/.gradle/caches/8.10.2/transforms/7e79c2976e6fcb84175105b3a6cd41dd/transformed/core-1.13.0/AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-35
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:40:9-36
 	android:label
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:38:9-41
 	android:roundIcon
