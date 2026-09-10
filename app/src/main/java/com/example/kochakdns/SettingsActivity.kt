@@ -144,21 +144,20 @@ class SettingsActivity : AppCompatActivity() {
         // کاشی‌های Quick Settings فقط از اندروید ۷ (API 24) به بعد وجود دارند
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             list.addView(
-                glassSwitch(
+                glassCard(
                     title = "دسترسی سریع (Quick Settings)",
-                    subtitle = "یک کاشی وصل/قطع در نوار اعلان؛ با یک تپ بدون باز کردن برنامه وصل یا قطع شو",
                     iconPath = ICON_TUNE,
-                    initial = AppSettings.isQsTileEnabled(this)
-                ) { checked ->
-                    AppSettings.setQsTileEnabled(this, checked)
-                    if (checked && !QuickSettingsTileService.requestAddTile(this)) {
-                        Toast.makeText(
-                            this,
-                            "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
-                            Toast.LENGTH_LONG
-                        ).show()
+                    onClick = {
+                        AppSettings.setQsTileEnabled(this, true)
+                        if (!QuickSettingsTileService.requestAddTile(this)) {
+                            Toast.makeText(
+                                this,
+                                "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
-                }
+                )
             )
         }
 
