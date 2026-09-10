@@ -1,7 +1,6 @@
 package com.example.kochakdns
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
@@ -121,30 +120,29 @@ class MenuActivity(private val host: DnsActivity) {
             orientation = LinearLayout.VERTICAL
         }
 
-        // ۱. گزینه‌ی تنظیمات
+        // ۱. گزینه‌ی تنظیمات (هنگام بازگشت، در صورت روشن بودن DNS وصل مجدد می‌شود)
         container.addView(
             menuItemCard("تنظیمات", PATH_SETTINGS) {
                 onItemClick()
-                host.startActivity(Intent(host, SettingsActivity::class.java))
+                host.openSettings()
             }
         )
 
-        // ۲. گزینه‌ی سوئیچ خاموش/روشن IPv6
+        // ۲. گزینه‌ی سوئیچ خاموش/روشن IPv6 (در صورت روشن بودن DNS، فوراً وصل مجدد)
         val prefs = host.getSharedPreferences("dns_prefs", Context.MODE_PRIVATE)
         val isIpv6Enabled = prefs.getBoolean("ipv6_enabled", true)
         container.addView(
             menuToggleCard("پشتیبانی از IPv6", PATH_IPV6, isIpv6Enabled) { isChecked ->
                 prefs.edit().putBoolean("ipv6_enabled", isChecked).apply()
-                // MyVpnService خودش موقع اتصال بعدی این مقدار رو می‌خونه؛ نیازی
-                // به هیچ کار اضافه‌ای اینجا نیست.
+                host.onIpv6Toggled(isChecked)
             }
         )
 
-        // ۳. گزینه‌ی برنامه‌های تونل شده
+        // ۳. گزینه‌ی برنامه‌های تونل شده (هنگام بازگشت، وصل مجدد در صورت نیاز)
         container.addView(
             menuItemCard("برنامه‌های تونل شده", PATH_TUNNEL_APPS) {
                 onItemClick()
-                host.startActivity(Intent(host, TunnelAppsActivity::class.java))
+                host.openTunnelApps()
             }
         )
 
