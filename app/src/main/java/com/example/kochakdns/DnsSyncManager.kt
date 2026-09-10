@@ -212,7 +212,14 @@ class DnsSyncManager(private val context: Context) {
                 throw IOException("سرور پاسخ نامعتبر (HTML) برگرداند. احتمالاً دسترسی توسط شبکه یا فایروال مسدود شده است.")
             }
 
-            return parseListResponse(responseBody)
+            // اگر پاسخ رمزنگاری‌شده باشد (پیشوند ENC1:) رمزگشایی می‌شود؛ وگرنه مستقیم خوانده می‌شود.
+            val decodedBody = try {
+                ApiCrypto.decryptIfNeeded(responseBody)
+            } catch (e: Exception) {
+                throw IOException("خطا در رمزگشایی پاسخ سرور (کلید رمزنگاری ناسازگار است).")
+            }
+
+            return parseListResponse(decodedBody)
         }
     }
 
