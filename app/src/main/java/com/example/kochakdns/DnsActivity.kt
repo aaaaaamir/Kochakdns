@@ -39,10 +39,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 
 // ==================== Main Activity ====================
 
@@ -335,6 +339,14 @@ class DnsActivity : AppCompatActivity() {
     // پینگ‌های واقعی و متوالی خودِ DNS انتخاب‌شده (فرمول هموارسازی RFC 3550).
     private var directJitterMs: Double = 0.0
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // بازگشت از تنظیمات/صفحه‌ی تونل‌برنامه‌ها: اگر VPN روشن بود، یک بار وصل مجدد
+    // انجام شود تا تغییر تنظیمات اعمال شود (فقط یک بار، با پرچم).
+    private var reconnectOnNextResume = false
+    // پیشنهاد یک‌باره‌ی کاشی دسترسی سریع فقط یک بار چک می‌شود
+    private var qsSuggestionChecked = false
+    // میانگین زمان پاسخ هر آدرس (برای تایم‌اوت تطبیقیِ پینگ)
+    private val pingTimeoutEma = mutableMapOf<String, Double>()
 
     // بنر بروزرسانی (بالای صفحه) و پرچم‌های جریان بروزرسانی/اطلاعیه
     private lateinit var updateBanner: LinearLayout
@@ -812,6 +824,98 @@ class DnsActivity : AppCompatActivity() {
         } else if (vpnState == VpnUiState.DISCONNECTED && actuallyConnected) {
             setVpnState(VpnUiState.CONNECTED)
         }
+
+        // برگشتن از تنظیمات/تونل‌برنامه‌ها با VPN روشن → یک بار وصل مجدد تا
+        // تغییرات تنظیمات (کش، IPv6 و…) واقعاً اعمال شوند.
+        if (reconnectOnNextResume) {
+            reconnectOnNextResume = false
+            if (actuallyConnected) restartVpnConnection()
+        }
+    }
+
+    /** باز کردن صفحه‌ی تنظیمات؛ هنگام بازگشت، اگر VPN روشن بود وصل مجدد می‌شود. */
+    fun openSettings() {
+        reconnectOnNextResume = true
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    /** باز کردن صفحه‌ی برنامه‌های تونل‌شده؛ هنگام بازگشت، وصل مجدد در صورت نیاز. */
+    fun openTunnelApps() {
+        reconnectOnNextResume = true
+        startActivity(Intent(this, TunnelAppsActivity::class.java))
+    }
+
+    /** وقتی سوییچ IPv6 در منوی کشویی عوض شد: بستن منو + وصل مجدد (اگر VPN روشن بود). */
+    fun onIpv6Toggled(enabled: Boolean) {
+        closeDrawer()
+        if (VpnStats.isVpnActive) restartVpnConnection()
+    }
+
+    /** قطع و وصل مجدد با DNS انتخابی فعلی — برای اعمال تغییر تنظیمات بدون از دست دادن اتصال. */
+    private fun restartVpnConnection() {
+        setVpnState(VpnUiState.DISCONNECTING)
+        try {
+            startService(Intent(this, MyVpnService::class.java).apply {
+                action = MyVpnService.ACTION_STOP
+            })
+        } catch (e: Exception) {
+            setVpnState(VpnUiState.CONNECTED)
+            Toast.makeText(this, "خطا در اعمال مجدد اتصال: ${e.message}", Toast.LENGTH_SHORT).show()
+            return
+        }
+        confirmJob?.cancel()
+        confirmJob = lifecycleScope.launch {
+            waitForActualState(expectActive = false, timeoutMs = 4000)
+            if (!VpnStats.isVpnActive) startVpn() else setVpnState(VpnUiState.CONNECTED)
+        }
+    }
+
+    /** پیشنهاد یک‌باره‌ی افزودن کاشی دسترسی سریع، بعد از اولین اتصال موفق. */
+    private fun maybeShowQsTileSuggestion() {
+        // کاشی‌های Quick Settings فقط از اندروید ۷ (API 24) به بعد وجود دارند
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+        if (qsSuggestionChecked) return
+        qsSuggestionChecked = true
+        val ctx = applicationContext
+        if (AppSettings.isQsTileSuggestionShown(ctx)) return
+        if (AppSettings.isQsTileEnabled(ctx)) return
+        mainHandler.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val manualHint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                "\n\nدر اندروید ۱۳ به بعد: نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن."
+            } else {
+                ""
+            }
+            showAppDialog(
+                title = "دسترسی سریع",
+                message = "می‌خوای یک کاشی وصل/قطع سریع به نوار اعلان اضافه کنی؟ با یک تپ، بدون باز کردن برنامه، وصل یا قطع می‌شی.$manualHint",
+                cancelable = true,
+                positiveText = "فعال کن",
+                onPositive = {
+                    AppSettings.setQsTileEnabled(ctx, true)
+                    // افزودن خودکار کاشی فقط در اندروید ۷ تا ۱۲ ممکن است (API 24–32)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                    ) {
+                        try {
+                            val label = try {
+                                packageManager.getApplicationLabel(applicationInfo)
+                            } catch (_: Exception) {
+                                "Kochak DNS"
+                            }
+                            android.service.quicksettings.TileService.requestAddTileService(
+                                android.content.ComponentName(ctx, QuickSettingsTileService::class.java),
+                                label
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
+                },
+                negativeText = "بعداً",
+                onNegative = {}
+            )
+            AppSettings.markQsTileSuggestionShown(ctx)
+        }, 900)
     }
 
     private fun setupVpnReceiver() {
@@ -1314,6 +1418,7 @@ class DnsActivity : AppCompatActivity() {
 
     private fun setVpnState(newState: VpnUiState) {
         vpnState = newState
+        if (newState == VpnUiState.CONNECTED) maybeShowQsTileSuggestion()
         runOnUiThread {
             val (bgColor, strokeColor, iconColor, clickable) = when (newState) {
                 VpnUiState.CONNECTED -> Quad("#1B3A22", "#4CAF50", "#4CAF50", true)
@@ -1762,9 +1867,26 @@ class DnsActivity : AppCompatActivity() {
         return out.toByteArray()
     }
 
-    /** یک پرس‌وجوی UDP را می‌فرستد و RTT آن را برمی‌گرداند؛ -1 یعنی بی‌پاسخ. */
+    /** یک پرس‌وجوی DNS با تایم‌اوت تطبیقی + fallback هوشمند به TCP؛ -1 یعنی بی‌پاسخ. */
     private fun pingDnsOnce(address: String, data: ByteArray): Long {
         if (data.isEmpty()) return -1L
+        // ۱) UDP (مسیر عادی) با تایم‌اوت تطبیقی
+        val udpMs = pingDnsUdp(address, data)
+        if (udpMs > 0) return udpMs
+        // ۲) اگه UDP بی‌پاسخ ماند و پشتیبانی TCP فعال باشد، همان کوئری با TCP امتحان می‌شود
+        if (AppSettings.isTcpFallbackEnabled(applicationContext)) {
+            val tcpMs = pingDnsTcp(address, data)
+            if (tcpMs > 0) {
+                recordPingRtt(address, tcpMs)
+                return tcpMs
+            }
+        }
+        recordPingFailure(address)
+        return -1L
+    }
+
+    /** پرس‌وجوی UDP با تایم‌اوت تطبیقی؛ -1 یعنی تایم‌اوت/خطا. */
+    private fun pingDnsUdp(address: String, data: ByteArray): Long {
         return try {
             val socket = DatagramSocket()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1776,15 +1898,9 @@ class DnsActivity : AppCompatActivity() {
                     }
                 }
             }
-            socket.soTimeout = 1000
-            val packet = DatagramPacket(
-                data,
-                data.size,
-                InetAddress.getByName(address),
-                53
-            )
-            // تایمر را دقیقاً همین‌جا شروع می‌کنیم، نه قبل از ساخت سوکت —
-            // ساخت/bind سوکت جزو تاخیر شبکه نیست.
+            socket.soTimeout = adaptivePingTimeout(address)
+            val packet = DatagramPacket(data, data.size, InetAddress.getByName(address), 53)
+            // تایمر دقیقاً همین‌جا شروع می‌شود؛ ساخت/bind سوکت جزو تاخیر شبکه نیست.
             val start = System.nanoTime()
             socket.send(packet)
             val buffer = ByteArray(4096)
@@ -1792,10 +1908,62 @@ class DnsActivity : AppCompatActivity() {
             socket.receive(response)
             val elapsedMs = (System.nanoTime() - start) / 1_000_000
             socket.close()
+            recordPingRtt(address, elapsedMs)
             elapsedMs
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             -1L
         }
+    }
+
+    /** پرس‌وجوی TCP (RFC 1035 با پیشوند ۲ بایتی طول) برای وقتی UDP جواب نداد. */
+    private fun pingDnsTcp(address: String, data: ByteArray): Long {
+        return try {
+            Socket().use { s ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    getUnderlyingNetwork()?.let { net ->
+                        try {
+                            net.bindSocket(s)
+                        } catch (_: Exception) {
+                            cachedUnderlyingNetwork = null
+                        }
+                    }
+                }
+                // RTT کامل TCP شامل برقراری اتصال هم می‌شود (منصفانه‌تر برای مقایسه)
+                val start = System.nanoTime()
+                s.connect(InetSocketAddress(InetAddress.getByName(address), 53), adaptivePingTimeout(address))
+                s.soTimeout = adaptivePingTimeout(address)
+                val out = DataOutputStream(s.getOutputStream())
+                out.write((data.size shr 8) and 0xFF)
+                out.write(data.size and 0xFF)
+                out.write(data)
+                out.flush()
+                val input = DataInputStream(s.getInputStream())
+                val len = input.readUnsignedShort()
+                if (len <= 0) return -1L
+                val buf = ByteArray(len)
+                input.readFully(buf)
+                (System.nanoTime() - start) / 1_000_000
+            }
+        } catch (_: Exception) {
+            -1L
+        }
+    }
+
+    /** تایم‌اوت تطبیقی: حدود ۴ برابر میانگین پاسخ، محدود بین ۳۰۰ms تا ۱.۵ ثانیه. */
+    private fun adaptivePingTimeout(address: String): Int {
+        val ema = pingTimeoutEma[address] ?: 1000.0
+        return (ema * 4.0).toInt().coerceIn(300, 1500)
+    }
+
+    private fun recordPingRtt(address: String, ms: Long) {
+        val prev = pingTimeoutEma[address]
+        pingTimeoutEma[address] = if (prev == null) ms.toDouble() else prev * 0.7 + ms * 0.3
+    }
+
+    /** بعد از شکست کامل (UDP و TCP هر دو)، تخمین را بالا می‌بریم تا صبورتر باشیم. */
+    private fun recordPingFailure(address: String) {
+        val prev = pingTimeoutEma[address] ?: 1000.0
+        pingTimeoutEma[address] = (prev * 1.4).coerceAtMost(1500.0)
     }
 
     private fun startStatsUpdateLoop() {
@@ -1867,17 +2035,8 @@ class DnsActivity : AppCompatActivity() {
         }
         updateSelectedDnsStats()
         if (vpnState == VpnUiState.CONNECTED) {
-            // با DNS جدید دوباره وصل شو: اول قطع، بعد از تایید قطع واقعی، وصل با سرور جدید
-            setVpnState(VpnUiState.DISCONNECTING)
-            val stopIntent = Intent(this, MyVpnService::class.java).apply {
-                action = MyVpnService.ACTION_STOP
-            }
-            startService(stopIntent)
-            confirmJob?.cancel()
-            confirmJob = lifecycleScope.launch {
-                waitForActualState(expectActive = false, timeoutMs = 4000)
-                startVpn()
-            }
+            // با DNS جدید دوباره وصل شو (قطع + وصل با سرور جدید)
+            restartVpnConnection()
         }
     }
 
