@@ -139,7 +139,14 @@ class DnsSyncManager(private val context: Context) {
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@withContext emptyMap()
                     val body = response.body?.string() ?: return@withContext emptyMap()
-                    val root = JSONObject(body)
+                    // پاسخ /api/dns/stats هم ممکن است رمزنگاری‌شده باشد (ENC1:)؛
+                    // در آن صورت رمزگشایی می‌شود، وگرنه مستقیم خوانده می‌شود.
+                    val decoded = try {
+                        ApiCrypto.decryptIfNeeded(body)
+                    } catch (e: Exception) {
+                        return@withContext emptyMap()
+                    }
+                    val root = JSONObject(decoded)
                     val dataArray = root.optJSONArray("data") ?: return@withContext emptyMap()
                     val map = mutableMapOf<String, DnsStatsData>()
                     for (i in 0 until dataArray.length()) {
