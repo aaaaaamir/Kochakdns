@@ -151,25 +151,12 @@ class SettingsActivity : AppCompatActivity() {
                     initial = AppSettings.isQsTileEnabled(this)
                 ) { checked ->
                     AppSettings.setQsTileEnabled(this, checked)
-                    if (checked) {
-                        // افزودن خودکار کاشی فقط در اندروید ۷ تا ۱۲ ممکن است (API 24–32)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-                            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-                        ) {
-                            try {
-                                android.service.quicksettings.TileService.requestAddTileService(
-                                    android.content.ComponentName(this, QuickSettingsTileService::class.java),
-                                    applicationInfo.loadLabel(packageManager)
-                                )
-                            } catch (_: Exception) {
-                            }
-                        } else {
-                            Toast.makeText(
-                                this,
-                                "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                    if (checked && !QuickSettingsTileService.requestAddTile(this)) {
+                        Toast.makeText(
+                            this,
+                            "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
             )
@@ -264,8 +251,8 @@ class SettingsActivity : AppCompatActivity() {
         subtitle: String,
         iconPath: String,
         initial: Boolean,
-        onChange: (Boolean) -> Unit,
-        liveLine: TextView? = null
+        liveLine: TextView? = null,
+        onChange: (Boolean) -> Unit
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
