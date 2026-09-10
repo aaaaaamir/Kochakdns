@@ -12,7 +12,12 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -26,7 +31,14 @@ class SettingsActivity : AppCompatActivity() {
         private const val ICON_NOTIFICATION = "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.64,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
         private const val ICON_ABOUT = "M11,7h2v2h-2zM11,11h2v6h-2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm0,18c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8z"
         private const val ICON_CHEVRON = "M9,18l6,-6 -6,-6"
+        // آیکون دسترسی سریع (اسلایدر تنظیم — Material «tune»)
+        private const val ICON_TUNE = "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z"
+        // آیکون پشتیبانی TCP (رفرش/اتصال مجدد — Material «refresh»)
+        private const val ICON_TCP = "M17.65,6.35C16.2,4.9 14.21,4 12,4c-4.42,0 -7.99,3.58 -7.99,8s3.57,8 7.99,8c3.73,0 6.84,-2.55 7.73,-6h-2.08c-0.82,2.33 -3.04,4 -5.65,4 -3.31,0 -6,-2.69 -6,-6s2.69,-6 6,-6c1.66,0 3.14,0.69 4.22,1.78L13,11h7V4l-2.35,2.35z"
     }
+
+    // خط زنده‌ی «نرخ پاسخ از کش» داخل کارت کش DNS (هر چند ثانیه به‌روز می‌شود)
+    private lateinit var cacheHitRateText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,15 +79,42 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(32, 16, 32, 32)
         }
 
+        // خط زنده‌ی «نرخ پاسخ از کش» که داخل کارت کش DNS قرار می‌گیرد
+        cacheHitRateText = TextView(this).apply {
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 8, 0, 0)
+        }
+        updateCacheHitRate()
+        lifecycleScope.launch {
+            while (isActive) {
+                delay(1500)
+                updateCacheHitRate()
+            }
+        }
+
         list.addView(
             glassSwitch(
                 title = "کش DNS",
-                subtitle = "باعث بهبود پینگ و سرعت می‌شود: پاسخ‌های تکراری DNS از حافظه خوانده می‌شوند (با TTL واقعی) و نیازی به رفت‌وآمد به سرور نیست",
+                subtitle = "پاسخ‌های تکراری و نامعتبر DNS از حافظه خوانده می‌شوند و پاسخ‌های قدیمی تا رسیدن پاسخ تازه سرو می‌شوند",
                 iconPath = ICON_CACHE,
-                initial = AppSettings.isDnsCacheEnabled(this)
+                initial = AppSettings.isDnsCacheEnabled(this),
+                liveLine = cacheHitRateText
             ) { checked ->
                 AppSettings.setDnsCacheEnabled(this, checked)
-                restartVpnIfActive()
+                // اعمال واقعی کش موقع بازگشت به صفحه‌ی اصلی انجام می‌شود (وصل مجدد)
+            }
+        )
+
+        list.addView(
+            glassSwitch(
+                title = "پشتیبانی TCP (Fallback)",
+                subtitle = "اگه پرس‌وجوی UDP جواب نده، همون پرس‌وجو با TCP (پورت ۵۳) دوباره امتحان می‌شه — دور زدن اختلال ISP روی UDP",
+                iconPath = ICON_TCP,
+                initial = AppSettings.isTcpFallbackEnabled(this)
+            ) { checked ->
+                AppSettings.setTcpFallbackEnabled(this, checked)
+                // اعمال واقعی موقع بازگشت به صفحه‌ی اصلی انجام می‌شود (وصل مجدد)
             }
         )
 
@@ -98,15 +137,43 @@ class SettingsActivity : AppCompatActivity() {
                 initial = AppSettings.isShowNotificationInfoEnabled(this)
             ) { checked ->
                 AppSettings.setShowNotificationInfoEnabled(this, checked)
-                if (VpnStats.isVpnActive) {
-                    startService(
-                        Intent(this, MyVpnService::class.java).apply {
-                            action = MyVpnService.ACTION_RESTART
-                        }
-                    )
-                }
+                // نوتیفیکیشن هر ۲ ثانیه خودش به‌روز می‌شود؛ نیازی به وصل مجدد نیست
             }
         )
+
+        // کاشی‌های Quick Settings فقط از اندروید ۷ (API 24) به بعد وجود دارند
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            list.addView(
+                glassSwitch(
+                    title = "دسترسی سریع (Quick Settings)",
+                    subtitle = "یک کاشی وصل/قطع در نوار اعلان؛ با یک تپ بدون باز کردن برنامه وصل یا قطع شو",
+                    iconPath = ICON_TUNE,
+                    initial = AppSettings.isQsTileEnabled(this)
+                ) { checked ->
+                    AppSettings.setQsTileEnabled(this, checked)
+                    if (checked) {
+                        // افزودن خودکار کاشی فقط در اندروید ۷ تا ۱۲ ممکن است (API 24–32)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+                            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                        ) {
+                            try {
+                                android.service.quicksettings.TileService.requestAddTileService(
+                                    android.content.ComponentName(this, QuickSettingsTileService::class.java),
+                                    applicationInfo.loadLabel(packageManager)
+                                )
+                            } catch (_: Exception) {
+                            }
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            )
+        }
 
         // ===== درباره ما =====
         list.addView(
@@ -123,17 +190,22 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    /** اگر VPN الان وصله، تغییر تنظیمات فقط با ساخت دوباره‌ی تونل اعمال می‌شود. */
-    private fun restartVpnIfActive() {
-        if (!VpnStats.isVpnActive) return
-        try {
-            startService(
-                Intent(this, MyVpnService::class.java).apply {
-                    action = MyVpnService.ACTION_RESTART
-                }
-            )
-        } catch (_: Exception) {
+    /** به‌روزرسانی خط «نرخ پاسخ از کش» از آمار زنده‌ی سرویس VPN. */
+    private fun updateCacheHitRate() {
+        if (!::cacheHitRateText.isInitialized) return
+        val rate = VpnStats.dnsCacheHitRate()
+        val cacheOn = AppSettings.isDnsCacheEnabled(this)
+        cacheHitRateText.text = when {
+            !cacheOn -> "نرخ پاسخ از کش: خاموش"
+            rate == null -> "نرخ پاسخ از کش: --"
+            else -> "نرخ پاسخ از کش: ${Math.round(rate)}٪"
         }
+        cacheHitRateText.setTextColor(
+            when {
+                rate != null && rate >= 50 -> Color.parseColor("#4CAF50")
+                else -> Color.parseColor("#8A8A9A")
+            }
+        )
     }
 
     /** کارت کلیک‌پذیر شیشه‌ای (مثل «درباره ما») با فلش سمت چپ. */
@@ -192,7 +264,8 @@ class SettingsActivity : AppCompatActivity() {
         subtitle: String,
         iconPath: String,
         initial: Boolean,
-        onChange: (Boolean) -> Unit
+        onChange: (Boolean) -> Unit,
+        liveLine: TextView? = null
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -229,6 +302,11 @@ class SettingsActivity : AppCompatActivity() {
                 textSize = 11f
                 setPadding(0, 6, 0, 0)
             })
+
+            // خط زنده (مثلاً نرخ پاسخ از کش) — در صورت نیاز زیر توضیح اضافه می‌شود
+            if (liveLine != null) {
+                textColumn.addView(liveLine)
+            }
 
             val switchView = AnimatedSwitchView(this@SettingsActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(48), dp(26))
