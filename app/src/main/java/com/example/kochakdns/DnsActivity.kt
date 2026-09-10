@@ -845,9 +845,9 @@ class DnsActivity : AppCompatActivity() {
         startActivity(Intent(this, TunnelAppsActivity::class.java))
     }
 
-    /** وقتی سوییچ IPv6 در منوی کشویی عوض شد: بستن منو + وصل مجدد (اگر VPN روشن بود). */
+    /** وقتی سوییچ IPv6 در منوی کشویی عوض شد: منو باز می‌ماند؛ فقط در صورت روشن
+     *  بودن VPN، اتصال در پس‌زمینه بازسازی می‌شود تا تغییر اعمال شود. */
     fun onIpv6Toggled(enabled: Boolean) {
-        closeDrawer()
         if (VpnStats.isVpnActive) restartVpnConnection()
     }
 
