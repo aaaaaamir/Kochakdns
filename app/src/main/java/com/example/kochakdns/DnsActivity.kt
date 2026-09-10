@@ -881,34 +881,19 @@ class DnsActivity : AppCompatActivity() {
         if (AppSettings.isQsTileEnabled(ctx)) return
         mainHandler.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
-            val manualHint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                "\n\nدر اندروید ۱۳ به بعد: نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن."
-            } else {
-                ""
-            }
             showAppDialog(
                 title = "دسترسی سریع",
-                message = "می‌خوای یک کاشی وصل/قطع سریع به نوار اعلان اضافه کنی؟ با یک تپ، بدون باز کردن برنامه، وصل یا قطع می‌شی.$manualHint",
+                message = "می‌خوای یک کاشی وصل/قطع سریع به نوار اعلان اضافه کنی؟ با یک تپ، بدون باز کردن برنامه، وصل یا قطع می‌شی.",
                 cancelable = true,
                 positiveText = "فعال کن",
                 onPositive = {
                     AppSettings.setQsTileEnabled(ctx, true)
-                    // افزودن خودکار کاشی فقط در اندروید ۷ تا ۱۲ ممکن است (API 24–32)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
-                        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-                    ) {
-                        try {
-                            val label = try {
-                                packageManager.getApplicationLabel(applicationInfo)
-                            } catch (_: Exception) {
-                                "Kochak DNS"
-                            }
-                            android.service.quicksettings.TileService.requestAddTileService(
-                                android.content.ComponentName(ctx, QuickSettingsTileService::class.java),
-                                label
-                            )
-                        } catch (_: Exception) {
-                        }
+                    if (!QuickSettingsTileService.requestAddTile(this@DnsActivity)) {
+                        Toast.makeText(
+                            this@DnsActivity,
+                            "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 },
                 negativeText = "بعداً",
