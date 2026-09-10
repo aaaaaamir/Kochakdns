@@ -20,12 +20,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Semaphore
 
@@ -58,10 +63,13 @@ class MyVpnService : VpnService() {
         // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
         private const val MAX_CONCURRENT_RELAYS = 16
 
-        // کلیدهای ذخیره‌ی آخرین DNS (برای اتصال مجدد خودکار)
-        private const val PREFS_DNS = "dns_prefs"
-        private const val KEY_LAST_DNS_SERVERS = "last_dns_servers"
-        private const val KEY_LAST_DNS_NAME = "last_dns_name"
+        // حداکثر حجم payload که یک پاسخ UDP می‌تواند حمل کند (MTU 1500 − هدرها)
+        private const val MAX_UDP_PAYLOAD = 1472
+
+        // کلیدهای ذخیره‌ی آخرین DNS (برای اتصال مجدد خودکار و کاشی دسترسی سریع)
+        const val PREFS_DNS = "dns_prefs"
+        const val KEY_LAST_DNS_SERVERS = "last_dns_servers"
+        const val KEY_LAST_DNS_NAME = "last_dns_name"
 
         // یک scope و کلاینت مستقل و جدا از serviceJob
         private val statsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -83,9 +91,19 @@ class MyVpnService : VpnService() {
     private var connectStartTime: Long = 0L
     private var statsUpdateHandler: Handler? = null
 
-    // کش DNS (با TTL واقعی) — پاسخ‌های تکراری از حافظه خوانده می‌شوند.
+    // کش DNS (با TTL واقعی + کش منفی + stale-while-revalidate).
     private val dnsCache = DnsCache()
     private var dnsCacheEnabled = true
+    // پشتیبانی TCP fallback (قابل خاموش شدن از تنظیمات؛ پیش‌فرض فعال)
+    private var tcpFallbackEnabled = true
+
+    // یادگیری RTT هر سرور (برای تایم‌اوت تطبیقی) و مجموعه‌ی کلیدهای در حال
+    // تازه‌سازی پیشدستانه‌ی کش — تا برای یک کلید دو تازه‌سازی موازی نشود.
+    private val rttEma = ConcurrentHashMap<String, Double>()
+    private val refreshingKeys = ConcurrentHashMap.newKeySet<String>()
+    // شمارش شکست‌های متوالی UDP برای هر سرور: وقتی UDP چند بار پشت‌سرهم جواب
+    // ندهد، سریع‌تر به TCP سوییچ می‌کنیم (به‌جای ۵ ثانیه انتظار برای UDP).
+    private val udpFailStreak = ConcurrentHashMap<String, Int>()
 
     // آخرین DNSهایی که تونل با آن‌ها ساخته شده
     private var lastDnsServers: List<String> = emptyList()
@@ -150,8 +168,9 @@ class MyVpnService : VpnService() {
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
         val hasSelection = selectedPackages != null
 
-        // خواندن وضعیت کش DNS از تنظیمات (پیش‌فرض فعال)
+        // خواندن وضعیت کش DNS و TCP fallback از تنظیمات (هر دو پیش‌فرض فعال)
         dnsCacheEnabled = AppSettings.isDnsCacheEnabled(this)
+        tcpFallbackEnabled = AppSettings.isTcpFallbackEnabled(this)
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
@@ -196,6 +215,8 @@ class MyVpnService : VpnService() {
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
             VpnStats.totalPacketsBlocked.set(0)
+            VpnStats.dnsCacheHits.set(0)
+            VpnStats.dnsCacheMisses.set(0)
             connectStartTime = System.currentTimeMillis()
             readerJob = serviceScope.launch { processPackets() }
             statsUpdateHandler?.removeCallbacksAndMessages(null)
@@ -322,50 +343,28 @@ class MyVpnService : VpnService() {
             val udpLength = ((ipPacket[ihl + 4].toInt() and 0xFF) shl 8) or (ipPacket[ihl + 5].toInt() and 0xFF)
             val dnsPayload = ipPacket.copyOfRange(ihl + 8, ihl + udpLength)
 
-            // ===== کش DNS =====
+            // ===== کش DNS (با stale-while-revalidate) =====
             if (dnsCacheEnabled && dnsPayload.size >= 12) {
                 val queryId = ((dnsPayload[0].toInt() and 0xFF) shl 8) or (dnsPayload[1].toInt() and 0xFF)
-                dnsCache.get(dnsPayload, queryId)?.let { cached ->
-                    val replyIpPacket = buildIpv4UdpPacket(
-                        srcIp = dstIp, dstIp = srcIp, srcPort = 53, dstPort = srcPort, payload = cached
-                    )
-                    outputMutex.withLock {
-                        output.write(replyIpPacket)
-                        output.flush()
-                    }
-                    VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
+                val cached = dnsCache.get(dnsPayload, queryId)
+                if (cached != null) {
+                    VpnStats.dnsCacheHits.incrementAndGet()
+                    writeReplyV4(output, dstIp, srcIp, srcPort, cached.bytes)
+                    // پاسخ نرم (منقضی ولی قابل سرو): در پس‌زمینه تازه‌سازی کن
+                    if (cached.stale) refreshCacheEntry(dnsPayload, dstIp)
                     return
                 }
+                VpnStats.dnsCacheMisses.incrementAndGet()
             }
 
-            val socket = acquireDnsSocket()
-            val responsePacket = try {
-                val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
-                socket.send(request)
-                val responseBuf = ByteArray(1500)
-                val resp = DatagramPacket(responseBuf, responseBuf.size)
-                socket.receive(resp)
-                resp
-            } finally {
-                releaseDnsSocket(socket)
+            // پرس‌وجوی واقعی: اول UDP با تایم‌اوت تطبیقی؛ در صورت بی‌پاسخی TCP
+            val responsePayload = queryUpstream(dnsPayload, dstIp)
+            if (responsePayload == null) {
+                VpnStats.totalPacketsLost.incrementAndGet()
+                return
             }
-
-            val responsePayload = responsePacket.data.copyOfRange(0, responsePacket.length)
             if (dnsCacheEnabled) dnsCache.put(dnsPayload, responsePayload)
-
-            val replyIpPacket = buildIpv4UdpPacket(
-                srcIp = dstIp,
-                dstIp = srcIp,
-                srcPort = 53,
-                dstPort = srcPort,
-                payload = responsePayload
-            )
-
-            outputMutex.withLock {
-                output.write(replyIpPacket)
-                output.flush()
-            }
-            VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
+            writeReplyV4(output, dstIp, srcIp, srcPort, responsePayload)
         } catch (_: Exception) {
             VpnStats.totalPacketsLost.incrementAndGet()
         }
@@ -379,53 +378,181 @@ class MyVpnService : VpnService() {
             val udpLength = ((ipPacket[44].toInt() and 0xFF) shl 8) or (ipPacket[45].toInt() and 0xFF)
             val dnsPayload = ipPacket.copyOfRange(48, 40 + udpLength)
 
-            // ===== کش DNS =====
+            // ===== کش DNS (با stale-while-revalidate) =====
             if (dnsCacheEnabled && dnsPayload.size >= 12) {
                 val queryId = ((dnsPayload[0].toInt() and 0xFF) shl 8) or (dnsPayload[1].toInt() and 0xFF)
-                dnsCache.get(dnsPayload, queryId)?.let { cached ->
-                    val replyIpPacket = buildIpv6UdpPacket(
-                        srcIp = dstIp, dstIp = srcIp, srcPort = 53, dstPort = srcPort, payload = cached
-                    )
-                    outputMutex.withLock {
-                        output.write(replyIpPacket)
-                        output.flush()
-                    }
-                    VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
+                val cached = dnsCache.get(dnsPayload, queryId)
+                if (cached != null) {
+                    VpnStats.dnsCacheHits.incrementAndGet()
+                    writeReplyV6(output, dstIp, srcIp, srcPort, cached.bytes)
+                    if (cached.stale) refreshCacheEntry(dnsPayload, dstIp)
                     return
                 }
+                VpnStats.dnsCacheMisses.incrementAndGet()
             }
 
-            val socket = acquireDnsSocket()
-            val responsePacket = try {
-                val request = DatagramPacket(dnsPayload, dnsPayload.size, dstIp, 53)
-                socket.send(request)
-                val responseBuf = ByteArray(1500)
-                val resp = DatagramPacket(responseBuf, responseBuf.size)
-                socket.receive(resp)
-                resp
-            } finally {
-                releaseDnsSocket(socket)
+            // پرس‌وجوی واقعی: اول UDP با تایم‌اوت تطبیقی؛ در صورت بی‌پاسخی TCP
+            val responsePayload = queryUpstream(dnsPayload, dstIp)
+            if (responsePayload == null) {
+                VpnStats.totalPacketsLost.incrementAndGet()
+                return
             }
-
-            val responsePayload = responsePacket.data.copyOfRange(0, responsePacket.length)
             if (dnsCacheEnabled) dnsCache.put(dnsPayload, responsePayload)
-
-            val replyIpPacket = buildIpv6UdpPacket(
-                srcIp = dstIp,
-                dstIp = srcIp,
-                srcPort = 53,
-                dstPort = srcPort,
-                payload = responsePayload
-            )
-
-            outputMutex.withLock {
-                output.write(replyIpPacket)
-                output.flush()
-            }
-            VpnStats.totalBytesReceived.addAndGet(replyIpPacket.size.toLong())
+            writeReplyV6(output, dstIp, srcIp, srcPort, responsePayload)
         } catch (_: Exception) {
             VpnStats.totalPacketsLost.incrementAndGet()
         }
+    }
+
+    // ------------------------------------------------------------
+    // پرس‌وجوی هوشمند upstream: UDP با تایم‌اوت تطبیقی + fallback به TCP
+    // ------------------------------------------------------------
+
+    /** پرس‌وجوی DNS از سرور بالادستی: اول UDP، در صورت بی‌پاسخی TCP (اگه فعال باشد). null یعنی شکست کامل. */
+    private fun queryUpstream(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
+        udpQuery(dnsPayload, server)?.let { return it }
+        if (!tcpFallbackEnabled) return null
+        val tcpResp = tcpQuery(dnsPayload, server) ?: return null
+        return if (tcpResp.size <= MAX_UDP_PAYLOAD) tcpResp else truncateWithTc(tcpResp)
+    }
+
+    /** ارسال پرس‌وجوی UDP با تایم‌اوت تطبیقی؛ null یعنی تایم‌اوت/خطا. */
+    private fun udpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
+        val socket = acquireDnsSocket()
+        return try {
+            val streak = udpFailStreak[server.hostAddress] ?: 0
+            // بعد از چند شکست متوالی UDP، حدس می‌زنیم UDP این سرور دچار مشکل
+            // شده؛ تایم‌اوت را کوتاه می‌کنیم تا زودتر به TCP سوییچ شود.
+            val timeout = if (streak >= 2) {
+                minOf(adaptiveTimeoutMs(server.hostAddress), 1200)
+            } else {
+                adaptiveTimeoutMs(server.hostAddress)
+            }
+            socket.soTimeout = timeout
+            val start = System.nanoTime()
+            socket.send(DatagramPacket(dnsPayload, dnsPayload.size, server, 53))
+            val buffer = ByteArray(1500)
+            val resp = DatagramPacket(buffer, buffer.size)
+            socket.receive(resp)
+            val rttMs = (System.nanoTime() - start) / 1_000_000
+            udpFailStreak[server.hostAddress] = 0
+            recordRtt(server.hostAddress, rttMs)
+            resp.data.copyOfRange(0, resp.length)
+        } catch (_: Exception) {
+            udpFailStreak.merge(server.hostAddress, 1) { a, b -> a + b }
+            recordTimeout(server.hostAddress)
+            null
+        } finally {
+            releaseDnsSocket(socket)
+        }
+    }
+
+    /** پرس‌وجوی TCP (با پیشوند ۲ بایتی طول، RFC 1035) برای وقتی UDP جواب نداد. */
+    private fun tcpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
+        return try {
+            Socket().use { s ->
+                // سوکت نباید از تونل خودمان رد شود وگرنه لوپ می‌شود
+                try { protect(s) } catch (_: Exception) {}
+                s.connect(InetSocketAddress(server, 53), 3000)
+                s.soTimeout = 4000
+                val out = DataOutputStream(s.getOutputStream())
+                out.write((dnsPayload.size shr 8) and 0xFF)
+                out.write(dnsPayload.size and 0xFF)
+                out.write(dnsPayload)
+                out.flush()
+                val input = DataInputStream(s.getInputStream())
+                val len = input.readUnsignedShort()
+                if (len <= 0) return null
+                val buf = ByteArray(len)
+                input.readFully(buf)
+                buf
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** اگر پاسخ از ظرفیت یک UDP جا نشد، با تنظیم بیت TC کوتاهش می‌کنیم. */
+    private fun truncateWithTc(response: ByteArray): ByteArray {
+        if (response.size <= MAX_UDP_PAYLOAD) return response
+        val out = response.copyOf(MAX_UDP_PAYLOAD)
+        if (out.size >= 4) {
+            out[2] = ((out[2].toInt() and 0xFF) or 0x02).toByte()
+        }
+        return out
+    }
+
+    // ---- تایم‌اوت تطبیقی بر اساس میانگین زمان پاسخ هر سرور ----
+
+    /** تایم‌اوت دینامیک: حدود ۴ برابر میانگین پاسخ، محدود بین ۶۰۰ms تا ۵ ثانیه. */
+    private fun adaptiveTimeoutMs(host: String): Int =
+        ((rttEma[host] ?: 900.0) * 4.0).toInt().coerceIn(600, 5000)
+
+    private fun recordRtt(host: String, ms: Long) {
+        val prev = rttEma[host]
+        rttEma[host] = if (prev == null) ms.toDouble() else prev * 0.7 + ms * 0.3
+    }
+
+    /** بعد از تایم‌اوت، تخمین را بالا می‌بریم تا دفعه‌ی بعد صبورتر باشیم. */
+    private fun recordTimeout(host: String) {
+        val prev = rttEma[host] ?: 900.0
+        rttEma[host] = (prev * 1.4).coerceAtMost(5000.0)
+    }
+
+    // ---- تازه‌سازی پیشدستانه‌ی ورودی‌های کش منقضی‌شده (stale-while-revalidate) ----
+
+    private fun refreshCacheEntry(query: ByteArray, server: InetAddress) {
+        val k = dnsCache.keyOf(query)
+        if (!refreshingKeys.add(k)) return // هم‌اکنون در حال تازه‌سازی است
+        serviceScope.launch {
+            if (!relayPermits.tryAcquire()) {
+                refreshingKeys.remove(k)
+                return@launch
+            }
+            try {
+                val resp = queryUpstream(query, server)
+                if (resp != null && dnsCacheEnabled) dnsCache.put(query, resp)
+            } finally {
+                refreshingKeys.remove(k)
+                relayPermits.release()
+            }
+        }
+    }
+
+    // ---- ارسال پاسخ UDP به سمت دستگاه ----
+
+    private suspend fun writeReplyV4(
+        output: FileOutputStream,
+        serverIp: InetAddress,
+        clientIp: InetAddress,
+        clientPort: Int,
+        payload: ByteArray
+    ) {
+        val packet = buildIpv4UdpPacket(
+            srcIp = serverIp, dstIp = clientIp, srcPort = 53, dstPort = clientPort, payload = payload
+        )
+        outputMutex.withLock {
+            output.write(packet)
+            output.flush()
+        }
+        VpnStats.totalBytesReceived.addAndGet(packet.size.toLong())
+    }
+
+    private suspend fun writeReplyV6(
+        output: FileOutputStream,
+        serverIp: Inet6Address,
+        clientIp: Inet6Address,
+        clientPort: Int,
+        payload: ByteArray
+    ) {
+        val packet = buildIpv6UdpPacket(
+            srcIp = serverIp, dstIp = clientIp, srcPort = 53, dstPort = clientPort, payload = payload
+        )
+        outputMutex.withLock {
+            output.write(packet)
+            output.flush()
+        }
+        VpnStats.totalBytesReceived.addAndGet(packet.size.toLong())
     }
 
     private fun isIpv4Udp53(data: ByteArray): Boolean {
@@ -604,8 +731,12 @@ class MyVpnService : VpnService() {
         connectStartTime = 0L
 
         VpnStats.isVpnActive = false
+        VpnStats.dnsCacheHits.set(0)
+        VpnStats.dnsCacheMisses.set(0)
         readerJob?.cancel()
         readerJob = null
+        refreshingKeys.clear()
+        udpFailStreak.clear()
         // تخلیه‌ی مخزن سوکت‌ها
         while (true) {
             val s = dnsSocketPool.poll() ?: break
