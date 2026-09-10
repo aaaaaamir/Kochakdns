@@ -202,8 +202,8 @@
 126-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:107:13-53
 127            android:exported="true"
 127-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:108:13-36
-128            android:icon="@mipmap/ic_launcher"
-128-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:109:13-47
+128            android:icon="@drawable/ic_qs_tile"
+128-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:109:13-48
 129            android:label="@string/app_name"
 129-->/workspaces/Kochakdns/app/src/main/AndroidManifest.xml:110:13-45
 130            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE" >

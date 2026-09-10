@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  آیکون کاشی دسترسی سریع (Quick Settings Tile): حرف «K» که دقیقاً از روی
+  لوگوی برنامه (تصویر back.png) ردیابی شده است.
+  مسیر تک‌رنگ است تا سیستم‌عامل آن را با رنگ اکسنت خودش رنگ‌آمیزی کند.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.38,0.5 L2.71,22.87 L7.96,22.24 L9.43,15.52 L14.78,21.82 L19.93,22.87 L18.88,18.88 L13.84,13.42 L21.29,5.96 L19.93,2.92 L9.74,10.58 L10.58,3.02 Z" />
+</vector>

@@ -1,50 +1,54 @@
 [
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/xml_file_paths.xml.flat",
-        "source": "com.example.kochakdns.app-main-59:/xml/file_paths.xml"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xxhdpi/ic_launcher.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xxhdpi_ic_launcher.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xxhdpi/ic_launcher.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-mdpi/ic_launcher.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xhdpi_ic_launcher_round.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xhdpi/ic_launcher_round.png"
+        "merged": "com.example.kochakdns.app-merged_res-58:/drawable_ic_qs_tile.xml.flat",
+        "source": "com.example.kochakdns.app-main-59:/drawable/ic_qs_tile.xml"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xhdpi_ic_launcher.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xhdpi/ic_launcher.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/drawable-nodpi_back.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/drawable-nodpi/back.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xxxhdpi/ic_launcher_round.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-hdpi_ic_launcher.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-hdpi/ic_launcher.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-hdpi/ic_launcher.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xxhdpi_ic_launcher_round.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xxhdpi/ic_launcher_round.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-hdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-mdpi_ic_launcher.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-mdpi/ic_launcher.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/xml_file_paths.xml.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/xml/file_paths.xml"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-mdpi_ic_launcher_round.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-mdpi/ic_launcher_round.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xhdpi/ic_launcher.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-xxxhdpi_ic_launcher.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-xxxhdpi/ic_launcher.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xxxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/drawable-nodpi_back.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/drawable-nodpi/back.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.example.kochakdns.app-merged_res-58:/mipmap-hdpi_ic_launcher_round.png.flat",
-        "source": "com.example.kochakdns.app-main-59:/mipmap-hdpi/ic_launcher_round.png"
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-merged_res-58:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "/home/vscode/.gradle/daemon/8.10.2/com.example.kochakdns.app-main-59:/mipmap-mdpi/ic_launcher_round.png"
     }
 ]

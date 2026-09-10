@@ -15,6 +15,7 @@ color surface_dark
 color surface_light
 color white
 drawable back
+drawable ic_qs_tile
 mipmap ic_launcher
 mipmap ic_launcher_round
 string app_name

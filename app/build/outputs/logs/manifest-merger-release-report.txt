@@ -238,7 +238,7 @@ ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:106:9-115:19
 	android:permission
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:111:13-77
 	android:icon
-		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:109:13-47
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:109:13-48
 	android:name
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:107:13-53
 intent-filter#action:name:android.service.quicksettings.action.QS_TILE
