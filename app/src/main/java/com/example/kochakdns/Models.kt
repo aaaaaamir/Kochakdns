@@ -158,11 +158,23 @@ object VpnStats {
     // نیستند و نه در UI به‌عنوان گم‌شده نمایش داده می‌شوند نه به سرور ارسال می‌شوند.
     val totalPacketsBlocked = AtomicLong(0)
 
+    // آمار کش DNS: تعداد پاسخ‌هایی که از کش سرو شده‌اند و تعداد پرس‌وجوهایی که
+    // در کش نبوده‌اند. با هم نرخ «پاسخ از کش» را می‌سازند (نمایش در تنظیمات).
+    val dnsCacheHits = AtomicLong(0)
+    val dnsCacheMisses = AtomicLong(0)
+
     @Volatile
     var isVpnActive = false
 
     @Volatile
     var activeDnsName: String? = null
+
+    /** درصد پاسخ‌هایی که از کش سرو شده‌اند؛ null یعنی هنوز هیچ پرس‌وجویی نشده. */
+    fun dnsCacheHitRate(): Double? {
+        val hits = dnsCacheHits.get()
+        val total = hits + dnsCacheMisses.get()
+        return if (total > 0) hits * 100.0 / total else null
+    }
 }
 
 /**
@@ -278,6 +290,9 @@ object AppSettings {
     private const val KEY_SHOW_NOTIFICATION = "show_notification"
     private const val KEY_UPDATE_CHECK = "update_check_enabled"
     private const val KEY_ANNOUNCEMENT = "announcement_enabled"
+    private const val KEY_QS_TILE = "qs_tile_enabled"
+    private const val KEY_QS_SUGGESTION = "qs_tile_suggestion_shown"
+    private const val KEY_TCP_FALLBACK = "tcp_fallback"
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
@@ -323,6 +338,32 @@ object AppSettings {
 
     fun setShowNotificationInfoEnabled(context: android.content.Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_SHOW_NOTIFICATION, value).apply()
+    }
+
+    // پیش‌فرض false: کاشی دسترسی سریع (Quick Settings) خاموش است؛ کاربر از
+    // تنظیمات فعالش می‌کند یا از پیشنهاد یک‌باره‌ی داخل برنامه.
+    fun isQsTileEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_QS_TILE, false)
+
+    fun setQsTileEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_QS_TILE, value).apply()
+    }
+
+    // پیشنهاد یک‌باره‌ی افزودن کاشی: بعد از اولین اتصال فقط یک بار نمایش داده می‌شود.
+    fun isQsTileSuggestionShown(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_QS_SUGGESTION, false)
+
+    fun markQsTileSuggestionShown(context: android.content.Context) {
+        prefs(context).edit().putBoolean(KEY_QS_SUGGESTION, true).apply()
+    }
+
+    // پیش‌فرض true: اگر پرس‌وجوی UDP بی‌پاسخ بماند، همان پرس‌وجو با TCP (پورت ۵۳)
+    // دوباره امتحان می‌شود — دور زدن ISPهایی که UDP/53 را مختل می‌کنند.
+    fun isTcpFallbackEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_TCP_FALLBACK, true)
+
+    fun setTcpFallbackEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TCP_FALLBACK, value).apply()
     }
 }
 
