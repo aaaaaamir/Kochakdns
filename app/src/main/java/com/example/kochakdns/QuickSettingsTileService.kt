@@ -49,7 +49,7 @@ class QuickSettingsTileService : TileService() {
                 statusBarManager.requestAddTileService(
                     ComponentName(context, QuickSettingsTileService::class.java),
                     label,
-                    Icon.createWithResource(context, R.mipmap.ic_launcher),
+                    Icon.createWithResource(context, R.drawable.ic_qs_tile),
                     ContextCompat.getMainExecutor(context),
                     java.util.function.Consumer<Int> { }
                 )
