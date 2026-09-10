@@ -3,7 +3,6 @@ package com.example.kochakdns
 import android.Manifest
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -180,25 +179,10 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
         if (newSelection == _selectedPackages.value) return
         _selectedPackages.value = newSelection
         persistSelection(newSelection)
-        restartVpnIfActive()
-    }
-
-    /**
-     * اگر VPN الان فعال است، انتخاب جدید فقط با ساخت دوباره‌ی تونل اعمال می‌شود
-     * (مثل makeRestartService در v2rayNG). چون سرویس در حال اجراست، فقط یک دستور
-     * ACTION_RESTART به آن می‌فرستیم و خودش تونل را با انتخاب جدید بازسازی می‌کند.
-     */
-    private fun restartVpnIfActive() {
-        if (!VpnStats.isVpnActive) return
-        val context = getApplication<Application>()
-        val intent = Intent(context, MyVpnService::class.java).apply {
-            action = MyVpnService.ACTION_RESTART
-        }
-        try {
-            context.startService(intent)
-        } catch (_: Exception) {
-            // سرویس ممکن است دقیقاً در همین لحظه متوقف شده باشد؛ بی‌خطر نادیده بگیر
-        }
+        // اعمال واقعی انتخاب جدید موقع بازگشت به صفحه‌ی اصلی انجام می‌شود:
+        // DnsActivity با پرچم reconnectOnNextResume وصل مجدد می‌کند تا تونل با
+        // انتخاب جدید ساخته شود. (قبلاً اینجا ACTION_RESTART فوری می‌فرستادیم
+        // که با وصل مجددِ موقع بازگشت، دو بار ری‌استارت می‌شد.)
     }
 
     /** ذخیره فوری (مثل replaceBlacklist در v2rayNG) */
