@@ -1,13 +1,17 @@
 package com.example.kochakdns
 
+import android.app.StatusBarManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 
 /**
  * کاشی دسترسی سریع (Quick Settings Tile):
@@ -21,6 +25,40 @@ import android.service.quicksettings.TileService
  * آن حالت کاربر به صفحه‌ی اصلی برنامه هدایت می‌شود.
  */
 class QuickSettingsTileService : TileService() {
+
+    companion object {
+        /**
+         * درخواست افزودن کاشی به نوار اعلان.
+         *
+         * - اندروید ۱۳ به بعد: دیالوگ سیستمی افزودن کاشی نمایش داده می‌شود
+         *   (StatusBarManager.requestAddTileService — تنها API رسمی موجود).
+         * - اندروید ۷ تا ۱۲: API افزودن خودکار وجود ندارد → false برمی‌گردد تا
+         *   فراخواننده راهنمای دستی (ویرایش ← افزودن کاشی) را نشان دهد.
+         *
+         * @return true اگر دیالوگ سیستمی با موفقیت درخواست شد، وگرنه false.
+         */
+        fun requestAddTile(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+            return try {
+                val label = try {
+                    context.applicationInfo.loadLabel(context.packageManager).toString()
+                } catch (_: Exception) {
+                    "Kochak DNS"
+                }
+                val statusBarManager = context.getSystemService(StatusBarManager::class.java)
+                statusBarManager.requestAddTileService(
+                    ComponentName(context, QuickSettingsTileService::class.java),
+                    label,
+                    Icon.createWithResource(context, R.mipmap.ic_launcher),
+                    ContextCompat.getMainExecutor(context),
+                    java.util.function.Consumer<Int> { }
+                )
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
