@@ -11,10 +11,10 @@ INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:95:9-103:20
 	android:name
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:96:13-62
 manifest
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-107:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-107:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-107:12
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-107:12
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-119:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-119:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-119:12
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:2:1-119:12
 MERGED from [androidx.databinding:viewbinding:8.1.0] /home/vscode/.gradle/caches/8.10.2/transforms/4dd46c6f22370cafef75359504bc7aac/transformed/jetified-viewbinding-8.1.0/AndroidManifest.xml:2:1-7:12
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/vscode/.gradle/caches/8.10.2/transforms/0d64e29e8be263b7efa7d1b8118c6a74/transformed/constraintlayout-2.1.4/AndroidManifest.xml:2:1-11:12
@@ -131,8 +131,8 @@ ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:13-73
 	android:name
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:31:23-70
 application
-ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:5-105:19
-INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:5-105:19
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:5-117:19
+INJECTED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:35:5-117:19
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.10.0] /home/vscode/.gradle/caches/8.10.2/transforms/204d4046b81dc05900404d11c3b7271e/transformed/material-1.10.0/AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/vscode/.gradle/caches/8.10.2/transforms/0d64e29e8be263b7efa7d1b8118c6a74/transformed/constraintlayout-2.1.4/AndroidManifest.xml:9:5-20
@@ -229,6 +229,24 @@ ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:89:13-91:66
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:91:17-63
 	android:name
 		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:90:17-76
+service#com.example.kochakdns.QuickSettingsTileService
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:106:9-115:19
+	android:label
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:110:13-45
+	android:exported
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:108:13-36
+	android:permission
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:111:13-77
+	android:icon
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:109:13-47
+	android:name
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:107:13-53
+intent-filter#action:name:android.service.quicksettings.action.QS_TILE
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:112:13-114:29
+action#android.service.quicksettings.action.QS_TILE
+ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:113:17-87
+	android:name
+		ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:113:25-84
 meta-data#android.support.FILE_PROVIDER_PATHS
 ADDED from /workspaces/Kochakdns/app/src/main/AndroidManifest.xml:100:13-102:54
 	android:resource
