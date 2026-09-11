@@ -293,10 +293,13 @@ object AppSettings {
     private const val KEY_QS_TILE = "qs_tile_enabled"
     private const val KEY_QS_SUGGESTION = "qs_tile_suggestion_shown"
     private const val KEY_TCP_FALLBACK = "tcp_fallback"
+    private const val KEY_TCP_ONLY = "tcp_only"
     private const val KEY_UDP_CONCURRENT = "udp_concurrent"
     private const val KEY_TCP_CONCURRENT = "tcp_concurrent"
     private const val KEY_TIMEOUT_START = "timeout_start_ms"
     private const val KEY_TIMEOUT_FLOOR = "timeout_floor_ms"
+    private const val KEY_ADAPTIVE_TIMEOUT = "adaptive_timeout"
+    private const val KEY_FIXED_TIMEOUT = "fixed_timeout_ms"
     private const val KEY_LANGUAGE = "app_language"
 
     private fun prefs(context: android.content.Context) =
@@ -371,6 +374,15 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_TCP_FALLBACK, value).apply()
     }
 
+    // حالت فقط TCP: همه‌ی درخواست‌های DNS مستقیماً با TCP ارسال می‌شوند (بدون UDP).
+    // برای شبکه‌هایی که UDP/53 کاملاً مسدود است. پیش‌فرض خاموش.
+    fun isTcpOnlyEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_TCP_ONLY, false)
+
+    fun setTcpOnlyEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TCP_ONLY, value).apply()
+    }
+
     // حداکثر پرس‌وجوی هم‌زمان UDP به سمت سرور (پیش‌فرض ۸؛ بین ۱ تا ۶۴).
     fun getUdpConcurrent(context: android.content.Context): Int =
         prefs(context).getInt(KEY_UDP_CONCURRENT, 8).coerceIn(1, 64)
@@ -407,6 +419,23 @@ object AppSettings {
     fun setTimeoutFloorMs(context: android.content.Context, value: Int) {
         val start = getTimeoutStartMs(context)
         prefs(context).edit().putInt(KEY_TIMEOUT_FLOOR, value.coerceIn(500, start)).apply()
+    }
+
+    // تایم‌اوت تطبیقی: روشن = تایم‌اوت با سرعت سرور تنظیم می‌شود (پیش‌فرض).
+    // خاموش = از تایم‌اوت ثابت (getFixedTimeoutMs) استفاده می‌شود.
+    fun isAdaptiveTimeoutEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_ADAPTIVE_TIMEOUT, true)
+
+    fun setAdaptiveTimeoutEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ADAPTIVE_TIMEOUT, value).apply()
+    }
+
+    // تایم‌اوت ثابت (وقتی تایم‌اوت تطبیقی خاموش باشد). پیش‌فرض ۵۰۰۰ms؛ ۵۰۰ تا ۱۰۰۰۰.
+    fun getFixedTimeoutMs(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_FIXED_TIMEOUT, 5000).coerceIn(500, 10000)
+
+    fun setFixedTimeoutMs(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_FIXED_TIMEOUT, value.coerceIn(500, 10000)).apply()
     }
 
     // زبان برنامه: "device" (پیش‌فرض) | "fa" | "en"
