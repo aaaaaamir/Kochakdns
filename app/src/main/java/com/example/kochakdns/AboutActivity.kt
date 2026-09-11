@@ -13,12 +13,11 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 
 /**
  * صفحه «درباره ما» — با تم کارتی خاکستری هماهنگ با بقیه برنامه.
  */
-class AboutActivity : AppCompatActivity() {
+class AboutActivity : BaseActivity() {
 
     companion object {
         // آیکون‌های وکتور (سبک Material)
