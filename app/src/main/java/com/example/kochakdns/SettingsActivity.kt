@@ -111,6 +111,9 @@ class SettingsActivity : BaseActivity() {
 
         val adaptiveEnabled = AppSettings.isAdaptiveTimeoutEnabled(this)
         val tcpFallbackOn = AppSettings.isTcpFallbackEnabled(this)
+        val tcpOnly = AppSettings.isTcpOnlyEnabled(this)
+        // آیا TCP اصلاً استفاده می‌شود؟ (fallback روشن یا حالت فقط TCP)
+        val tcpUsed = tcpFallbackOn || tcpOnly
 
         // ===================== اتصال و سرعت =====================
         list.addView(sectionHeader(str("sec_network")))
@@ -129,16 +132,43 @@ class SettingsActivity : BaseActivity() {
             }
         )
 
-        // پشتیبانی TCP
+        // پشتیبانی TCP (وقتی حالت فقط TCP روشن باشد محو/غیرفعال — بی‌معنی است)
         list.addView(
             glassSwitch(
                 title = str("set_tcp_fallback"),
                 subtitle = str("set_tcp_fallback_sub"),
                 iconPath = ICON_TCP,
-                initial = tcpFallbackOn
+                initial = tcpFallbackOn,
+                enabled = !tcpOnly
             ) { checked ->
                 AppSettings.setTcpFallbackEnabled(this, checked)
                 recreate() // تا گزینه‌ی همزمانی TCP محو/فعال شود
+            }
+        )
+
+        // حالت فقط TCP (با هشدار موقع روشن کردن)
+        list.addView(
+            glassSwitch(
+                title = str("set_tcp_only"),
+                subtitle = str("set_tcp_only_sub"),
+                iconPath = ICON_TCP,
+                initial = tcpOnly
+            ) { checked ->
+                if (checked) {
+                    confirmDialog(
+                        title = str("tcp_only_warn_title"),
+                        message = str("tcp_only_warn_msg"),
+                        positiveText = str("activate"),
+                        onConfirm = {
+                            AppSettings.setTcpOnlyEnabled(this, true)
+                            recreate()
+                        },
+                        onCancel = { recreate() }
+                    )
+                } else {
+                    AppSettings.setTcpOnlyEnabled(this, false)
+                    recreate()
+                }
             }
         )
 
@@ -149,7 +179,7 @@ class SettingsActivity : BaseActivity() {
                 subtitle = str("set_udp_conc_sub"),
                 iconPath = ICON_CONC,
                 valueLabel = valueLabel(AppSettings.getUdpConcurrent(this), DEFAULT_UDP, str("val_requests")),
-                enabled = true,
+                enabled = !tcpOnly,
                 onClick = {
                     numberPickDialog(
                         title = str("set_udp_conc"),
@@ -167,14 +197,14 @@ class SettingsActivity : BaseActivity() {
             )
         )
 
-        // همزمانی TCP (وقتی پشتیبانی TCP خاموش باشد محو/غیرفعال)
+        // همزمانی TCP (وقتی TCP اصلاً استفاده نشود محو/غیرفعال)
         list.addView(
             glassValueCard(
                 title = str("set_tcp_conc"),
                 subtitle = str("set_tcp_conc_sub"),
                 iconPath = ICON_CONC,
                 valueLabel = valueLabel(AppSettings.getTcpConcurrent(this), DEFAULT_TCP, str("val_requests")),
-                enabled = tcpFallbackOn,
+                enabled = tcpUsed,
                 onClick = {
                     numberPickDialog(
                         title = str("set_tcp_conc"),
@@ -792,6 +822,7 @@ class SettingsActivity : BaseActivity() {
         subtitle: String,
         iconPath: String,
         initial: Boolean,
+        enabled: Boolean = true,
         liveLine: TextView? = null,
         onChange: (Boolean) -> Unit
     ): LinearLayout {
@@ -806,6 +837,7 @@ class SettingsActivity : BaseActivity() {
             applyGlassBackground(this)
             isClickable = true
             isFocusable = true
+            alpha = if (enabled) 1f else 0.4f
 
             addView(ImageView(this@SettingsActivity).apply {
                 setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
@@ -839,15 +871,97 @@ class SettingsActivity : BaseActivity() {
             val switchView = AnimatedSwitchView(this@SettingsActivity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(48), dp(26))
                 setChecked(initial)
-                onCheckedChangeListener = { checked -> onChange(checked) }
+                isClickable = enabled
+                onCheckedChangeListener = { checked -> if (enabled) onChange(checked) }
             }
 
             addView(textColumn)
             addView(switchView)
 
-            // لمس هرجای کارت = روشن/خاموش
-            setOnClickListener { switchView.performClick() }
+            // لمس هرجای کارت = روشن/خاموش (فقط وقتی فعال باشد)
+            setOnClickListener { if (enabled) switchView.performClick() }
         }
+    }
+
+    /** دیالوگ تأیید ساده (برای هشدارها) با دو دکمه. */
+    private fun confirmDialog(
+        title: String,
+        message: String,
+        positiveText: String,
+        onConfirm: () -> Unit,
+        onCancel: () -> Unit
+    ) {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 20)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                leftMargin = 44
+                rightMargin = 44
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1E2E"))
+                cornerRadius = 28f
+                setStroke(2, Color.parseColor("#2A2A3E"))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        card.addView(TextView(this).apply {
+            text = title
+            setTextColor(Color.parseColor("#FFC107"))
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 10)
+        })
+        val msgScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        msgScroll.addView(TextView(this).apply {
+            text = message
+            setTextColor(Color.parseColor("#B0B0BA"))
+            textSize = 14f
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, 2, 0, 4)
+        })
+        card.addView(msgScroll)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 16 }
+        }
+        row.addView(makeDialogButton(str("cancel"), false) {
+            dismissOverlay(overlay)
+            onCancel()
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(android.view.View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(16), 1)
+        })
+        row.addView(makeDialogButton(positiveText, true) {
+            dismissOverlay(overlay)
+            onConfirm()
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(row)
+
+        overlay.addView(card)
+        root.addView(overlay)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
