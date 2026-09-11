@@ -63,9 +63,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -141,7 +146,7 @@ class TunnelAppsViewModel(application: Application) : AndroidViewModel(applicati
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "خطا در دریافت لیست برنامه‌ها"
+                _errorMessage.value = e.message ?: getApplication<Application>().str("apps_load_error")
             } finally {
                 isAppListLoading = false
                 _isLoading.value = false
@@ -392,6 +397,7 @@ private fun TunnelAppsScreen(
     onClearAll: () -> Unit
 ) {
     val listState = rememberLazyListState()
+    val ctx = LocalContext.current
     var searchActive by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
@@ -403,122 +409,51 @@ private fun TunnelAppsScreen(
 
     val total = apps.size
     val selectedCount = apps.count { it.packageName in selected }
+    val density = LocalDensity.current
+    var headerHeight by remember { mutableStateOf(0.dp) }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F14))
     ) {
-        // ===== نوار بالا =====
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // دکمه بازگشت (آیکون)
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.Rounded.ArrowBack,
-                    contentDescription = "بازگشت",
-                    tint = Color.White
-                )
-            }
-
-            if (searchActive) {
-                // فیلد جستجو
-                TextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
-                    singleLine = true,
-                    placeholder = {
-                        Text("جستجو در برنامه‌ها...", color = Color(0xFF888888), fontSize = 14.sp)
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFF888888))
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "پاک کردن", tint = Color(0xFF888888))
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = TextFieldDefaults.textFieldColors(
-                        containerColor = Color(0xFF1E1E2E),
-                        cursorColor = Color(0xFF4C8DFF),
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    )
-                )
-                // بستن جستجو
-                IconButton(onClick = {
-                    onQueryChange("")
-                    searchActive = false
-                }) {
-                    Icon(Icons.Rounded.Close, contentDescription = "بستن جستجو", tint = Color.White)
-                }
-            } else {
-                // عنوان صفحه
-                Text(
-                    text = "برنامه‌های تونل شده",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 4.dp)
-                )
-                // لودینگ
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        color = Color(0xFF4C8DFF),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                // دکمه جستجو (آیکون)
-                IconButton(onClick = { searchActive = true }) {
-                    Icon(Icons.Rounded.Search, contentDescription = "جستجو", tint = Color.White)
-                }
-            }
-        }
-
-        // ===== شمارنده =====
-        Text(
-            text = when {
-                loading && total == 0 -> "در حال دریافت لیست برنامه‌ها..."
-                total == 0 -> "برنامه‌ای یافت نشد"
-                else -> "$selectedCount از $total برنامه انتخاب شده"
-            },
-            color = Color(0xFF888888),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-        )
-
-        // ===== دکمه‌های انتخاب همه / لغو همه =====
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            ActionChip(text = "انتخاب همه", onClick = onSelectAll)
-            Spacer(modifier = Modifier.width(12.dp))
-            ActionChip(text = "لغو همه", onClick = onClearAll)
-        }
-
-        // ===== لیست برنامه‌ها =====
+        // ===== فهرست برنامه‌ها (پشت هدر شیشه‌ای) =====
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp,
+                top = headerHeight + 24.dp,
+                bottom = 24.dp
+            ),
             modifier = Modifier.fillMaxSize()
         ) {
+            // شمارنده
+            item {
+                Text(
+                    text = when {
+                        loading && total == 0 -> ctx.str("apps_loading")
+                        total == 0 -> ctx.str("apps_none")
+                        else -> String.format(ctx.str("apps_selected_count"), selectedCount, total)
+                    },
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+                )
+            }
+            // دکمه‌های انتخاب همه / لغو همه
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                ) {
+                    ActionChip(text = ctx.str("apps_select_all"), onClick = onSelectAll)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    ActionChip(text = ctx.str("apps_clear_all"), onClick = onClearAll)
+                }
+            }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
             items(items = apps, key = { it.packageName }) { app ->
                 AppRow(
                     app = app,
@@ -528,9 +463,113 @@ private fun TunnelAppsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
         }
+
+        // ===== هدر شیشه‌ای (بالای فهرست؛ با محو شدن تدریجی پایینش) =====
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .zIndex(1f)
+                .onGloballyPositioned { coords ->
+                    headerHeight = with(density) { coords.size.height.toDp() }
+                }
+        ) {
+            // نوار بالا
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xEB0F0F14))
+                    .statusBarsPadding()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // دکمه بازگشت (آیکون)
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowBack,
+                        contentDescription = ctx.str("apps_back"),
+                        tint = Color.White
+                    )
+                }
+
+                if (searchActive) {
+                    // فیلد جستجو (جمع‌وجور — ارتفاع ثابت تا صفحه به‌هم نریزد)
+                    TextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .focusRequester(focusRequester),
+                        singleLine = true,
+                        placeholder = {
+                            Text(ctx.str("apps_search_placeholder"), color = Color(0xFF888888), fontSize = 14.sp)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFF888888))
+                        },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { onQueryChange("") }) {
+                                    Icon(Icons.Rounded.Close, contentDescription = ctx.str("apps_clear"), tint = Color(0xFF888888))
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = TextFieldDefaults.textFieldColors(
+                            containerColor = Color(0xFF1E1E2E),
+                            cursorColor = Color(0xFF4C8DFF),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        )
+                    )
+                    // بستن جستجو
+                    IconButton(onClick = {
+                        onQueryChange("")
+                        searchActive = false
+                    }) {
+                        Icon(Icons.Rounded.Close, contentDescription = ctx.str("apps_close_search"), tint = Color.White)
+                    }
+                } else {
+                    // عنوان صفحه
+                    Text(
+                        text = ctx.str("menu_tunnel_apps"),
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 4.dp)
+                    )
+                    // لودینگ
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = Color(0xFF4C8DFF),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    // دکمه جستجو (آیکون)
+                    IconButton(onClick = { searchActive = true }) {
+                        Icon(Icons.Rounded.Search, contentDescription = ctx.str("apps_search"), tint = Color.White)
+                    }
+                }
+            }
+            // محو شدن تدریجی پایین هدر (برنامه‌ها نرم زیرش می‌روند)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xEB0F0F14), Color.Transparent)
+                        )
+                    )
+            )
+        }
     }
 }
-
 @Composable
 private fun ActionChip(text: String, onClick: () -> Unit) {
     Surface(
@@ -588,7 +627,7 @@ private fun AppRow(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (app.appName.isNotEmpty()) app.appName.take(1).uppercase() else "؟",
+                        text = if (app.appName.isNotEmpty()) app.appName.take(1).uppercase() else "?",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -609,7 +648,7 @@ private fun AppRow(
                 )
                 if (app.isSystemApp) {
                     Text(
-                        text = "سیستمی",
+                        text = ctx.str("apps_system"),
                         color = Color(0xFF8A8A9A),
                         fontSize = 10.sp
                     )
