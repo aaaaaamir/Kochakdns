@@ -12,7 +12,6 @@ import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -317,7 +316,7 @@ private fun drawableToBitmap(drawable: Drawable, sizePx: Int): Bitmap {
 // ===================================================================
 //  Activity — معادل PerAppProxyActivity در v2rayNG
 // ===================================================================
-class TunnelAppsActivity : AppCompatActivity() {
+class TunnelAppsActivity : BaseActivity() {
 
     private val viewModel by lazy {
         ViewModelProvider(this)[TunnelAppsViewModel::class.java]
