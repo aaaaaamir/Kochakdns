@@ -27,7 +27,6 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.doOnPreDraw
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.lifecycleScope
@@ -298,7 +297,7 @@ class MaterialLoadingView(context: Context) : View(context) {
     }
 }
 
-class DnsActivity : AppCompatActivity() {
+class DnsActivity : BaseActivity() {
 
     private lateinit var rootLayout: FrameLayout
     private lateinit var hamburgerButton: HamburgerIconView
@@ -345,8 +344,6 @@ class DnsActivity : AppCompatActivity() {
     private var reconnectOnNextResume = false
     // پیشنهاد یک‌باره‌ی کاشی دسترسی سریع فقط یک بار چک می‌شود
     private var qsSuggestionChecked = false
-    // میانگین زمان پاسخ هر آدرس (برای تایم‌اوت تطبیقیِ پینگ)
-    private val pingTimeoutEma = mutableMapOf<String, Double>()
 
     // بنر بروزرسانی (بالای صفحه) و پرچم‌های جریان بروزرسانی/اطلاعیه
     private lateinit var updateBanner: LinearLayout
@@ -700,12 +697,12 @@ class DnsActivity : AppCompatActivity() {
             info.changelog?.let { append("\n\n$it") }
         }
         showAppDialog(
-            title = "بروزرسانی جدید",
+            title = str("update_new"),
             message = msg,
             cancelable = true,
-            positiveText = "دانلود",
+            positiveText = str("update_download"),
             onPositive = { startDownload(info) },
-            negativeText = "لغو",
+            negativeText = str("cancel"),
             onNegative = { showUpdateBanner(downloadMode = true, version = info.version) }
         )
     }
@@ -731,12 +728,12 @@ class DnsActivity : AppCompatActivity() {
 
     private fun showInstallDialog(file: File, version: String) {
         showAppDialog(
-            title = "آماده نصب",
+            title = str("update_ready"),
             message = "بروزرسانی ورژن $version دانلود و آماده نصب است.",
             cancelable = true,
-            positiveText = "نصب بروزرسانی",
+            positiveText = str("update_install"),
             onPositive = { UpdateManager.install(this@DnsActivity, file) },
-            negativeText = "بعداً",
+            negativeText = str("update_later"),
             onNegative = { showUpdateBanner(downloadMode = false, version = version) }
         )
     }
@@ -882,10 +879,10 @@ class DnsActivity : AppCompatActivity() {
         mainHandler.postDelayed({
             if (isFinishing || isDestroyed) return@postDelayed
             showAppDialog(
-                title = "دسترسی سریع",
-                message = "می‌خوای یک کاشی وصل/قطع سریع به نوار اعلان اضافه کنی؟ با یک تپ، بدون باز کردن برنامه، وصل یا قطع می‌شی.",
+                title = str("qs_title"),
+                message = str("qs_msg"),
                 cancelable = true,
-                positiveText = "فعال کن",
+                positiveText = str("qs_enable"),
                 onPositive = {
                     AppSettings.setQsTileEnabled(ctx, true)
                     if (!QuickSettingsTileService.requestAddTile(this@DnsActivity)) {
@@ -896,7 +893,7 @@ class DnsActivity : AppCompatActivity() {
                         ).show()
                     }
                 },
-                negativeText = "بعداً",
+                negativeText = str("update_later"),
                 onNegative = {}
             )
             AppSettings.markQsTileSuggestionShown(ctx)
@@ -1068,17 +1065,17 @@ class DnsActivity : AppCompatActivity() {
                 bottomMargin = 32
             }
         }
-        packetsSentText = createStatItem("ارسالی", "0")
-        packetsLostText = createStatItem("گم‌شده", "0")
-        bytesSentText = createStatItem("↑ ارسال", "0 B")
-        bytesReceivedText = createStatItem("↓ دریافت", "0 B")
+        packetsSentText = createStatItem(str("stat_sent"), "0")
+        packetsLostText = createStatItem(str("stat_lost"), "0")
+        bytesSentText = createStatItem(str("stat_bsent"), "0 B")
+        bytesReceivedText = createStatItem(str("stat_brecv"), "0 B")
         statsLayout.addView(packetsSentText)
         statsLayout.addView(packetsLostText)
         statsLayout.addView(bytesSentText)
         statsLayout.addView(bytesReceivedText)
         mainContainer.addView(statsLayout)
         val listHeader = TextView(this).apply {
-            text = "لیست DNS"
+            text = str("list_dns")
             setTextColor(Color.WHITE)
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
@@ -1291,7 +1288,7 @@ class DnsActivity : AppCompatActivity() {
 
     private fun connectVpn() {
         if (selectedDnsServers.isEmpty()) {
-            Toast.makeText(this, "لطفاً ابتدا یک DNS انتخاب کنید", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, str("dlg_connect_first"), Toast.LENGTH_SHORT).show()
             return
         }
         try {
@@ -1303,7 +1300,7 @@ class DnsActivity : AppCompatActivity() {
                 startVpn()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "${str("dlg_connect_err")} ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1327,7 +1324,7 @@ class DnsActivity : AppCompatActivity() {
             } else {
                 // بعد از ۴ ثانیه هنوز واقعاً وصله -> قطع واقعاً انجام نشد
                 setVpnState(VpnUiState.CONNECTED)
-                Toast.makeText(this@DnsActivity, "قطع اتصال ناموفق بود، دوباره امتحان کنید", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@DnsActivity, str("dlg_disc_failed"), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1360,7 +1357,7 @@ class DnsActivity : AppCompatActivity() {
                 startService(intent)
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "خطا در اتصال: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "${str("dlg_connect_err")} ${e.message}", Toast.LENGTH_LONG).show()
             setVpnState(VpnUiState.DISCONNECTED)
             return
         }
@@ -1373,7 +1370,7 @@ class DnsActivity : AppCompatActivity() {
                 setVpnState(VpnUiState.CONNECTED)
             } else {
                 setVpnState(VpnUiState.DISCONNECTED)
-                Toast.makeText(this@DnsActivity, "اتصال ناموفق بود. دوباره امتحان کنید.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@DnsActivity, str("dlg_conn_failed"), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1855,22 +1852,17 @@ class DnsActivity : AppCompatActivity() {
     /** یک پرس‌وجوی DNS با تایم‌اوت تطبیقی + fallback هوشمند به TCP؛ -1 یعنی بی‌پاسخ. */
     private fun pingDnsOnce(address: String, data: ByteArray): Long {
         if (data.isEmpty()) return -1L
-        // ۱) UDP (مسیر عادی) با تایم‌اوت تطبیقی
+        // ۱) UDP (مسیر عادی) با تایم‌اوت ثابت ۱ ثانیه — مثل نسخه‌ی پایدار قبلی
         val udpMs = pingDnsUdp(address, data)
         if (udpMs > 0) return udpMs
         // ۲) اگه UDP بی‌پاسخ ماند و پشتیبانی TCP فعال باشد، همان کوئری با TCP امتحان می‌شود
         if (AppSettings.isTcpFallbackEnabled(applicationContext)) {
-            val tcpMs = pingDnsTcp(address, data)
-            if (tcpMs > 0) {
-                recordPingRtt(address, tcpMs)
-                return tcpMs
-            }
+            return pingDnsTcp(address, data)
         }
-        recordPingFailure(address)
         return -1L
     }
 
-    /** پرس‌وجوی UDP با تایم‌اوت تطبیقی؛ -1 یعنی تایم‌اوت/خطا. */
+    /** پرس‌وجوی UDP با تایم‌اوت ثابت؛ -1 یعنی تایم‌اوت/خطا. */
     private fun pingDnsUdp(address: String, data: ByteArray): Long {
         return try {
             val socket = DatagramSocket()
@@ -1883,7 +1875,7 @@ class DnsActivity : AppCompatActivity() {
                     }
                 }
             }
-            socket.soTimeout = adaptivePingTimeout(address)
+            socket.soTimeout = 1000
             val packet = DatagramPacket(data, data.size, InetAddress.getByName(address), 53)
             // تایمر دقیقاً همین‌جا شروع می‌شود؛ ساخت/bind سوکت جزو تاخیر شبکه نیست.
             val start = System.nanoTime()
@@ -1893,7 +1885,6 @@ class DnsActivity : AppCompatActivity() {
             socket.receive(response)
             val elapsedMs = (System.nanoTime() - start) / 1_000_000
             socket.close()
-            recordPingRtt(address, elapsedMs)
             elapsedMs
         } catch (_: Exception) {
             -1L
@@ -1915,8 +1906,8 @@ class DnsActivity : AppCompatActivity() {
                 }
                 // RTT کامل TCP شامل برقراری اتصال هم می‌شود (منصفانه‌تر برای مقایسه)
                 val start = System.nanoTime()
-                s.connect(InetSocketAddress(InetAddress.getByName(address), 53), adaptivePingTimeout(address))
-                s.soTimeout = adaptivePingTimeout(address)
+                s.connect(InetSocketAddress(InetAddress.getByName(address), 53), 1000)
+                s.soTimeout = 1000
                 val out = DataOutputStream(s.getOutputStream())
                 out.write((data.size shr 8) and 0xFF)
                 out.write(data.size and 0xFF)
@@ -1932,23 +1923,6 @@ class DnsActivity : AppCompatActivity() {
         } catch (_: Exception) {
             -1L
         }
-    }
-
-    /** تایم‌اوت تطبیقی: حدود ۴ برابر میانگین پاسخ، محدود بین ۳۰۰ms تا ۱.۵ ثانیه. */
-    private fun adaptivePingTimeout(address: String): Int {
-        val ema = pingTimeoutEma[address] ?: 1000.0
-        return (ema * 4.0).toInt().coerceIn(300, 1500)
-    }
-
-    private fun recordPingRtt(address: String, ms: Long) {
-        val prev = pingTimeoutEma[address]
-        pingTimeoutEma[address] = if (prev == null) ms.toDouble() else prev * 0.7 + ms * 0.3
-    }
-
-    /** بعد از شکست کامل (UDP و TCP هر دو)، تخمین را بالا می‌بریم تا صبورتر باشیم. */
-    private fun recordPingFailure(address: String) {
-        val prev = pingTimeoutEma[address] ?: 1000.0
-        pingTimeoutEma[address] = (prev * 1.4).coerceAtMost(1500.0)
     }
 
     private fun startStatsUpdateLoop() {
@@ -2230,10 +2204,10 @@ class DnsActivity : AppCompatActivity() {
                 statsGrid.addView(cell)
                 return valueView
             }
-            detailSentText = statCell("ارسالی")
-            detailLostText = statCell("گم‌شده")
-            detailTotalText = statCell("کل")
-            detailAvgText = statCell("میانگین")
+            detailSentText = statCell(context.str("stat_sent"))
+            detailLostText = statCell(context.str("stat_lost"))
+            detailTotalText = statCell(context.str("stat_total"))
+            detailAvgText = statCell(context.str("stat_avg"))
             detailsPanel.addView(divider)
             detailsPanel.addView(statsGrid)
 
