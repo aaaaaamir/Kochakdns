@@ -61,10 +61,11 @@ class MainActivity : BaseActivity() {
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val pending = PendingStatsStore.read(applicationContext)
             if (pending != null) {
+                // اول پاک کن تا (مثلاً در صورت اتصال هم‌زمان از کاشی) دوبار ارسال نشود
+                PendingStatsStore.clear(applicationContext)
                 if (pending.durationMs >= 30_000) {
                     StatsReporter.send(pending.profileName, pending.sent, pending.lost, pending.operator)
                 }
-                PendingStatsStore.clear(applicationContext)
             }
         }
 
