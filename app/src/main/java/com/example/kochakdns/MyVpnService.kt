@@ -18,7 +18,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -32,7 +34,6 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Semaphore
 
 /**
  * سرویس VPN — فقط DNS را از تونل عبور می‌دهد (پایدار و بدون NAT).
@@ -60,9 +61,6 @@ class MyVpnService : VpnService() {
         private const val TUN_ADDRESS = "10.8.0.1"
         // آدرس محلی ULA برای رابط تون در حالت IPv6؛ فقط برای خود دستگاه معتبره
         private const val TUN_ADDRESS_V6 = "fd12:3456:789a::1"
-        // حداکثر تعداد پرس‌وجوی DNS هم‌زمان در حال relay؛ محافظت در برابر flood
-        private const val MAX_CONCURRENT_RELAYS = 16
-
         // حداکثر حجم payload که یک پاسخ UDP می‌تواند حمل کند (MTU 1500 − هدرها)
         private const val MAX_UDP_PAYLOAD = 1472
 
@@ -77,8 +75,14 @@ class MyVpnService : VpnService() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
-    private val relayPermits = Semaphore(MAX_CONCURRENT_RELAYS)
     private val outputMutex = Mutex()
+
+    // ===== همزمانی جداگانه‌ی UDP و TCP =====
+    // تعداد پرس‌وجوهای همزمان هر پروتکل مستقل است و از تنظیمات خوانده می‌شود.
+    // با withPermit (نه tryAcquire) صف می‌شوند تا هیچ کوئری‌ای بی‌دلیل «گم‌شده»
+    // حساب نشود.
+    private var udpPermits = Semaphore(8)
+    private var tcpPermits = Semaphore(4)
 
     // ===== بهینه‌سازی: مخزن سوکت‌های DNS =====
     // سوکت‌های protected بازیافت می‌شوند؛ اکثر کوئری‌ها دیگر نه ساخت سوکت
@@ -97,13 +101,17 @@ class MyVpnService : VpnService() {
     // پشتیبانی TCP fallback (قابل خاموش شدن از تنظیمات؛ پیش‌فرض فعال)
     private var tcpFallbackEnabled = true
 
-    // یادگیری RTT هر سرور (برای تایم‌اوت تطبیقی) و مجموعه‌ی کلیدهای در حال
-    // تازه‌سازی پیشدستانه‌ی کش — تا برای یک کلید دو تازه‌سازی موازی نشود.
+    // تایم‌اوت تطبیقیِ قابل تنظیم از تنظیمات: نقطه‌ی شروع (و سقف) + کف.
+    // پیش‌فرض‌ها دقیقاً رفتارِ پایدارِ قبلی هستند (شروع ۵ ثانیه، کف ۲ ثانیه).
+    private var timeoutStartMs = 5000
+    private var timeoutFloorMs = 2000
+
+    // میانگین متحرک زمان پاسخ هر سرور (برای تایم‌اوت تطبیقی)
     private val rttEma = ConcurrentHashMap<String, Double>()
+
+    // مجموعه‌ی کلیدهای در حال تازه‌سازی پیشدستانه‌ی کش — تا برای یک کلید
+    // دو تازه‌سازی موازی نشود.
     private val refreshingKeys = ConcurrentHashMap.newKeySet<String>()
-    // شمارش شکست‌های متوالی UDP برای هر سرور: وقتی UDP چند بار پشت‌سرهم جواب
-    // ندهد، سریع‌تر به TCP سوییچ می‌کنیم (به‌جای ۵ ثانیه انتظار برای UDP).
-    private val udpFailStreak = ConcurrentHashMap<String, Int>()
 
     // آخرین DNSهایی که تونل با آن‌ها ساخته شده
     private var lastDnsServers: List<String> = emptyList()
@@ -162,7 +170,7 @@ class MyVpnService : VpnService() {
         }
         if (validV4.isEmpty() && validV6.isEmpty()) { stopSelf(); return }
 
-        startForeground(NOTIFICATION_ID, buildNotification("در حال اتصال به $dnsName..."))
+        startForeground(NOTIFICATION_ID, buildNotification("${str("notif_connecting")} $dnsName..."))
 
         // null یعنی کاربر هیچ انتخاب سفارشی‌ای نکرده → «همه برنامه‌ها».
         val selectedPackages = TunnelAppsStore.getSelectedPackages(this)
@@ -171,6 +179,13 @@ class MyVpnService : VpnService() {
         // خواندن وضعیت کش DNS و TCP fallback از تنظیمات (هر دو پیش‌فرض فعال)
         dnsCacheEnabled = AppSettings.isDnsCacheEnabled(this)
         tcpFallbackEnabled = AppSettings.isTcpFallbackEnabled(this)
+
+        // همزمانی و تایم‌اوت از تنظیمات خوانده می‌شوند (هر اتصال تازه اعمال می‌شود)
+        udpPermits = Semaphore(AppSettings.getUdpConcurrent(this))
+        tcpPermits = Semaphore(AppSettings.getTcpConcurrent(this))
+        timeoutStartMs = AppSettings.getTimeoutStartMs(this)
+        timeoutFloorMs = AppSettings.getTimeoutFloorMs(this)
+        rttEma.clear()
 
         val builder = Builder().apply {
             addAddress(TUN_ADDRESS, 32)
@@ -297,19 +312,15 @@ class MyVpnService : VpnService() {
         }
     }
 
-    /** هر relay را به‌عنوان یک کوروتین مستقل اجرا می‌کند، با سقف تعداد هم‌زمان. */
+    /**
+     * هر relay را به‌عنوان یک کوروتین مستقل اجرا می‌کند.
+     *
+     * سقف همزمانی داخل خودِ udpQuery/tcpQuery اعمال می‌شود (جداگانه برای هر
+     * پروتکل)؛ اینجا فقط launch ساده است تا کوئری‌های کش‌شده (که شبکه نمی‌زنند)
+     * هم بدون تأخیر جواب بگیرند.
+     */
     private fun launchRelay(block: suspend () -> Unit) {
-        serviceScope.launch {
-            if (!relayPermits.tryAcquire()) {
-                VpnStats.totalPacketsLost.incrementAndGet()
-                return@launch
-            }
-            try {
-                block()
-            } finally {
-                relayPermits.release()
-            }
-        }
+        serviceScope.launch { block() }
     }
 
     /** گرفتن یک سوکت protected از مخزن (یا ساخت جدید در صورت خالی بودن). */
@@ -357,8 +368,15 @@ class MyVpnService : VpnService() {
                 VpnStats.dnsCacheMisses.incrementAndGet()
             }
 
-            // پرس‌وجوی واقعی: اول UDP با تایم‌اوت تطبیقی؛ در صورت بی‌پاسخی TCP
-            val responsePayload = queryUpstream(dnsPayload, dstIp)
+            // پرس‌وجوی واقعی: اول UDP؛ فقط اگر UDP واقعاً بی‌پاسخ ماند، TCP.
+            // هر کوئری دقیقاً یک بار شمرده می‌شود: یا موفق (Sent) یا شکست کاملِ
+            // UDP+TCP (Lost). شکستِ UDP به‌تنهایی «گم‌شده» نیست چون TCP جبرانش
+            // می‌کند؛ و شکستِ هر دو هم فقط همین یک بار حساب می‌شود (نه دو بار).
+            val responsePayload = try {
+                queryUpstream(dnsPayload, dstIp)
+            } catch (_: Exception) {
+                null
+            }
             if (responsePayload == null) {
                 VpnStats.totalPacketsLost.incrementAndGet()
                 return
@@ -366,7 +384,8 @@ class MyVpnService : VpnService() {
             if (dnsCacheEnabled) dnsCache.put(dnsPayload, responsePayload)
             writeReplyV4(output, dstIp, srcIp, srcPort, responsePayload)
         } catch (_: Exception) {
-            VpnStats.totalPacketsLost.incrementAndGet()
+            // خطای parse/write (مثلاً هنگام بسته شدن تونل) — خودِ پرس‌وجو جواب
+            // گرفته است؛ به‌عنوان «گم‌شده» حساب نمی‌شود تا دوبار شماری نشود.
         }
     }
 
@@ -391,8 +410,13 @@ class MyVpnService : VpnService() {
                 VpnStats.dnsCacheMisses.incrementAndGet()
             }
 
-            // پرس‌وجوی واقعی: اول UDP با تایم‌اوت تطبیقی؛ در صورت بی‌پاسخی TCP
-            val responsePayload = queryUpstream(dnsPayload, dstIp)
+            // پرس‌وجوی واقعی: اول UDP؛ فقط اگر UDP واقعاً بی‌پاسخ ماند، TCP.
+            // (شمارش «گم‌شده» دقیقاً یک بار — فقط وقتی هر دو پروتکل شکست بخورند.)
+            val responsePayload = try {
+                queryUpstream(dnsPayload, dstIp)
+            } catch (_: Exception) {
+                null
+            }
             if (responsePayload == null) {
                 VpnStats.totalPacketsLost.incrementAndGet()
                 return
@@ -400,7 +424,7 @@ class MyVpnService : VpnService() {
             if (dnsCacheEnabled) dnsCache.put(dnsPayload, responsePayload)
             writeReplyV6(output, dstIp, srcIp, srcPort, responsePayload)
         } catch (_: Exception) {
-            VpnStats.totalPacketsLost.incrementAndGet()
+            // خطای parse/write — پرس‌وجو جواب گرفته؛ گم‌شده حساب نمی‌شود.
         }
     }
 
@@ -408,85 +432,82 @@ class MyVpnService : VpnService() {
     // پرس‌وجوی هوشمند upstream: UDP با تایم‌اوت تطبیقی + fallback به TCP
     // ------------------------------------------------------------
 
-    /** پرس‌وجوی DNS از سرور بالادستی: اول UDP، در صورت بی‌پاسخی TCP (اگه فعال باشد). null یعنی شکست کامل. */
-    private fun queryUpstream(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
+    /**
+     * پرس‌وجوی DNS از سرور بالادستی: اول UDP، و فقط اگر UDP واقعاً بی‌پاسخ ماند،
+     * TCP (در صورت فعال بودن). null یعنی شکست کاملِ هر دو.
+     *
+     * تضمین «شمارش دقیقاً یک بار»: این تابع فقط null/پاسخ برمی‌گرداند و هیچ
+     * شمارنده‌ای را عوض نمی‌کند؛ شمارش «گم‌شده» فقط در فراخواننده و فقط یک بار
+     * انجام می‌شود.
+     */
+    private suspend fun queryUpstream(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
         udpQuery(dnsPayload, server)?.let { return it }
         if (!tcpFallbackEnabled) return null
         val tcpResp = tcpQuery(dnsPayload, server) ?: return null
         return if (tcpResp.size <= MAX_UDP_PAYLOAD) tcpResp else truncateWithTc(tcpResp)
     }
 
-    /** ارسال پرس‌وجوی UDP با تایم‌اوت تطبیقی؛ null یعنی تایم‌اوت/خطا. */
-    private fun udpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
-        val socket = acquireDnsSocket()
-        return try {
-            val streak = udpFailStreak[server.hostAddress] ?: 0
-            // بعد از چند شکست متوالی UDP، حدس می‌زنیم UDP این سرور دچار مشکل
-            // شده؛ تایم‌اوت را کوتاه می‌کنیم تا زودتر به TCP سوییچ شود.
-            val timeout = if (streak >= 2) {
-                minOf(adaptiveTimeoutMs(server.hostAddress), 1200)
-            } else {
-                adaptiveTimeoutMs(server.hostAddress)
+    /**
+     * پرس‌وجوی UDP با تایم‌اوت تطبیقیِ قابل تنظیم؛ null یعنی تایم‌اوت/خطا.
+     * چندین پرس‌وجوی UDP می‌توانند همزمان اجرا شوند (سقف از تنظیمات).
+     */
+    private suspend fun udpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? =
+        udpPermits.withPermit {
+            val socket = acquireDnsSocket()
+            try {
+                socket.soTimeout = adaptiveTimeoutMs(server.hostAddress)
+                val start = System.nanoTime()
+                socket.send(DatagramPacket(dnsPayload, dnsPayload.size, server, 53))
+                val buffer = ByteArray(1500)
+                val resp = DatagramPacket(buffer, buffer.size)
+                socket.receive(resp)
+                val rttMs = (System.nanoTime() - start) / 1_000_000
+                recordRtt(server.hostAddress, rttMs)
+                resp.data.copyOfRange(0, resp.length)
+            } catch (_: Exception) {
+                recordTimeout(server.hostAddress)
+                null
+            } finally {
+                releaseDnsSocket(socket)
             }
-            socket.soTimeout = timeout
-            val start = System.nanoTime()
-            socket.send(DatagramPacket(dnsPayload, dnsPayload.size, server, 53))
-            val buffer = ByteArray(1500)
-            val resp = DatagramPacket(buffer, buffer.size)
-            socket.receive(resp)
-            val rttMs = (System.nanoTime() - start) / 1_000_000
-            udpFailStreak[server.hostAddress] = 0
-            recordRtt(server.hostAddress, rttMs)
-            resp.data.copyOfRange(0, resp.length)
-        } catch (_: Exception) {
-            udpFailStreak.merge(server.hostAddress, 1) { a, b -> a + b }
-            recordTimeout(server.hostAddress)
-            null
-        } finally {
-            releaseDnsSocket(socket)
         }
-    }
 
-    /** پرس‌وجوی TCP (با پیشوند ۲ بایتی طول، RFC 1035) برای وقتی UDP جواب نداد. */
-    private fun tcpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
-        return try {
-            Socket().use { s ->
-                // سوکت نباید از تونل خودمان رد شود وگرنه لوپ می‌شود
-                try { protect(s) } catch (_: Exception) {}
-                s.connect(InetSocketAddress(server, 53), 3000)
-                s.soTimeout = 4000
-                val out = DataOutputStream(s.getOutputStream())
-                out.write((dnsPayload.size shr 8) and 0xFF)
-                out.write(dnsPayload.size and 0xFF)
-                out.write(dnsPayload)
-                out.flush()
-                val input = DataInputStream(s.getInputStream())
-                val len = input.readUnsignedShort()
-                if (len <= 0) return null
-                val buf = ByteArray(len)
-                input.readFully(buf)
-                buf
+    /**
+     * پرس‌وجوی TCP (با پیشوند ۲ بایتی طول، RFC 1035) برای وقتی UDP جواب نداد.
+     * همزمانی TCP هم مستقل از UDP و قابل تنظیم است.
+     */
+    private suspend fun tcpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? =
+        tcpPermits.withPermit {
+            try {
+                Socket().use { s ->
+                    // سوکت نباید از تونل خودمان رد شود وگرنه لوپ می‌شود
+                    try { protect(s) } catch (_: Exception) {}
+                    s.connect(InetSocketAddress(server, 53), 2000)
+                    s.soTimeout = 3000
+                    val out = DataOutputStream(s.getOutputStream())
+                    out.write((dnsPayload.size shr 8) and 0xFF)
+                    out.write(dnsPayload.size and 0xFF)
+                    out.write(dnsPayload)
+                    out.flush()
+                    val input = DataInputStream(s.getInputStream())
+                    val len = input.readUnsignedShort()
+                    if (len <= 0) return@withPermit null
+                    val buf = ByteArray(len)
+                    input.readFully(buf)
+                    buf
+                }
+            } catch (_: Exception) {
+                null
             }
-        } catch (_: Exception) {
-            null
         }
+
+    // ---- تایم‌اوت تطبیقی (نقطه‌ی شروع و کف از تنظیمات) ----
+
+    /** تایم‌اوت = ۴×میانگین پاسخ، محدود بین کف و سقفِ تنظیم‌شده. */
+    private fun adaptiveTimeoutMs(host: String): Int {
+        val ema = rttEma[host] ?: (timeoutStartMs / 4.0)
+        return (ema * 4.0).toInt().coerceIn(timeoutFloorMs, timeoutStartMs)
     }
-
-    /** اگر پاسخ از ظرفیت یک UDP جا نشد، با تنظیم بیت TC کوتاهش می‌کنیم. */
-    private fun truncateWithTc(response: ByteArray): ByteArray {
-        if (response.size <= MAX_UDP_PAYLOAD) return response
-        val out = response.copyOf(MAX_UDP_PAYLOAD)
-        if (out.size >= 4) {
-            out[2] = ((out[2].toInt() and 0xFF) or 0x02).toByte()
-        }
-        return out
-    }
-
-    // ---- تایم‌اوت تطبیقی بر اساس میانگین زمان پاسخ هر سرور ----
-
-    /** تایم‌اوت دینامیک: حدود ۴ برابر میانگین پاسخ، محدود بین ۶۰۰ms تا ۵ ثانیه. */
-    private fun adaptiveTimeoutMs(host: String): Int =
-        ((rttEma[host] ?: 900.0) * 4.0).toInt().coerceIn(600, 5000)
 
     private fun recordRtt(host: String, ms: Long) {
         val prev = rttEma[host]
@@ -495,8 +516,20 @@ class MyVpnService : VpnService() {
 
     /** بعد از تایم‌اوت، تخمین را بالا می‌بریم تا دفعه‌ی بعد صبورتر باشیم. */
     private fun recordTimeout(host: String) {
-        val prev = rttEma[host] ?: 900.0
-        rttEma[host] = (prev * 1.4).coerceAtMost(5000.0)
+        val prev = rttEma[host] ?: (timeoutStartMs / 4.0)
+        rttEma[host] = (prev * 1.4).coerceAtMost(timeoutStartMs / 4.0)
+    }
+
+    /**
+     * اگر پاسخ از ظرفیت یک UDP جا نشد، کوتاهش می‌کنیم.
+     *
+     * نکته: بیت TC (Truncated) را عمداً ست نمی‌کنیم؛ چون تونل ما فقط UDP:53 را
+     * relay می‌کند و اگر TC بگذاریم، کلاینت با TCP:53 دوباره تلاش می‌کند که آن هم
+     * به تونل می‌افتد و به‌عنوان «گم‌شده» شمرده می‌شود. فقط بدنه را به اندازه‌ی
+     * امن می‌بُریم (مثل محدودیت طبیعی یک پاسخ UDP).
+     */
+    private fun truncateWithTc(response: ByteArray): ByteArray {
+        return if (response.size <= MAX_UDP_PAYLOAD) response else response.copyOf(MAX_UDP_PAYLOAD)
     }
 
     // ---- تازه‌سازی پیشدستانه‌ی ورودی‌های کش منقضی‌شده (stale-while-revalidate) ----
@@ -505,16 +538,12 @@ class MyVpnService : VpnService() {
         val k = dnsCache.keyOf(query)
         if (!refreshingKeys.add(k)) return // هم‌اکنون در حال تازه‌سازی است
         serviceScope.launch {
-            if (!relayPermits.tryAcquire()) {
-                refreshingKeys.remove(k)
-                return@launch
-            }
             try {
+                // سقف همزمانی داخل خودِ queryUpstream (udpQuery/tcpQuery) اعمال می‌شود
                 val resp = queryUpstream(query, server)
                 if (resp != null && dnsCacheEnabled) dnsCache.put(query, resp)
             } finally {
                 refreshingKeys.remove(k)
-                relayPermits.release()
             }
         }
     }
@@ -736,7 +765,6 @@ class MyVpnService : VpnService() {
         readerJob?.cancel()
         readerJob = null
         refreshingKeys.clear()
-        udpFailStreak.clear()
         // تخلیه‌ی مخزن سوکت‌ها
         while (true) {
             val s = dnsSocketPool.poll() ?: break
@@ -797,7 +825,7 @@ class MyVpnService : VpnService() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "قطع اتصال", stopPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, str("notif_disconnect"), stopPendingIntent)
             .build()
     }
 
@@ -811,7 +839,7 @@ class MyVpnService : VpnService() {
             val packetsLost = VpnStats.totalPacketsLost.get()
             "↑ ${formatBytes(bytesSent)} | ↓ ${formatBytes(bytesReceived)}\n📦 $packetsSent | ❌ $packetsLost"
         } else {
-            VpnStats.activeDnsName?.let { "متصل به $it" } ?: "Kochak DNS فعال است"
+            VpnStats.activeDnsName?.let { "${str("notif_connected_to")} $it" } ?: str("notif_active")
         }
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification(contentText))
     }
