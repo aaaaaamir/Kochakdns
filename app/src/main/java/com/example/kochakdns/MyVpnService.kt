@@ -100,6 +100,8 @@ class MyVpnService : VpnService() {
     private var dnsCacheEnabled = true
     // پشتیبانی TCP fallback (قابل خاموش شدن از تنظیمات؛ پیش‌فرض فعال)
     private var tcpFallbackEnabled = true
+    // حالت فقط TCP: همه‌ی درخواست‌ها مستقیم با TCP ارسال می‌شوند (بدون UDP)
+    private var tcpOnlyEnabled = false
 
     // تایم‌اوت تطبیقیِ قابل تنظیم از تنظیمات: نقطه‌ی شروع (و سقف) + کف.
     // پیش‌فرض‌ها دقیقاً رفتارِ پایدارِ قبلی هستند (شروع ۵ ثانیه، کف ۲ ثانیه).
@@ -182,6 +184,7 @@ class MyVpnService : VpnService() {
         // خواندن وضعیت کش DNS و TCP fallback از تنظیمات (هر دو پیش‌فرض فعال)
         dnsCacheEnabled = AppSettings.isDnsCacheEnabled(this)
         tcpFallbackEnabled = AppSettings.isTcpFallbackEnabled(this)
+        tcpOnlyEnabled = AppSettings.isTcpOnlyEnabled(this)
 
         // همزمانی و تایم‌اوت از تنظیمات خوانده می‌شوند (هر اتصال تازه اعمال می‌شود)
         udpPermits = Semaphore(AppSettings.getUdpConcurrent(this))
@@ -438,14 +441,17 @@ class MyVpnService : VpnService() {
     // ------------------------------------------------------------
 
     /**
-     * پرس‌وجوی DNS از سرور بالادستی: اول UDP، و فقط اگر UDP واقعاً بی‌پاسخ ماند،
-     * TCP (در صورت فعال بودن). null یعنی شکست کاملِ هر دو.
+     * پرس‌وجوی DNS از سرور بالادستی. null یعنی شکست کاملِ همه‌ی تلاش‌ها.
      *
-     * تضمین «شمارش دقیقاً یک بار»: این تابع فقط null/پاسخ برمی‌گرداند و هیچ
-     * شمارنده‌ای را عوض نمی‌کند؛ شمارش «گم‌شده» فقط در فراخواننده و فقط یک بار
-     * انجام می‌شود.
+     * ترتیب بسته به حالت:
+     *  - فقط TCP → مستقیم TCP (UDP اصلاً امتحان نمی‌شود)
+     *  - عادی    → اول UDP؛ فقط اگر بی‌پاسخ بود و fallback فعال است، TCP
      */
     private suspend fun queryUpstream(dnsPayload: ByteArray, server: InetAddress): ByteArray? {
+        if (tcpOnlyEnabled) {
+            val tcpResp = tcpQuery(dnsPayload, server) ?: return null
+            return if (tcpResp.size <= MAX_UDP_PAYLOAD) tcpResp else truncateWithTc(tcpResp)
+        }
         udpQuery(dnsPayload, server)?.let { return it }
         if (!tcpFallbackEnabled) return null
         val tcpResp = tcpQuery(dnsPayload, server) ?: return null
@@ -478,17 +484,21 @@ class MyVpnService : VpnService() {
         }
 
     /**
-     * پرس‌وجوی TCP (با پیشوند ۲ بایتی طول، RFC 1035) برای وقتی UDP جواب نداد.
-     * همزمانی TCP هم مستقل از UDP و قابل تنظیم است.
+     * پرس‌وجوی TCP (با پیشوند ۲ بایتی طول، RFC 1035).
+     * همزمانی TCP مستقل از UDP است و تایم‌اوتش هم از تنظیمات می‌آید
+     * (تطبیقی یا ثابت) — مخصوصاً وقتی حالت فقط TCP روشن است.
      */
     private suspend fun tcpQuery(dnsPayload: ByteArray, server: InetAddress): ByteArray? =
         tcpPermits.withPermit {
+            var result: ByteArray? = null
             try {
                 Socket().use { s ->
                     // سوکت نباید از تونل خودمان رد شود وگرنه لوپ می‌شود
                     try { protect(s) } catch (_: Exception) {}
-                    s.connect(InetSocketAddress(server, 53), 2000)
-                    s.soTimeout = 3000
+                    val timeout = currentTimeoutMs(server.hostAddress)
+                    val start = System.nanoTime()
+                    s.connect(InetSocketAddress(server, 53), timeout)
+                    s.soTimeout = timeout
                     val out = DataOutputStream(s.getOutputStream())
                     out.write((dnsPayload.size shr 8) and 0xFF)
                     out.write(dnsPayload.size and 0xFF)
@@ -496,14 +506,19 @@ class MyVpnService : VpnService() {
                     out.flush()
                     val input = DataInputStream(s.getInputStream())
                     val len = input.readUnsignedShort()
-                    if (len <= 0) return@withPermit null
-                    val buf = ByteArray(len)
-                    input.readFully(buf)
-                    buf
+                    if (len > 0) {
+                        val buf = ByteArray(len)
+                        input.readFully(buf)
+                        val rttMs = (System.nanoTime() - start) / 1_000_000
+                        recordRtt(server.hostAddress, rttMs)
+                        result = buf
+                    }
                 }
             } catch (_: Exception) {
-                null
+                recordTimeout(server.hostAddress)
+                result = null
             }
+            result
         }
 
     // ---- تایم‌اوت تطبیقی (نقطه‌ی شروع و کف از تنظیمات) ----
