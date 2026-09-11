@@ -17,13 +17,12 @@ import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseActivity() {
 
     // نکته: درخواست مجوز VPN (VpnService.prepare) عمداً از اینجا حذف شد.
     // این مجوز فقط باید وقتی کاربر واقعاً دکمه‌ی اتصال رو توی DnsActivity می‌زنه
