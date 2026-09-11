@@ -293,6 +293,11 @@ object AppSettings {
     private const val KEY_QS_TILE = "qs_tile_enabled"
     private const val KEY_QS_SUGGESTION = "qs_tile_suggestion_shown"
     private const val KEY_TCP_FALLBACK = "tcp_fallback"
+    private const val KEY_UDP_CONCURRENT = "udp_concurrent"
+    private const val KEY_TCP_CONCURRENT = "tcp_concurrent"
+    private const val KEY_TIMEOUT_START = "timeout_start_ms"
+    private const val KEY_TIMEOUT_FLOOR = "timeout_floor_ms"
+    private const val KEY_LANGUAGE = "app_language"
 
     private fun prefs(context: android.content.Context) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
@@ -364,6 +369,52 @@ object AppSettings {
 
     fun setTcpFallbackEnabled(context: android.content.Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_TCP_FALLBACK, value).apply()
+    }
+
+    // حداکثر پرس‌وجوی هم‌زمان UDP به سمت سرور (پیش‌فرض ۸؛ بین ۱ تا ۶۴).
+    fun getUdpConcurrent(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_UDP_CONCURRENT, 8).coerceIn(1, 64)
+
+    fun setUdpConcurrent(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_UDP_CONCURRENT, value.coerceIn(1, 64)).apply()
+    }
+
+    // حداکثر پرس‌وجوی هم‌زمان TCP به سمت سرور (پیش‌فرض ۴؛ بین ۱ تا ۶۴).
+    fun getTcpConcurrent(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_TCP_CONCURRENT, 4).coerceIn(1, 64)
+
+    fun setTcpConcurrent(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_TCP_CONCURRENT, value.coerceIn(1, 64)).apply()
+    }
+
+    // نقطه‌ی شروع (و سقف) تایم‌اوت تطبیقی هر درخواست، به میلی‌ثانیه.
+    // پیش‌فرض ۵۰۰۰ms — همان صبرِ نسخه‌ی پایدار. بین ۲۰۰۰ تا ۱۰۰۰۰.
+    fun getTimeoutStartMs(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_TIMEOUT_START, 5000).coerceIn(2000, 10000)
+
+    fun setTimeoutStartMs(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_TIMEOUT_START, value.coerceIn(2000, 10000)).apply()
+    }
+
+    // کفِ تایم‌اوت تطبیقی: تایم‌اوت سرورهای سریع هرگز از این کمتر نمی‌شود.
+    // پیش‌فرض ۲۰۰۰ms. کمتر از آن (مخصوصاً زیر ~۱۵۰۰ms) روی لینک‌های ناپایدار
+    // ممکن است پاسخ‌های سالمِ کمی‌دیر را قطع کند و پکت گم‌شده را زیاد کند.
+    fun getTimeoutFloorMs(context: android.content.Context): Int {
+        val start = getTimeoutStartMs(context)
+        return prefs(context).getInt(KEY_TIMEOUT_FLOOR, 2000).coerceIn(500, start)
+    }
+
+    fun setTimeoutFloorMs(context: android.content.Context, value: Int) {
+        val start = getTimeoutStartMs(context)
+        prefs(context).edit().putInt(KEY_TIMEOUT_FLOOR, value.coerceIn(500, start)).apply()
+    }
+
+    // زبان برنامه: "device" (پیش‌فرض) | "fa" | "en"
+    fun getLanguage(context: android.content.Context): String =
+        prefs(context).getString(KEY_LANGUAGE, "device") ?: "device"
+
+    fun setLanguage(context: android.content.Context, value: String) {
+        prefs(context).edit().putString(KEY_LANGUAGE, value).apply()
     }
 }
 
