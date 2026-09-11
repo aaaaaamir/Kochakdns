@@ -15,7 +15,6 @@ import android.view.Gravity
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.PathParser
 
 /** رنگ خاکستری آیکون‌ها — هماهنگ با DnsActivity (به‌جای آبی). */
@@ -122,7 +121,7 @@ class MenuActivity(private val host: DnsActivity) {
 
         // ۱. گزینه‌ی تنظیمات (هنگام بازگشت، در صورت روشن بودن DNS وصل مجدد می‌شود)
         container.addView(
-            menuItemCard("تنظیمات", PATH_SETTINGS) {
+            menuItemCard(host.str("menu_settings"), PATH_SETTINGS) {
                 onItemClick()
                 host.openSettings()
             }
@@ -132,7 +131,7 @@ class MenuActivity(private val host: DnsActivity) {
         val prefs = host.getSharedPreferences("dns_prefs", Context.MODE_PRIVATE)
         val isIpv6Enabled = prefs.getBoolean("ipv6_enabled", true)
         container.addView(
-            menuToggleCard("پشتیبانی از IPv6", PATH_IPV6, isIpv6Enabled) { isChecked ->
+            menuToggleCard(host.str("menu_ipv6"), PATH_IPV6, isIpv6Enabled) { isChecked ->
                 prefs.edit().putBoolean("ipv6_enabled", isChecked).apply()
                 host.onIpv6Toggled(isChecked)
             }
@@ -140,7 +139,7 @@ class MenuActivity(private val host: DnsActivity) {
 
         // ۳. گزینه‌ی برنامه‌های تونل شده (هنگام بازگشت، وصل مجدد در صورت نیاز)
         container.addView(
-            menuItemCard("برنامه‌های تونل شده", PATH_TUNNEL_APPS) {
+            menuItemCard(host.str("menu_tunnel_apps"), PATH_TUNNEL_APPS) {
                 onItemClick()
                 host.openTunnelApps()
             }
