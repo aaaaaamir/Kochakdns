@@ -339,11 +339,19 @@ class DnsActivity : BaseActivity() {
     private var directJitterMs: Double = 0.0
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // بازگشت از تنظیمات/صفحه‌ی تونل‌برنامه‌ها: اگر VPN روشن بود، یک بار وصل مجدد
-    // انجام شود تا تغییر تنظیمات اعمال شود (فقط یک بار، با پرچم).
-    private var reconnectOnNextResume = false
+    // فلگ وصل مجدد موقع بازگشت از تنظیمات/تونل‌برنامه‌ها (اگر VPN روشن بود، یک بار
+    // وصل مجدد تا تغییرات اعمال شود). چون موقع تغییر زبان اکتیویتی recreate می‌شود،
+    // این فلگ باید خارج از instance بماند تا گم نشود.
+    companion object {
+        @Volatile
+        var reconnectPending = false
+    }
+
     // پیشنهاد یک‌باره‌ی کاشی دسترسی سریع فقط یک بار چک می‌شود
     private var qsSuggestionChecked = false
+    // زبانی که UI با آن ساخته شده؛ اگر در تنظیمات عوض شود، موقع برگشتن
+    // این صفحه خودش را دوباره می‌سازد (بدون نیاز به بستن برنامه)
+    private var appliedLanguage = ""
 
     // بنر بروزرسانی (بالای صفحه) و پرچم‌های جریان بروزرسانی/اطلاعیه
     private lateinit var updateBanner: LinearLayout
@@ -362,6 +370,7 @@ class DnsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
+        appliedLanguage = AppSettings.getLanguage(this)
         buildUI()
         setupVpnReceiver()
         val prefs = getSharedPreferences("dns_prefs", MODE_PRIVATE)
@@ -811,6 +820,11 @@ class DnsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        // اگر زبان در تنظیمات عوض شده باشد، صفحه را با زبان جدید بازسازی کن
+        if (AppSettings.getLanguage(this) != appliedLanguage) {
+            recreate()
+            return
+        }
         // هر بار که برمی‌گردی به این صفحه، دکمه رو با وضعیت واقعی VPN هماهنگ کن
         // (نه صرفاً چیزی که آخرین broadcast گفته)، تا هیچ‌وقت رنگش دروغ نگه.
         // فقط وقتی معتبره که وسط یک انتقال (CONNECTING/DISCONNECTING) نباشیم،
@@ -824,21 +838,21 @@ class DnsActivity : BaseActivity() {
 
         // برگشتن از تنظیمات/تونل‌برنامه‌ها با VPN روشن → یک بار وصل مجدد تا
         // تغییرات تنظیمات (کش، IPv6 و…) واقعاً اعمال شوند.
-        if (reconnectOnNextResume) {
-            reconnectOnNextResume = false
+        if (reconnectPending) {
+            reconnectPending = false
             if (actuallyConnected) restartVpnConnection()
         }
     }
 
     /** باز کردن صفحه‌ی تنظیمات؛ هنگام بازگشت، اگر VPN روشن بود وصل مجدد می‌شود. */
     fun openSettings() {
-        reconnectOnNextResume = true
+        reconnectPending = true
         startActivity(Intent(this, SettingsActivity::class.java))
     }
 
     /** باز کردن صفحه‌ی برنامه‌های تونل‌شده؛ هنگام بازگشت، وصل مجدد در صورت نیاز. */
     fun openTunnelApps() {
-        reconnectOnNextResume = true
+        reconnectPending = true
         startActivity(Intent(this, TunnelAppsActivity::class.java))
     }
 
