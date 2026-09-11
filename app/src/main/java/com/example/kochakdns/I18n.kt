@@ -59,6 +59,13 @@ object I18n {
         "set_tcp_fallback" to "پشتیبانی TCP (Fallback)",
         "set_tcp_fallback_sub" to "اگر UDP جواب ندهد، همان درخواست با TCP (پورت ۵۳) دوباره امتحان می‌شود. در شبکه‌هایی که UDP مختل است، خاموش کردنش یعنی پکت گم‌شده بیشتر و سایت‌ها باز نمی‌شوند. فقط وقتی خاموشش کن که مطمئنی UDP سالم است.",
 
+        // حالت فقط TCP
+        "set_tcp_only" to "حالت فقط TCP",
+        "set_tcp_only_sub" to "همه‌ی درخواست‌های DNS مستقیم با TCP ارسال می‌شوند (بدون UDP) — برای وقتی UDP کاملاً مسدود است. این حالت کندتر است و ممکن است برخی سرورها و سرویس‌ها درست کار نکنند.",
+        "tcp_only_warn_title" to "هشدار",
+        "tcp_only_warn_msg" to "در حالت فقط TCP، همه‌ی درخواست‌ها از طریق TCP می‌روند.\n\n• برخی سرورهای DNS که TCP پشتیبانی نمی‌کنند ممکن است جواب ندهند\n• سرعت معمولاً کمتر از UDP است\n• ممکن است برخی سایت‌ها یا سرویس‌ها به‌درستی کار نکنند\n\nفعالش کنم؟",
+        "activate" to "فعال کن",
+
         // همزمانی UDP
         "set_udp_conc" to "درخواست‌های همزمان UDP",
         "set_udp_conc_sub" to "چند درخواست DNS همزمان با UDP به سرور ارسال شود. بیشتر = در مواقع شلوغ سریع‌تر، ولی فشار بیشتر روی شبکه و در شبکه‌های ضعیف احتمال گم شدن پاکت بالا می‌رود. کمتر = پایدارتر، ولی ممکن است صف و تأخیر ایجاد شود.",
@@ -186,6 +193,12 @@ object I18n {
 
         "set_tcp_fallback" to "TCP fallback",
         "set_tcp_fallback_sub" to "If UDP gets no answer, the same request is retried over TCP (port 53). On networks where UDP is blocked, turning it off means more packet loss and pages failing to load. Only disable it if you are sure UDP is healthy.",
+
+        "set_tcp_only" to "TCP-only mode",
+        "set_tcp_only_sub" to "All DNS requests are sent directly over TCP (no UDP) — for when UDP is fully blocked. Slower, and some servers and services may not work properly.",
+        "tcp_only_warn_title" to "Warning",
+        "tcp_only_warn_msg" to "In TCP-only mode all requests go over TCP.\n\n• Some DNS servers that do not support TCP may not respond\n• It is usually slower than UDP\n• Some sites or services may not work properly\n\nEnable it?",
+        "activate" to "Enable",
 
         "set_udp_conc" to "Concurrent UDP requests",
         "set_udp_conc_sub" to "How many DNS requests are sent over UDP at the same time. More = faster under load, but more pressure on the network and higher packet loss on weak links. Fewer = more stable, but may cause queueing and latency.",
