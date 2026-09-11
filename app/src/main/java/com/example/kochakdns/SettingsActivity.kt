@@ -7,19 +7,19 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : BaseActivity() {
 
     companion object {
         // آیکون بازگشت (فلش Material)
@@ -35,16 +35,23 @@ class SettingsActivity : AppCompatActivity() {
         private const val ICON_TUNE = "M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,21v-2h8v-2h-8v-2h-2v6h2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2H11v2h10zM15,9h2V7h4V5h-4V3h-2v6z"
         // آیکون پشتیبانی TCP (رفرش/اتصال مجدد — Material «refresh»)
         private const val ICON_TCP = "M17.65,6.35C16.2,4.9 14.21,4 12,4c-4.42,0 -7.99,3.58 -7.99,8s3.57,8 7.99,8c3.73,0 6.84,-2.55 7.73,-6h-2.08c-0.82,2.33 -3.04,4 -5.65,4 -3.31,0 -6,-2.69 -6,-6s2.69,-6 6,-6c1.66,0 3.14,0.69 4.22,1.78L13,11h7V4l-2.35,2.35z"
+        // آیکون همزمانی (ردیف/صف — Material «layers»)
+        private const val ICON_CONC = "M5,17h14v2H5zM5,11h14v2H5zM5,5h14v2H5z"
+        // آیکون تایم‌اوت (ساعت — Material «schedule»)
+        private const val ICON_CLOCK = "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM13,7h-2v5l4.2,2.5 1,-1.6 -3.2,-1.9z"
+        // آیکون زبان (ترجمه — Material «translate»)
+        private const val ICON_LANG = "M12.87,15.07l-2.54,-2.51 0.03,-0.03c1.74,-1.94 2.98,-4.17 3.71,-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5,7.92 10.44,9.75 9,11.35 8.07,10.32 7.3,9.19 6.69,8h-2c0.73,1.63 1.73,3.17 2.98,4.56l-5.09,5.02L4,19l5,-5 3.11,3.11 0.76,-2.04zM18.5,10h-2L12,22h2l1.12,-3h4.75L21,22h2l-4.5,-12zM16.88,17l1.62,-4.33L20.12,17h-3.24z"
     }
 
     // خط زنده‌ی «نرخ پاسخ از کش» داخل کارت کش DNS (هر چند ثانیه به‌روز می‌شود)
     private lateinit var cacheHitRateText: TextView
+    private lateinit var root: FrameLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
 
-        val root = FrameLayout(this).apply {
+        root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F0F14"))
         }
 
@@ -65,7 +72,7 @@ class SettingsActivity : AppCompatActivity() {
             setOnClickListener { finish() }
         })
         header.addView(TextView(this).apply {
-            text = "تنظیمات"
+            text = str("settings_title")
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -93,35 +100,147 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        // ===== کش DNS =====
         list.addView(
             glassSwitch(
-                title = "کش DNS",
-                subtitle = "پاسخ‌های تکراری و نامعتبر DNS از حافظه خوانده می‌شوند و پاسخ‌های قدیمی تا رسیدن پاسخ تازه سرو می‌شوند",
+                title = str("set_dns_cache"),
+                subtitle = str("set_dns_cache_sub"),
                 iconPath = ICON_CACHE,
                 initial = AppSettings.isDnsCacheEnabled(this),
                 liveLine = cacheHitRateText
             ) { checked ->
                 AppSettings.setDnsCacheEnabled(this, checked)
-                // اعمال واقعی کش موقع بازگشت به صفحه‌ی اصلی انجام می‌شود (وصل مجدد)
-            }
-        )
-
-        list.addView(
-            glassSwitch(
-                title = "پشتیبانی TCP (Fallback)",
-                subtitle = "اگه پرس‌وجوی UDP جواب نده، همون پرس‌وجو با TCP (پورت ۵۳) دوباره امتحان می‌شه — دور زدن اختلال ISP روی UDP",
-                iconPath = ICON_TCP,
-                initial = AppSettings.isTcpFallbackEnabled(this)
-            ) { checked ->
-                AppSettings.setTcpFallbackEnabled(this, checked)
                 // اعمال واقعی موقع بازگشت به صفحه‌ی اصلی انجام می‌شود (وصل مجدد)
             }
         )
 
+        // ===== پشتیبانی TCP =====
         list.addView(
             glassSwitch(
-                title = "نمایش درصد پکت‌ها",
-                subtitle = "درصد موفقیت ارسال پکت‌ها روی کارت هر DNS نشون داده بشه",
+                title = str("set_tcp_fallback"),
+                subtitle = str("set_tcp_fallback_sub"),
+                iconPath = ICON_TCP,
+                initial = AppSettings.isTcpFallbackEnabled(this)
+            ) { checked ->
+                AppSettings.setTcpFallbackEnabled(this, checked)
+                // اعمال واقعی موقع بازگشت به صفحه‌ی اصلی انجام می‌شود
+            }
+        )
+
+        // ===== همزمانی UDP =====
+        list.addView(
+            glassValueCard(
+                title = str("set_udp_conc"),
+                subtitle = str("set_udp_conc_sub"),
+                iconPath = ICON_CONC,
+                valueLabel = "${AppSettings.getUdpConcurrent(this)} ${str("val_requests")}",
+                onClick = {
+                    val options = listOf(2, 4, 8, 16, 32)
+                    pickValueDialog(
+                        title = str("set_udp_conc"),
+                        options = options.map { "$it" to "$it ${str("val_requests")}" },
+                        current = AppSettings.getUdpConcurrent(this).toString()
+                    ) { v ->
+                        AppSettings.setUdpConcurrent(this, v.toInt())
+                        recreate()
+                    }
+                }
+            )
+        )
+
+        // ===== همزمانی TCP =====
+        list.addView(
+            glassValueCard(
+                title = str("set_tcp_conc"),
+                subtitle = str("set_tcp_conc_sub"),
+                iconPath = ICON_CONC,
+                valueLabel = "${AppSettings.getTcpConcurrent(this)} ${str("val_requests")}",
+                onClick = {
+                    val options = listOf(1, 2, 4, 8, 16)
+                    pickValueDialog(
+                        title = str("set_tcp_conc"),
+                        options = options.map { "$it" to "$it ${str("val_requests")}" },
+                        current = AppSettings.getTcpConcurrent(this).toString()
+                    ) { v ->
+                        AppSettings.setTcpConcurrent(this, v.toInt())
+                        recreate()
+                    }
+                }
+            )
+        )
+
+        // ===== نقطه شروع تایم‌اوت =====
+        list.addView(
+            glassValueCard(
+                title = str("set_timeout_start"),
+                subtitle = str("set_timeout_start_sub"),
+                iconPath = ICON_CLOCK,
+                valueLabel = "${AppSettings.getTimeoutStartMs(this)} ${str("val_ms")}",
+                onClick = {
+                    val options = listOf(3000, 4000, 5000, 6000, 8000)
+                    pickValueDialog(
+                        title = str("set_timeout_start"),
+                        options = options.map { "$it" to "$it ${str("val_ms")}" },
+                        current = AppSettings.getTimeoutStartMs(this).toString()
+                    ) { v ->
+                        AppSettings.setTimeoutStartMs(this, v.toInt())
+                        recreate()
+                    }
+                }
+            )
+        )
+
+        // ===== کف تایم‌اوت =====
+        list.addView(
+            glassValueCard(
+                title = str("set_timeout_floor"),
+                subtitle = str("set_timeout_floor_sub"),
+                iconPath = ICON_CLOCK,
+                valueLabel = "${AppSettings.getTimeoutFloorMs(this)} ${str("val_ms")}",
+                onClick = {
+                    val start = AppSettings.getTimeoutStartMs(this)
+                    val options = listOf(1000, 1500, 2000, 3000, 5000).filter { it <= start }
+                    pickValueDialog(
+                        title = str("set_timeout_floor"),
+                        options = options.map { "$it" to "$it ${str("val_ms")}" },
+                        current = AppSettings.getTimeoutFloorMs(this).toString()
+                    ) { v ->
+                        AppSettings.setTimeoutFloorMs(this, v.toInt())
+                        recreate()
+                    }
+                }
+            )
+        )
+
+        // ===== زبان برنامه =====
+        list.addView(
+            glassValueCard(
+                title = str("set_language"),
+                subtitle = "",
+                iconPath = ICON_LANG,
+                valueLabel = currentLanguageLabel(),
+                onClick = {
+                    pickValueDialog(
+                        title = str("set_language"),
+                        options = listOf(
+                            AppLang.DEVICE to str("lang_device"),
+                            AppLang.FA to str("lang_fa"),
+                            AppLang.EN to str("lang_en")
+                        ),
+                        current = AppSettings.getLanguage(this)
+                    ) { v ->
+                        AppSettings.setLanguage(this, v)
+                        recreate()
+                    }
+                }
+            )
+        )
+
+        // ===== نمایش درصد پکت‌ها =====
+        list.addView(
+            glassSwitch(
+                title = str("set_show_percent"),
+                subtitle = str("set_show_percent_sub"),
                 iconPath = ICON_PERCENT,
                 initial = AppSettings.isShowPacketPercentEnabled(this)
             ) { checked ->
@@ -129,10 +248,11 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
+        // ===== نمایش اطلاعات در نوتیفیکیشن =====
         list.addView(
             glassSwitch(
-                title = "نمایش اطلاعات در نوتیفیکیشن",
-                subtitle = "وقتی خاموش باشه، نوتیفیکیشن VPN دیگه اطلاعات پکت‌ها و حجم دیتای منتقل‌شده رو نشون نمی‌ده",
+                title = str("set_show_notif"),
+                subtitle = str("set_show_notif_sub"),
                 iconPath = ICON_NOTIFICATION,
                 initial = AppSettings.isShowNotificationInfoEnabled(this)
             ) { checked ->
@@ -141,20 +261,16 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
-        // کاشی‌های Quick Settings فقط از اندروید ۷ (API 24) به بعد وجود دارند
+        // ===== دسترسی سریع =====
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             list.addView(
                 glassCard(
-                    title = "دسترسی سریع (Quick Settings)",
+                    title = str("set_quick_settings"),
                     iconPath = ICON_TUNE,
                     onClick = {
                         AppSettings.setQsTileEnabled(this, true)
                         if (!QuickSettingsTileService.requestAddTile(this)) {
-                            Toast.makeText(
-                                this,
-                                "نوار اعلان را بکش پایین ← ویرایش (مداد) ← کاشی «Kochak» را اضافه کن",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            Toast.makeText(this, str("tile_hint"), Toast.LENGTH_LONG).show()
                         }
                     }
                 )
@@ -164,7 +280,7 @@ class SettingsActivity : AppCompatActivity() {
         // ===== درباره ما =====
         list.addView(
             glassCard(
-                title = "درباره ما",
+                title = str("set_about"),
                 iconPath = ICON_ABOUT,
                 onClick = { startActivity(Intent(this, AboutActivity::class.java)) }
             )
@@ -176,15 +292,21 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(root)
     }
 
+    private fun currentLanguageLabel(): String = when (AppSettings.getLanguage(this)) {
+        AppLang.FA -> str("lang_fa")
+        AppLang.EN -> str("lang_en")
+        else -> str("lang_device")
+    }
+
     /** به‌روزرسانی خط «نرخ پاسخ از کش» از آمار زنده‌ی سرویس VPN. */
     private fun updateCacheHitRate() {
         if (!::cacheHitRateText.isInitialized) return
         val rate = VpnStats.dnsCacheHitRate()
         val cacheOn = AppSettings.isDnsCacheEnabled(this)
         cacheHitRateText.text = when {
-            !cacheOn -> "نرخ پاسخ از کش: خاموش"
-            rate == null -> "نرخ پاسخ از کش: --"
-            else -> "نرخ پاسخ از کش: ${Math.round(rate)}٪"
+            !cacheOn -> str("cache_rate_off")
+            rate == null -> str("cache_rate_na")
+            else -> String.format(str("cache_rate"), Math.round(rate))
         }
         cacheHitRateText.setTextColor(
             when {
@@ -192,6 +314,97 @@ class SettingsActivity : AppCompatActivity() {
                 else -> Color.parseColor("#8A8A9A")
             }
         )
+    }
+
+    /** دیالوگ انتخاب مقدار (لیست عمودی از گزینه‌ها + لغو). */
+    private fun pickValueDialog(
+        title: String,
+        options: List<Pair<String, String>>,
+        current: String,
+        onPick: (String) -> Unit
+    ) {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setOnClickListener { dismissOverlay(this) }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 18)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                leftMargin = 44
+                rightMargin = 44
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1E2E"))
+                cornerRadius = 28f
+                setStroke(2, Color.parseColor("#2A2A3E"))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+
+        card.addView(TextView(this).apply {
+            text = title
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 16)
+        })
+
+        for ((value, label) in options) {
+            val isCurrent = value == current
+            val item = TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (isCurrent) Color.parseColor("#4C8DFF") else Color.parseColor("#B0B0BA"))
+                gravity = Gravity.CENTER
+                setPadding(18, 14, 18, 14)
+                background = GradientDrawable().apply {
+                    cornerRadius = 16f
+                    setColor(if (isCurrent) Color.parseColor("#224C8DFF") else Color.parseColor("#2A2A3E"))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 10 }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    dismissOverlay(overlay)
+                    onPick(value)
+                }
+            }
+            card.addView(item)
+        }
+
+        card.addView(TextView(this).apply {
+            text = str("cancel")
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#8A8A9A"))
+            gravity = Gravity.CENTER
+            setPadding(18, 12, 18, 12)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { dismissOverlay(overlay) }
+        })
+
+        overlay.addView(card)
+        root.addView(overlay)
+    }
+
+    private fun dismissOverlay(overlay: FrameLayout) {
+        (overlay.parent as? ViewGroup)?.removeView(overlay)
     }
 
     /** کارت کلیک‌پذیر شیشه‌ای (مثل «درباره ما») با فلش سمت چپ. */
@@ -224,6 +437,69 @@ class SettingsActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = 16
                 }
+            })
+
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(buildVectorDrawable(ICON_CHEVRON, Color.parseColor("#666680"), 36))
+            })
+
+            setOnClickListener { onClick() }
+        }
+    }
+
+    /** کارت مقدار (عنوان + توضیح + مقدار فعلی + فلش) برای گزینه‌های عددی/انتخابی. */
+    private fun glassValueCard(
+        title: String,
+        subtitle: String,
+        iconPath: String,
+        valueLabel: String,
+        onClick: () -> Unit
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(24, 18, 20, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 14 }
+            applyGlassBackground(this)
+            isClickable = true
+            isFocusable = true
+
+            addView(ImageView(this@SettingsActivity).apply {
+                setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
+            })
+
+            val textColumn = LinearLayout(this@SettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 16
+                    marginEnd = 10
+                }
+            }
+            textColumn.addView(TextView(this@SettingsActivity).apply {
+                text = title
+                setTextColor(Color.WHITE)
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+            })
+            if (subtitle.isNotBlank()) {
+                textColumn.addView(TextView(this@SettingsActivity).apply {
+                    text = subtitle
+                    setTextColor(Color.parseColor("#8A8A9A"))
+                    textSize = 11f
+                    setPadding(0, 6, 0, 0)
+                })
+            }
+            addView(textColumn)
+
+            addView(TextView(this@SettingsActivity).apply {
+                text = valueLabel
+                setTextColor(Color.parseColor("#4C8DFF"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, 0, 14, 0)
             })
 
             addView(ImageView(this@SettingsActivity).apply {
