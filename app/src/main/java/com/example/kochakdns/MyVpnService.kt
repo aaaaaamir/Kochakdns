@@ -163,6 +163,11 @@ class MyVpnService : VpnService() {
     }
 
     private fun startVpn(dnsServers: List<String>, dnsName: String) {
+        // اگر از جلسه‌ی قبلی (که force-stop شده و فرصت ارسال نداشته) آماری
+        // در حافظه مانده باشد، قبل از شروع جلسه‌ی جدید ارسالش می‌کنیم — حتی
+        // اگر کاربر فقط از کاشی وصل شده باشد و هرگز برنامه را باز نکرده باشد.
+        flushPendingStatsIfAny()
+
         val ipv6Enabled = getSharedPreferences(PREFS_DNS, MODE_PRIVATE).getBoolean("ipv6_enabled", true)
         // آدرس‌ها نرمال‌سازی می‌شوند (مثلاً حذف براکت‌های [ ] از IPv6) تا
         // addRoute/addDnsServer هرگز با آدرسِ بد خطا ندهند.
@@ -805,6 +810,22 @@ class MyVpnService : VpnService() {
     private fun sendStatsToServer(profileName: String, sent: Long, lost: Long, operator: String) {
         statsScope.launch {
             StatsReporter.send(profileName, sent, lost, operator)
+        }
+    }
+
+    /**
+     * فلاش کردن آمارِ جامانده از جلسه‌ی قبلی (که مثلاً با force-stop تمام شده).
+     * با همان قانون حداقل ۳۰ ثانیه: اگر واجد شرایط بود ارسال می‌شود، و در هر
+     * صورت پاک می‌شود تا جلسه‌ی جدید با عدد صفر شروع شود.
+     */
+    private fun flushPendingStatsIfAny() {
+        val pending = PendingStatsStore.read(this) ?: return
+        // اول پاک کن تا هیچ مسیر دیگری نتواند همین آمار را دوباره بخواند/بفرستد
+        PendingStatsStore.clear(this)
+        if (pending.durationMs >= 30_000) {
+            statsScope.launch {
+                StatsReporter.send(pending.profileName, pending.sent, pending.lost, pending.operator)
+            }
         }
     }
 
