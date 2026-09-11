@@ -594,6 +594,7 @@ private fun AppRow(
     checked: Boolean,
     onToggle: () -> Unit
 ) {
+    val ctx = LocalContext.current
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = Color(0xFF262636),
