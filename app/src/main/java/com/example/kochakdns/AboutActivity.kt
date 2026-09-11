@@ -53,7 +53,7 @@ class AboutActivity : BaseActivity() {
             setOnClickListener { finish() }
         })
         header.addView(TextView(this).apply {
-            text = "درباره ما"
+            text = str("about_title")
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -85,7 +85,7 @@ class AboutActivity : BaseActivity() {
 
         // عنوان برنامه
         content.addView(TextView(this).apply {
-            text = "کُچک دی ان اس"
+            text = str("app_brand")
             textSize = 24f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -94,7 +94,7 @@ class AboutActivity : BaseActivity() {
 
         // نسخه برنامه (واقعی، از اطلاعات بسته)
         content.addView(TextView(this).apply {
-            text = "نسخه ${getAppVersion()}"
+            text = "${str("about_version")} ${getAppVersion()}"
             textSize = 14f
             setTextColor(Color.parseColor("#888888"))
             gravity = Gravity.CENTER
@@ -102,8 +102,8 @@ class AboutActivity : BaseActivity() {
         })
 
         // لینک‌ها در کارت‌های خاکستری
-        content.addView(linkCard("وب‌سایت kodns.ir", "https://kodns.ir"))
-        content.addView(linkCard("وب‌سایت idothis.ir", "https://idothis.ir"))
+        content.addView(linkCard("${str("about_website")} kodns.ir", "https://kodns.ir"))
+        content.addView(linkCard("${str("about_website")} idothis.ir", "https://idothis.ir"))
 
         root.addView(content)
         setContentView(root)
