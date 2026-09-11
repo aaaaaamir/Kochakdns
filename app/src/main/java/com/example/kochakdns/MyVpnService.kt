@@ -105,6 +105,9 @@ class MyVpnService : VpnService() {
     // پیش‌فرض‌ها دقیقاً رفتارِ پایدارِ قبلی هستند (شروع ۵ ثانیه، کف ۲ ثانیه).
     private var timeoutStartMs = 5000
     private var timeoutFloorMs = 2000
+    // وقتی تطبیقی خاموش باشد، همه‌ی درخواست‌ها با تایم‌اوت ثابت ارسال می‌شوند.
+    private var adaptiveTimeoutEnabled = true
+    private var fixedTimeoutMs = 5000
 
     // میانگین متحرک زمان پاسخ هر سرور (برای تایم‌اوت تطبیقی)
     private val rttEma = ConcurrentHashMap<String, Double>()
@@ -185,6 +188,8 @@ class MyVpnService : VpnService() {
         tcpPermits = Semaphore(AppSettings.getTcpConcurrent(this))
         timeoutStartMs = AppSettings.getTimeoutStartMs(this)
         timeoutFloorMs = AppSettings.getTimeoutFloorMs(this)
+        adaptiveTimeoutEnabled = AppSettings.isAdaptiveTimeoutEnabled(this)
+        fixedTimeoutMs = AppSettings.getFixedTimeoutMs(this)
         rttEma.clear()
 
         val builder = Builder().apply {
@@ -455,7 +460,7 @@ class MyVpnService : VpnService() {
         udpPermits.withPermit {
             val socket = acquireDnsSocket()
             try {
-                socket.soTimeout = adaptiveTimeoutMs(server.hostAddress)
+                socket.soTimeout = currentTimeoutMs(server.hostAddress)
                 val start = System.nanoTime()
                 socket.send(DatagramPacket(dnsPayload, dnsPayload.size, server, 53))
                 val buffer = ByteArray(1500)
@@ -502,6 +507,10 @@ class MyVpnService : VpnService() {
         }
 
     // ---- تایم‌اوت تطبیقی (نقطه‌ی شروع و کف از تنظیمات) ----
+
+    /** تایم‌اوت فعلی هر درخواست: ثابت (اگه تطبیقی خاموش باشد) یا تطبیقی. */
+    private fun currentTimeoutMs(host: String): Int =
+        if (adaptiveTimeoutEnabled) adaptiveTimeoutMs(host) else fixedTimeoutMs
 
     /** تایم‌اوت = ۴×میانگین پاسخ، محدود بین کف و سقفِ تنظیم‌شده. */
     private fun adaptiveTimeoutMs(host: String): Int {
