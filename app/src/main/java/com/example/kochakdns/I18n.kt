@@ -128,6 +128,16 @@ object I18n {
         "cache_rate_off" to "نرخ پاسخ از کش: خاموش",
         "cache_rate_na" to "نرخ پاسخ از کش: --",
         "cache_rate" to "نرخ پاسخ از کش: %d٪",
+        "menu_cache" to "کش DNS",
+        "cache_off_short" to "کش خاموش",
+        "cache_off_msg" to "کش DNS خاموش است. برای دیدن آمار، اول آن را از تنظیمات روشن کن.",
+        "cache_stats_title" to "کش DNS",
+        "cache_rate_label" to "نرخ پاسخ از کش",
+        "cache_hits" to "پاسخ از کش",
+        "cache_misses" to "رفته به سرور",
+        "cache_saved_time" to "زمان صرفه‌جویی‌شده (تخمینی)",
+        "cache_log_header" to "آخرین پاسخ‌های از کش",
+        "cache_log_empty" to "هنوز پاسخی از کش سرو نشده",
 
         // صفحه اصلی (DnsActivity)
         "op_performance" to "عملکرد اوپراتورها",
@@ -253,6 +263,16 @@ object I18n {
         "cache_rate_off" to "Cache hit rate: off",
         "cache_rate_na" to "Cache hit rate: --",
         "cache_rate" to "Cache hit rate: %d%%",
+        "menu_cache" to "DNS cache",
+        "cache_off_short" to "Cache off",
+        "cache_off_msg" to "DNS cache is off. Enable it in Settings to see stats.",
+        "cache_stats_title" to "DNS cache",
+        "cache_rate_label" to "Cache hit rate",
+        "cache_hits" to "Served from cache",
+        "cache_misses" to "Sent to server",
+        "cache_saved_time" to "Estimated time saved",
+        "cache_log_header" to "Recent cache hits",
+        "cache_log_empty" to "No cache hits yet",
 
         // DnsActivity
         "op_performance" to "Operator performance",
