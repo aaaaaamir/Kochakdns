@@ -16,6 +16,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.PathParser
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /** رنگ خاکستری آیکون‌ها — هماهنگ با DnsActivity (به‌جای آبی). */
 internal const val ICON_GRAY = "#A0A0AC"
@@ -112,6 +116,9 @@ class MenuActivity(private val host: DnsActivity) {
         private const val PATH_SETTINGS = "M19.14,12.94c0.04,-0.3 0.06,-0.61 0.06,-0.94c0,-0.33 -0.02,-0.64 -0.07,-0.94l2.03,-1.58c0.18,-0.14 0.23,-0.41 0.12,-0.61l-1.92,-3.32c-0.12,-0.22 -0.37,-0.29 -0.59,-0.22l-2.39,0.96c-0.5,-0.38 -1.03,-0.7 -1.62,-0.94l-0.36,-2.54c-0.04,-0.24 -0.24,-0.41 -0.48,-0.41h-3.84c-0.24,0 -0.43,0.17 -0.47,0.41l-0.36,2.54c-0.59,0.24 -1.13,0.57 -1.62,0.94l-2.39,-0.96c-0.22,-0.08 -0.47,0 -0.59,0.22l-1.92,3.32c-0.12,0.2 -0.07,0.47 0.12,0.61l2.03,1.58c-0.05,0.3 -0.09,0.63 -0.09,0.94s0.04,0.64 0.09,0.94l-2.03,1.58c-0.18,0.14 -0.23,0.41 -0.12,0.61l1.92,3.32c0.12,0.22 0.37,0.29 0.59,0.22l2.39,-0.96c0.5,0.38 1.03,0.7 1.62,0.94l0.36,2.54c0.05,0.24 0.24,0.41 0.48,0.41h3.84c0.24,0 0.44,-0.17 0.47,-0.41l0.36,-2.54c0.59,-0.24 1.13,-0.56 1.62,-0.94l2.39,0.96c0.22,0.08 0.47,0 0.59,-0.22l1.92,-3.32c0.12,-0.2 0.07,-0.47 -0.12,-0.61l-2.01,-1.58zM12,15.6c-1.98,0 -3.6,-1.62 -3.6,-3.6s1.62,-3.6 3.6,-3.6s3.6,1.62 3.6,3.6s-1.62,3.6 -3.6,3.6z"
         private const val PATH_IPV6 = "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm-1,17.93c-3.95,-0.49 -7,-3.85 -7,-7.93 0,-0.62 0.08,-1.21 0.21,-1.79L9,15v1c0,1.1 0.9,2 2,2v1.93zm6.9,-2.54c-0.26,-0.81 -1,-1.39 -1.9,-1.39h-1v-3c0,-0.55 -0.45,-1 -1,-1H8v-2h2c0.55,0 1,-0.45 1,-1V7h2c1.1,0 2,-0.9 2,-2v-0.41c2.93,1.19 5,4.06 5,7.41 0,2.08 -0.8,3.97 -2.1,5.39z"
         private const val PATH_TUNNEL_APPS = "M4,11h6a1,1 0,0,0 1,-1V4a1,1 0,0,0 -1,-1H4a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zm10,0h6a1,1 0,0,0 1,-1V4a1,1 0,0,0 -1,-1h-6a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zM4,21h6a1,1 0,0,0 1,-1v-6a1,1 0,0,0 -1,-1H4a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1zm10,0h6a1,1 0,0,0 1,-1v-6a1,1 0,0,0 -1,-1h-6a1,1 0,0,0 -1,1v6a1,1 0,0,0 1,1z"
+        // آیکون کش (چرخه — هماهنگ با تنظیمات)
+        private const val PATH_CACHE = "M12,4V1L7,5l5,4V6c3.31,0 6,2.69 6,6 0,1.01 -0.25,1.97 -0.7,2.8l1.46,1.46C20.42,14.78 21,13.47 21,12 21,7.03 16.97,3 12,3zM6,12c0,-1.01 0.25,-1.97 0.7,-2.8L5.24,7.74C4.58,9.22 4,10.53 4,12c0,4.97 4.03,9 9,9v3l5,-4 -5,-4v3c-3.31,0 -6,-2.69 -6,-6z"
+        private const val ICON_CHEVRON = "M9,18l6,-6 -6,-6"
     }
 
     fun buildView(onItemClick: () -> Unit): LinearLayout {
@@ -126,6 +133,9 @@ class MenuActivity(private val host: DnsActivity) {
                 host.openSettings()
             }
         )
+
+        // ۲. کارت کش DNS (نرخ پاسخ از کش به‌صورت زنده + جزئیات با تپ)
+        container.addView(menuCacheCard())
 
         // ۲. گزینه‌ی سوئیچ خاموش/روشن IPv6 (در صورت روشن بودن DNS، فوراً وصل مجدد)
         val prefs = host.getSharedPreferences("dns_prefs", Context.MODE_PRIVATE)
@@ -149,6 +159,79 @@ class MenuActivity(private val host: DnsActivity) {
     }
 
     /** آیتم استاندارد منو داخل یک کادر کارتمانند (مثل کارت‌های DNS). */
+    /** کارت کش DNS: نرخ پاسخ از کش (زنده) + تپ برای دیدن جزئیات. */
+    private fun menuCacheCard(): LinearLayout {
+        val rateView = TextView(host).apply {
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#8A8A9A"))
+            setPadding(0, 6, 0, 0)
+        }
+        updateCacheRateLine(rateView)
+        // به‌روزرسانی زنده‌ی نرخ کش تا وقتی منو ساخته شده
+        host.lifecycleScope.launch {
+            while (isActive) {
+                delay(1500)
+                updateCacheRateLine(rateView)
+            }
+        }
+
+        return LinearLayout(host).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(24, 16, 24, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 20 }
+
+            applyCardBackground(this)
+            applyRipple(this)
+
+            addView(ImageView(host).apply {
+                setImageDrawable(buildVectorDrawable(PATH_CACHE, Color.parseColor(ICON_GRAY), 44))
+            })
+
+            val textColumn = LinearLayout(host).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 20
+                    marginEnd = 10
+                }
+            }
+            textColumn.addView(TextView(host).apply {
+                text = host.str("menu_cache")
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+            })
+            textColumn.addView(rateView)
+            addView(textColumn)
+
+            addView(ImageView(host).apply {
+                setImageDrawable(buildVectorDrawable(ICON_CHEVRON, Color.parseColor("#666680"), 36))
+            })
+
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { host.openCacheStats() }
+        }
+    }
+
+    /** به‌روزرسانی متن نرخ پاسخ از کش روی کارت منو. */
+    private fun updateCacheRateLine(rateView: TextView) {
+        val cacheOn = AppSettings.isDnsCacheEnabled(host)
+        val rate = VpnStats.dnsCacheHitRate()
+        rateView.text = when {
+            !cacheOn -> host.str("cache_off_short")
+            rate == null -> host.str("cache_rate_na")
+            else -> String.format(host.str("cache_rate"), Math.round(rate))
+        }
+        rateView.setTextColor(
+            if (rate != null && rate >= 50) Color.parseColor("#4CAF50") else Color.parseColor("#8A8A9A")
+        )
+    }
+
     private fun menuItemCard(title: String, pathData: String, onClick: () -> Unit): LinearLayout {
         return LinearLayout(host).apply {
             orientation = LinearLayout.HORIZONTAL
