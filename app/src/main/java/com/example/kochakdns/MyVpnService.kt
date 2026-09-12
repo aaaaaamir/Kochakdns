@@ -105,7 +105,7 @@ class MyVpnService : VpnService() {
 
     // تایم‌اوت تطبیقیِ قابل تنظیم از تنظیمات: نقطه‌ی شروع (و سقف) + کف.
     // پیش‌فرض‌ها دقیقاً رفتارِ پایدارِ قبلی هستند (شروع ۵ ثانیه، کف ۲ ثانیه).
-    private var timeoutStartMs = 5000
+    private var timeoutStartMs = 8000
     private var timeoutFloorMs = 2000
     // وقتی تطبیقی خاموش باشد، همه‌ی درخواست‌ها با تایم‌اوت ثابت ارسال می‌شوند.
     private var adaptiveTimeoutEnabled = true
@@ -168,7 +168,7 @@ class MyVpnService : VpnService() {
         // اگر کاربر فقط از کاشی وصل شده باشد و هرگز برنامه را باز نکرده باشد.
         flushPendingStatsIfAny()
 
-        val ipv6Enabled = getSharedPreferences(PREFS_DNS, MODE_PRIVATE).getBoolean("ipv6_enabled", true)
+        val ipv6Enabled = getSharedPreferences(PREFS_DNS, MODE_PRIVATE).getBoolean("ipv6_enabled", false)
         // آدرس‌ها نرمال‌سازی می‌شوند (مثلاً حذف براکت‌های [ ] از IPv6) تا
         // addRoute/addDnsServer هرگز با آدرسِ بد خطا ندهند.
         val validV4 = dnsServers.filter { it.isNotBlank() && isIpv4(it) }.map { it.trim() }
