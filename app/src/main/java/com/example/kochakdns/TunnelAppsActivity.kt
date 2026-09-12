@@ -50,6 +50,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -411,6 +412,12 @@ private fun TunnelAppsScreen(
     val selectedCount = apps.count { it.packageName in selected }
     val density = LocalDensity.current
     var headerHeight by remember { mutableStateOf(0.dp) }
+    // وقتی کاربر اسکرول کند، تیتر به «انتخاب همه / لغو همه» تبدیل می‌شود
+    val isScrolled by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -422,45 +429,32 @@ private fun TunnelAppsScreen(
             state = listState,
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
-                top = headerHeight + 24.dp,
+                top = headerHeight + 12.dp,
                 bottom = 24.dp
             ),
             modifier = Modifier.fillMaxSize()
         ) {
-            // شمارنده
-            item {
-                Text(
-                    text = when {
-                        loading && total == 0 -> ctx.str("apps_loading")
-                        total == 0 -> ctx.str("apps_none")
-                        else -> String.format(ctx.str("apps_selected_count"), selectedCount, total)
-                    },
-                    color = Color(0xFF888888),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-                )
-            }
-            // دکمه‌های انتخاب همه / لغو همه
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                ) {
-                    ActionChip(text = ctx.str("apps_select_all"), onClick = onSelectAll)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    ActionChip(text = ctx.str("apps_clear_all"), onClick = onClearAll)
+            if (total == 0) {
+                item {
+                    Text(
+                        text = if (loading) ctx.str("apps_loading") else ctx.str("apps_none"),
+                        color = Color(0xFF888888),
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 40.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
-            }
-            item { Spacer(modifier = Modifier.height(8.dp)) }
-
-            items(items = apps, key = { it.packageName }) { app ->
-                AppRow(
-                    app = app,
-                    checked = app.packageName in selected,
-                    onToggle = { onToggle(app.packageName) }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+            } else {
+                items(items = apps, key = { it.packageName }) { app ->
+                    AppRow(
+                        app = app,
+                        checked = app.packageName in selected,
+                        onToggle = { onToggle(app.packageName) }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
         }
 
@@ -474,7 +468,7 @@ private fun TunnelAppsScreen(
                     headerHeight = with(density) { coords.size.height.toDp() }
                 }
         ) {
-            // نوار بالا
+            // نوار بالا (پس‌زمینه نیمه‌شفاف)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -493,15 +487,15 @@ private fun TunnelAppsScreen(
                 }
 
                 if (searchActive) {
-                    // فیلد جستجو (جمع‌وجور — ارتفاع ثابت تا صفحه به‌هم نریزد)
+                    // فیلد جستجو (بدون ارتفاع اجباری تا متن بریده نشود)
                     TextField(
                         value = query,
                         onValueChange = onQueryChange,
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
                             .focusRequester(focusRequester),
                         singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp),
                         placeholder = {
                             Text(ctx.str("apps_search_placeholder"), color = Color(0xFF888888), fontSize = 14.sp)
                         },
@@ -530,8 +524,30 @@ private fun TunnelAppsScreen(
                     }) {
                         Icon(Icons.Rounded.Close, contentDescription = ctx.str("apps_close_search"), tint = Color.White)
                     }
+                } else if (isScrolled) {
+                    // هنگام اسکرول: دکمه‌های انتخاب همه/لغو همه جای تیتر
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ActionChip(text = ctx.str("apps_select_all"), onClick = onSelectAll)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        ActionChip(text = ctx.str("apps_clear_all"), onClick = onClearAll)
+                    }
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = Color(0xFF4C8DFF),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    // دکمه جستجو (آیکون)
+                    IconButton(onClick = { searchActive = true }) {
+                        Icon(Icons.Rounded.Search, contentDescription = ctx.str("apps_search"), tint = Color.White)
+                    }
                 } else {
-                    // عنوان صفحه
+                    // عنوان صفحه (بالای لیست، قبل از اسکرول)
                     Text(
                         text = ctx.str("menu_tunnel_apps"),
                         color = Color.White,
@@ -556,6 +572,20 @@ private fun TunnelAppsScreen(
                     }
                 }
             }
+
+            // شمارنده (زیر دکمه‌های انتخاب همه، وقتی اسکرول شده باشیم)
+            if (isScrolled && !searchActive) {
+                Text(
+                    text = String.format(ctx.str("apps_selected_count"), selectedCount, total),
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xEB0F0F14))
+                        .padding(horizontal = 20.dp, vertical = 2.dp)
+                )
+            }
+
             // محو شدن تدریجی پایین هدر (برنامه‌ها نرم زیرش می‌روند)
             Box(
                 modifier = Modifier
