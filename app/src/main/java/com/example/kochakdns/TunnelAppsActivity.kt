@@ -50,7 +50,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -412,11 +411,11 @@ private fun TunnelAppsScreen(
     val selectedCount = apps.count { it.packageName in selected }
     val density = LocalDensity.current
     var headerHeight by remember { mutableStateOf(0.dp) }
-    // وقتی کاربر اسکرول کند، تیتر به «انتخاب همه / لغو همه» تبدیل می‌شود
-    val isScrolled by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        }
+
+    val counterText = when {
+        loading && total == 0 -> ctx.str("apps_loading")
+        total == 0 -> ctx.str("apps_none")
+        else -> String.format(ctx.str("apps_selected_count"), selectedCount, total)
     }
 
     Box(
@@ -434,27 +433,13 @@ private fun TunnelAppsScreen(
             ),
             modifier = Modifier.fillMaxSize()
         ) {
-            if (total == 0) {
-                item {
-                    Text(
-                        text = if (loading) ctx.str("apps_loading") else ctx.str("apps_none"),
-                        color = Color(0xFF888888),
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            } else {
-                items(items = apps, key = { it.packageName }) { app ->
-                    AppRow(
-                        app = app,
-                        checked = app.packageName in selected,
-                        onToggle = { onToggle(app.packageName) }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
+            items(items = apps, key = { it.packageName }) { app ->
+                AppRow(
+                    app = app,
+                    checked = app.packageName in selected,
+                    onToggle = { onToggle(app.packageName) }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
         }
 
@@ -524,8 +509,8 @@ private fun TunnelAppsScreen(
                     }) {
                         Icon(Icons.Rounded.Close, contentDescription = ctx.str("apps_close_search"), tint = Color.White)
                     }
-                } else if (isScrolled) {
-                    // هنگام اسکرول: دکمه‌های انتخاب همه/لغو همه جای تیتر
+                } else {
+                    // دکمه‌های انتخاب همه / لغو همه (به‌جای تیتر صفحه)
                     Row(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
@@ -534,29 +519,6 @@ private fun TunnelAppsScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         ActionChip(text = ctx.str("apps_clear_all"), onClick = onClearAll)
                     }
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = Color(0xFF4C8DFF),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    // دکمه جستجو (آیکون)
-                    IconButton(onClick = { searchActive = true }) {
-                        Icon(Icons.Rounded.Search, contentDescription = ctx.str("apps_search"), tint = Color.White)
-                    }
-                } else {
-                    // عنوان صفحه (بالای لیست، قبل از اسکرول)
-                    Text(
-                        text = ctx.str("menu_tunnel_apps"),
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 4.dp)
-                    )
                     // لودینگ
                     if (loading) {
                         CircularProgressIndicator(
@@ -573,10 +535,10 @@ private fun TunnelAppsScreen(
                 }
             }
 
-            // شمارنده (زیر دکمه‌های انتخاب همه، وقتی اسکرول شده باشیم)
-            if (isScrolled && !searchActive) {
+            // شمارنده (همیشه زیر دکمه‌های انتخاب همه)
+            if (!searchActive) {
                 Text(
-                    text = String.format(ctx.str("apps_selected_count"), selectedCount, total),
+                    text = counterText,
                     color = Color(0xFF888888),
                     fontSize = 12.sp,
                     modifier = Modifier
