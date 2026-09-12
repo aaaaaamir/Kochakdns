@@ -862,6 +862,57 @@ class DnsActivity : BaseActivity() {
         if (VpnStats.isVpnActive) restartVpnConnection()
     }
 
+    /**
+     * نمایش جزئیات کش DNS: نرخ پاسخ از کش، تعداد پاسخ‌های از کش/رفته به سرور،
+     * زمان صرفه‌جویی‌شده و لاگ آخرین دامنه‌های سرو‌شده.
+     * عمداً هیچ آدرس/کد سرور DNS نمایش داده نمی‌شود — فقط آمار و نام دامنه‌ها.
+     */
+    fun openCacheStats() {
+        closeDrawer()
+        val cacheOn = AppSettings.isDnsCacheEnabled(this)
+        val hits = VpnStats.dnsCacheHits.get()
+        val misses = VpnStats.dnsCacheMisses.get()
+        val rate = VpnStats.dnsCacheHitRate()
+        val savedMs = VpnStats.dnsCacheSavedMs.get()
+
+        val msg = StringBuilder()
+        if (!cacheOn) {
+            msg.append(str("cache_off_msg"))
+        } else {
+            msg.append(str("cache_rate_label")).append(": ")
+                .append(rate?.let { "${Math.round(it)}%" } ?: "--")
+                .append("\n\n")
+            msg.append("• ").append(str("cache_hits")).append(": ").append(hits).append("\n")
+            msg.append("• ").append(str("cache_misses")).append(": ").append(misses).append("\n")
+            msg.append("• ").append(str("cache_saved_time")).append(": ")
+                .append(formatDuration(savedMs)).append("\n")
+            msg.append("\n").append(str("cache_log_header")).append(":\n")
+            val log = VpnStats.dnsCacheLog.toList().takeLast(15)
+            if (log.isEmpty()) {
+                msg.append(str("cache_log_empty"))
+            } else {
+                log.forEach { msg.append("• ").append(it.domain).append("\n") }
+            }
+        }
+
+        showAppDialog(
+            title = str("cache_stats_title"),
+            message = msg.toString(),
+            cancelable = true,
+            positiveText = str("close"),
+            onPositive = {},
+            negativeText = null,
+            onNegative = null
+        )
+    }
+
+    /** فرمت زمان صرفه‌جویی‌شده: میلی‌ثانیه/ثانیه/دقیقه. */
+    private fun formatDuration(ms: Long): String = when {
+        ms < 1000 -> "$ms ${str("val_ms")}"
+        ms < 60_000 -> String.format(java.util.Locale.US, "%.1f s", ms / 1000.0)
+        else -> String.format(java.util.Locale.US, "%.1f min", ms / 60000.0)
+    }
+
     /** قطع و وصل مجدد با DNS انتخابی فعلی — برای اعمال تغییر تنظیمات بدون از دست دادن اتصال. */
     private fun restartVpnConnection() {
         setVpnState(VpnUiState.DISCONNECTING)
