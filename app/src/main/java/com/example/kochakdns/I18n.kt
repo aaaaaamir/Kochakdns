@@ -113,7 +113,8 @@ object I18n {
         "default_label" to "پیش‌فرض",
         "custom_label" to "دستی وارد کن...",
         "enter_value" to "مقدار را وارد کن",
-        "invalid_number" to "یک عدد در بازه مجاز وارد کن",
+        "enter_any" to "هر عدد مثبت (بدون محدودیت)",
+        "invalid_number" to "یک عدد مثبت وارد کن",
         "range_between" to "بین %d تا %d",
 
         // راهنمای کاشی
@@ -129,6 +130,8 @@ object I18n {
         "cache_rate" to "نرخ پاسخ از کش: %d٪",
 
         // صفحه اصلی (DnsActivity)
+        "op_performance" to "عملکرد اوپراتورها",
+        "op_best" to "بهترین عملکرد",
         "stat_sent" to "ارسالی",
         "stat_lost" to "گم‌شده",
         "stat_bsent" to "ارسال",
@@ -238,7 +241,8 @@ object I18n {
         "default_label" to "default",
         "custom_label" to "Enter manually...",
         "enter_value" to "Enter a value",
-        "invalid_number" to "Enter a number within the allowed range",
+        "enter_any" to "Any positive number (no limit)",
+        "invalid_number" to "Enter a positive number",
         "range_between" to "between %d and %d",
 
         "tile_hint" to "Pull down the notification shade → Edit → add the \"Kochak\" tile",
@@ -250,6 +254,9 @@ object I18n {
         "cache_rate_na" to "Cache hit rate: --",
         "cache_rate" to "Cache hit rate: %d%%",
 
+        // DnsActivity
+        "op_performance" to "Operator performance",
+        "op_best" to "Best",
         "stat_sent" to "Sent",
         "stat_lost" to "Lost",
         "stat_bsent" to "Sent",
