@@ -129,7 +129,7 @@ class MenuActivity(private val host: DnsActivity) {
 
         // ۲. گزینه‌ی سوئیچ خاموش/روشن IPv6 (در صورت روشن بودن DNS، فوراً وصل مجدد)
         val prefs = host.getSharedPreferences("dns_prefs", Context.MODE_PRIVATE)
-        val isIpv6Enabled = prefs.getBoolean("ipv6_enabled", true)
+        val isIpv6Enabled = prefs.getBoolean("ipv6_enabled", false)
         container.addView(
             menuToggleCard(host.str("menu_ipv6"), PATH_IPV6, isIpv6Enabled) { isChecked ->
                 prefs.edit().putBoolean("ipv6_enabled", isChecked).apply()
