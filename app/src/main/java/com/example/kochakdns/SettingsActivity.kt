@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
+import android.view.animation.OvershootInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -47,14 +48,28 @@ class SettingsActivity : BaseActivity() {
         // مقادیر پیش‌فرض (برای نمایش برچسب «پیش‌فرض»)
         private const val DEFAULT_UDP = 8
         private const val DEFAULT_TCP = 4
-        private const val DEFAULT_TIMEOUT_START = 5000
+        private const val DEFAULT_TIMEOUT_START = 8000
         private const val DEFAULT_TIMEOUT_FLOOR = 2000
         private const val DEFAULT_FIXED_TIMEOUT = 5000
     }
 
+    // کارت سوییچ‌دار (برای تغییر وضعیت فعال/غیرفعال درجا)
+    private class SwitchCard(val card: LinearLayout, val switch: AnimatedSwitchView)
+
+    // کارت مقدار (برای به‌روزرسانی برچسب مقدار درجا)
+    private class ValueCard(val card: LinearLayout, val valueView: TextView)
+
     // خط زنده‌ی «نرخ پاسخ از کش» داخل کارت کش DNS (هر چند ثانیه به‌روز می‌شود)
     private lateinit var cacheHitRateText: TextView
     private lateinit var root: FrameLayout
+
+    // ارجاع‌ها برای به‌روزرسانی درجا (بدون rebuild صفحه)
+    private lateinit var tcpFallbackCard: SwitchCard
+    private lateinit var udpCard: ValueCard
+    private lateinit var tcpConcCard: ValueCard
+    private lateinit var timeoutStartCard: ValueCard
+    private lateinit var timeoutFloorCard: ValueCard
+    private lateinit var fixedTimeoutCard: ValueCard
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,12 +124,6 @@ class SettingsActivity : BaseActivity() {
             }
         }
 
-        val adaptiveEnabled = AppSettings.isAdaptiveTimeoutEnabled(this)
-        val tcpFallbackOn = AppSettings.isTcpFallbackEnabled(this)
-        val tcpOnly = AppSettings.isTcpOnlyEnabled(this)
-        // آیا TCP اصلاً استفاده می‌شود؟ (fallback روشن یا حالت فقط TCP)
-        val tcpUsed = tcpFallbackOn || tcpOnly
-
         // ===================== اتصال و سرعت =====================
         list.addView(sectionHeader(str("sec_network")))
 
@@ -128,23 +137,20 @@ class SettingsActivity : BaseActivity() {
                 liveLine = cacheHitRateText
             ) { checked ->
                 AppSettings.setDnsCacheEnabled(this, checked)
-                // اعمال واقعی موقع بازگشت به صفحه‌ی اصلی انجام می‌شود (وصل مجدد)
-            }
+            }.card
         )
 
-        // پشتیبانی TCP (وقتی حالت فقط TCP روشن باشد محو/غیرفعال — بی‌معنی است)
-        list.addView(
-            glassSwitch(
-                title = str("set_tcp_fallback"),
-                subtitle = str("set_tcp_fallback_sub"),
-                iconPath = ICON_TCP,
-                initial = tcpFallbackOn,
-                enabled = !tcpOnly
-            ) { checked ->
-                AppSettings.setTcpFallbackEnabled(this, checked)
-                recreate() // تا گزینه‌ی همزمانی TCP محو/فعال شود
-            }
-        )
+        // پشتیبانی TCP
+        tcpFallbackCard = glassSwitch(
+            title = str("set_tcp_fallback"),
+            subtitle = str("set_tcp_fallback_sub"),
+            iconPath = ICON_TCP,
+            initial = AppSettings.isTcpFallbackEnabled(this)
+        ) { checked ->
+            AppSettings.setTcpFallbackEnabled(this, checked)
+            refreshDependents()
+        }
+        list.addView(tcpFallbackCard.card)
 
         // حالت فقط TCP (با هشدار موقع روشن کردن)
         list.addView(
@@ -152,7 +158,7 @@ class SettingsActivity : BaseActivity() {
                 title = str("set_tcp_only"),
                 subtitle = str("set_tcp_only_sub"),
                 iconPath = ICON_TCP,
-                initial = tcpOnly
+                initial = AppSettings.isTcpOnlyEnabled(this)
             ) { checked ->
                 if (checked) {
                     confirmDialog(
@@ -161,66 +167,56 @@ class SettingsActivity : BaseActivity() {
                         positiveText = str("activate"),
                         onConfirm = {
                             AppSettings.setTcpOnlyEnabled(this, true)
-                            recreate()
+                            refreshDependents()
                         },
-                        onCancel = { recreate() }
+                        onCancel = { refreshDependents() }
                     )
                 } else {
                     AppSettings.setTcpOnlyEnabled(this, false)
-                    recreate()
+                    refreshDependents()
                 }
-            }
+            }.card
         )
 
         // همزمانی UDP
-        list.addView(
-            glassValueCard(
+        udpCard = glassValueCard(
+            title = str("set_udp_conc"),
+            subtitle = str("set_udp_conc_sub"),
+            iconPath = ICON_CONC,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
                 title = str("set_udp_conc"),
-                subtitle = str("set_udp_conc_sub"),
-                iconPath = ICON_CONC,
-                valueLabel = valueLabel(AppSettings.getUdpConcurrent(this), DEFAULT_UDP, str("val_requests")),
-                enabled = !tcpOnly,
-                onClick = {
-                    numberPickDialog(
-                        title = str("set_udp_conc"),
-                        options = listOf(2, 4, 8, 16, 32),
-                        current = AppSettings.getUdpConcurrent(this),
-                        default = DEFAULT_UDP,
-                        unit = str("val_requests"),
-                        min = 1,
-                        max = 64
-                    ) { v ->
-                        AppSettings.setUdpConcurrent(this, v)
-                        recreate()
-                    }
-                }
-            )
-        )
+                options = listOf(2, 4, 8, 16, 32),
+                current = AppSettings.getUdpConcurrent(this),
+                default = DEFAULT_UDP,
+                unit = str("val_requests"),
+            ) { v ->
+                AppSettings.setUdpConcurrent(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(udpCard.card)
 
-        // همزمانی TCP (وقتی TCP اصلاً استفاده نشود محو/غیرفعال)
-        list.addView(
-            glassValueCard(
+        // همزمانی TCP
+        tcpConcCard = glassValueCard(
+            title = str("set_tcp_conc"),
+            subtitle = str("set_tcp_conc_sub"),
+            iconPath = ICON_CONC,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
                 title = str("set_tcp_conc"),
-                subtitle = str("set_tcp_conc_sub"),
-                iconPath = ICON_CONC,
-                valueLabel = valueLabel(AppSettings.getTcpConcurrent(this), DEFAULT_TCP, str("val_requests")),
-                enabled = tcpUsed,
-                onClick = {
-                    numberPickDialog(
-                        title = str("set_tcp_conc"),
-                        options = listOf(1, 2, 4, 8, 16),
-                        current = AppSettings.getTcpConcurrent(this),
-                        default = DEFAULT_TCP,
-                        unit = str("val_requests"),
-                        min = 1,
-                        max = 64
-                    ) { v ->
-                        AppSettings.setTcpConcurrent(this, v)
-                        recreate()
-                    }
-                }
-            )
-        )
+                options = listOf(1, 2, 4, 8, 16),
+                current = AppSettings.getTcpConcurrent(this),
+                default = DEFAULT_TCP,
+                unit = str("val_requests"),
+            ) { v ->
+                AppSettings.setTcpConcurrent(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(tcpConcCard.card)
 
         // تایم‌اوت تطبیقی
         list.addView(
@@ -228,88 +224,73 @@ class SettingsActivity : BaseActivity() {
                 title = str("set_adaptive_timeout"),
                 subtitle = str("set_adaptive_timeout_sub"),
                 iconPath = ICON_TIMER,
-                initial = adaptiveEnabled
+                initial = AppSettings.isAdaptiveTimeoutEnabled(this)
             ) { checked ->
                 AppSettings.setAdaptiveTimeoutEnabled(this, checked)
-                recreate() // تا گزینه‌های تایم‌اوت محو/فعال شوند
-            }
+                refreshDependents()
+            }.card
         )
 
-        // نقطه شروع تایم‌اوت (فقط وقتی تطبیقی روشن است فعال)
-        list.addView(
-            glassValueCard(
+        // نقطه شروع تایم‌اوت
+        timeoutStartCard = glassValueCard(
+            title = str("set_timeout_start"),
+            subtitle = str("set_timeout_start_sub"),
+            iconPath = ICON_TIMER,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
                 title = str("set_timeout_start"),
-                subtitle = str("set_timeout_start_sub"),
-                iconPath = ICON_TIMER,
-                valueLabel = valueLabel(AppSettings.getTimeoutStartMs(this), DEFAULT_TIMEOUT_START, str("val_ms")),
-                enabled = adaptiveEnabled,
-                onClick = {
-                    numberPickDialog(
-                        title = str("set_timeout_start"),
-                        options = listOf(3000, 4000, 5000, 6000, 8000),
-                        current = AppSettings.getTimeoutStartMs(this),
-                        default = DEFAULT_TIMEOUT_START,
-                        unit = str("val_ms"),
-                        min = 2000,
-                        max = 10000
-                    ) { v ->
-                        AppSettings.setTimeoutStartMs(this, v)
-                        recreate()
-                    }
-                }
-            )
-        )
+                options = listOf(4000, 6000, 8000, 10000),
+                current = AppSettings.getTimeoutStartMs(this),
+                default = DEFAULT_TIMEOUT_START,
+                unit = str("val_ms"),
+            ) { v ->
+                AppSettings.setTimeoutStartMs(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(timeoutStartCard.card)
 
-        // کف تایم‌اوت (فقط وقتی تطبیقی روشن است فعال)
-        list.addView(
-            glassValueCard(
+        // کف تایم‌اوت
+        timeoutFloorCard = glassValueCard(
+            title = str("set_timeout_floor"),
+            subtitle = str("set_timeout_floor_sub"),
+            iconPath = ICON_TIMER,
+            valueLabel = ""
+        ) {
+            val start = AppSettings.getTimeoutStartMs(this)
+            numberPickDialog(
                 title = str("set_timeout_floor"),
-                subtitle = str("set_timeout_floor_sub"),
-                iconPath = ICON_TIMER,
-                valueLabel = valueLabel(AppSettings.getTimeoutFloorMs(this), DEFAULT_TIMEOUT_FLOOR, str("val_ms")),
-                enabled = adaptiveEnabled,
-                onClick = {
-                    val start = AppSettings.getTimeoutStartMs(this)
-                    numberPickDialog(
-                        title = str("set_timeout_floor"),
-                        options = listOf(1000, 1500, 2000, 3000, 5000).filter { it <= start },
-                        current = AppSettings.getTimeoutFloorMs(this),
-                        default = DEFAULT_TIMEOUT_FLOOR,
-                        unit = str("val_ms"),
-                        min = 500,
-                        max = start
-                    ) { v ->
-                        AppSettings.setTimeoutFloorMs(this, v)
-                        recreate()
-                    }
-                }
-            )
-        )
+                options = listOf(1000, 1500, 2000, 3000, 5000).filter { it <= start },
+                current = AppSettings.getTimeoutFloorMs(this),
+                default = DEFAULT_TIMEOUT_FLOOR,
+                unit = str("val_ms"),
+            ) { v ->
+                AppSettings.setTimeoutFloorMs(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(timeoutFloorCard.card)
 
-        // تایم‌اوت ثابت (فقط وقتی تطبیقی خاموش است فعال)
-        list.addView(
-            glassValueCard(
+        // تایم‌اوت ثابت
+        fixedTimeoutCard = glassValueCard(
+            title = str("set_fixed_timeout"),
+            subtitle = str("set_fixed_timeout_sub"),
+            iconPath = ICON_TIMER,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
                 title = str("set_fixed_timeout"),
-                subtitle = str("set_fixed_timeout_sub"),
-                iconPath = ICON_TIMER,
-                valueLabel = valueLabel(AppSettings.getFixedTimeoutMs(this), DEFAULT_FIXED_TIMEOUT, str("val_ms")),
-                enabled = !adaptiveEnabled,
-                onClick = {
-                    numberPickDialog(
-                        title = str("set_fixed_timeout"),
-                        options = listOf(2000, 3000, 4000, 5000, 7000),
-                        current = AppSettings.getFixedTimeoutMs(this),
-                        default = DEFAULT_FIXED_TIMEOUT,
-                        unit = str("val_ms"),
-                        min = 500,
-                        max = 10000
-                    ) { v ->
-                        AppSettings.setFixedTimeoutMs(this, v)
-                        recreate()
-                    }
-                }
-            )
-        )
+                options = listOf(2000, 3000, 4000, 5000, 7000),
+                current = AppSettings.getFixedTimeoutMs(this),
+                default = DEFAULT_FIXED_TIMEOUT,
+                unit = str("val_ms"),
+            ) { v ->
+                AppSettings.setFixedTimeoutMs(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(fixedTimeoutCard.card)
 
         // ===================== نمایش =====================
         list.addView(sectionHeader(str("sec_display")))
@@ -322,7 +303,7 @@ class SettingsActivity : BaseActivity() {
                 initial = AppSettings.isShowPacketPercentEnabled(this)
             ) { checked ->
                 AppSettings.setShowPacketPercentEnabled(this, checked)
-            }
+            }.card
         )
 
         list.addView(
@@ -333,7 +314,7 @@ class SettingsActivity : BaseActivity() {
                 initial = AppSettings.isShowNotificationInfoEnabled(this)
             ) { checked ->
                 AppSettings.setShowNotificationInfoEnabled(this, checked)
-            }
+            }.card
         )
 
         // ===================== عمومی =====================
@@ -345,24 +326,22 @@ class SettingsActivity : BaseActivity() {
                 title = str("set_language"),
                 subtitle = "",
                 iconPath = ICON_LANG,
-                valueLabel = currentLanguageLabel(),
-                enabled = true,
-                onClick = {
-                    pickValueDialog(
-                        title = str("set_language"),
-                        options = listOf(
-                            AppLang.DEVICE to str("lang_device"),
-                            AppLang.FA to str("lang_fa"),
-                            AppLang.EN to str("lang_en")
-                        ),
-                        current = AppSettings.getLanguage(this),
-                        onCustom = null
-                    ) { v ->
-                        AppSettings.setLanguage(this, v)
-                        recreate()
-                    }
+                valueLabel = currentLanguageLabel()
+            ) {
+                pickValueDialog(
+                    title = str("set_language"),
+                    options = listOf(
+                        AppLang.DEVICE to "Device language",
+                        AppLang.FA to "فارسی",
+                        AppLang.EN to "English"
+                    ),
+                    current = AppSettings.getLanguage(this),
+                    onCustom = null
+                ) { v ->
+                    AppSettings.setLanguage(this, v)
+                    recreate() // فقط تغییر زبان به rebuild صفحه نیاز دارد
                 }
-            )
+            }.card
         )
 
         // دسترسی سریع
@@ -394,6 +373,41 @@ class SettingsActivity : BaseActivity() {
         column.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(column)
         setContentView(root)
+
+        // اعمال وضعیت فعال/غیرفعال و برچسب‌های مقدار از روی تنظیمات فعلی
+        refreshDependents()
+        refreshValueLabels()
+    }
+
+    /** به‌روزرسانی وضعیت فعال/غیرفعال کارت‌های وابسته (بدون بازسازی صفحه). */
+    private fun refreshDependents() {
+        val tcpOnly = AppSettings.isTcpOnlyEnabled(this)
+        val tcpFallbackOn = AppSettings.isTcpFallbackEnabled(this)
+        val adaptive = AppSettings.isAdaptiveTimeoutEnabled(this)
+
+        setCardEnabled(tcpFallbackCard.card, !tcpOnly)
+        tcpFallbackCard.switch.isClickable = !tcpOnly
+        setCardEnabled(udpCard.card, !tcpOnly)
+        setCardEnabled(tcpConcCard.card, tcpFallbackOn || tcpOnly)
+        setCardEnabled(timeoutStartCard.card, adaptive)
+        setCardEnabled(timeoutFloorCard.card, adaptive)
+        setCardEnabled(fixedTimeoutCard.card, !adaptive)
+    }
+
+    /** به‌روزرسانی برچسب مقدارها درجا (بدون بازسازی صفحه). */
+    private fun refreshValueLabels() {
+        udpCard.valueView.text = valueLabel(AppSettings.getUdpConcurrent(this), DEFAULT_UDP, str("val_requests"))
+        tcpConcCard.valueView.text = valueLabel(AppSettings.getTcpConcurrent(this), DEFAULT_TCP, str("val_requests"))
+        timeoutStartCard.valueView.text = valueLabel(AppSettings.getTimeoutStartMs(this), DEFAULT_TIMEOUT_START, str("val_ms"))
+        timeoutFloorCard.valueView.text = valueLabel(AppSettings.getTimeoutFloorMs(this), DEFAULT_TIMEOUT_FLOOR, str("val_ms"))
+        fixedTimeoutCard.valueView.text = valueLabel(AppSettings.getFixedTimeoutMs(this), DEFAULT_FIXED_TIMEOUT, str("val_ms"))
+    }
+
+    /** محو کردن (و غیرقابل لمس کردن) یک کارت بدون حذفش از صفحه. */
+    private fun setCardEnabled(card: LinearLayout, enabled: Boolean) {
+        card.alpha = if (enabled) 1f else 0.4f
+        card.isClickable = enabled
+        card.isEnabled = enabled
     }
 
     /** برچسب مقدار + (پیش‌فرض) وقتی مقدار روی پیش‌فرض است. */
@@ -411,10 +425,11 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
+    /** نام زبان فعلی، همیشه به زبان خودِ زبان (Device language / فارسی / English). */
     private fun currentLanguageLabel(): String = when (AppSettings.getLanguage(this)) {
-        AppLang.FA -> str("lang_fa")
-        AppLang.EN -> str("lang_en")
-        else -> str("lang_device")
+        AppLang.FA -> "فارسی"
+        AppLang.EN -> "English"
+        else -> "Device language"
     }
 
     /** به‌روزرسانی خط «نرخ پاسخ از کش» از آمار زنده‌ی سرویس VPN. */
@@ -435,15 +450,13 @@ class SettingsActivity : BaseActivity() {
         )
     }
 
-    /** دیالوگ انتخاب مقدار عددی: گزینه‌های آماده + ورود دستی. */
+    /** دیالوگ انتخاب مقدار عددی: گزینه‌های آماده + ورود دستی (بدون محدودیت). */
     private fun numberPickDialog(
         title: String,
         options: List<Int>,
         current: Int,
         default: Int,
         unit: String,
-        min: Int,
-        max: Int,
         onPick: (Int) -> Unit
     ) {
         val strOptions = options.map {
@@ -454,7 +467,7 @@ class SettingsActivity : BaseActivity() {
             options = strOptions,
             current = current.toString(),
             onCustom = {
-                numberInputDialog(title, current, min, max, unit, onPick)
+                numberInputDialog(title, current, unit, onPick)
             }
         ) { v ->
             v.toIntOrNull()?.let { onPick(it) }
@@ -583,14 +596,13 @@ class SettingsActivity : BaseActivity() {
 
         overlay.addView(card)
         root.addView(overlay)
+        animateDialogIn(overlay, card)
     }
 
-    /** ورودی دستی عدد با اعتبارسنجی و محدودسازی به بازه. */
+    /** ورودی دستی عدد — بدون محدودیت بالا (هر عدد مثبت دلخواه). */
     private fun numberInputDialog(
         title: String,
         current: Int,
-        min: Int,
-        max: Int,
         unit: String,
         onDone: (Int) -> Unit
     ) {
@@ -628,7 +640,7 @@ class SettingsActivity : BaseActivity() {
             setPadding(0, 0, 0, 6)
         })
         card.addView(TextView(this).apply {
-            text = String.format(str("range_between"), min, max) + " $unit"
+            text = str("enter_any") + " ($unit)"
             setTextColor(Color.parseColor("#8A8A9A"))
             textSize = 12f
             setPadding(0, 0, 0, 14)
@@ -665,17 +677,18 @@ class SettingsActivity : BaseActivity() {
         })
         row.addView(makeDialogButton(str("ok"), true) {
             val v = input.text.toString().trim().toIntOrNull()
-            if (v == null) {
+            if (v == null || v <= 0) {
                 Toast.makeText(this, str("invalid_number"), Toast.LENGTH_SHORT).show()
             } else {
                 dismissOverlay(overlay)
-                onDone(v.coerceIn(min, max))
+                onDone(v)
             }
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         card.addView(row)
 
         overlay.addView(card)
         root.addView(overlay)
+        animateDialogIn(overlay, card)
         input.requestFocus()
     }
 
@@ -697,8 +710,27 @@ class SettingsActivity : BaseActivity() {
         }
     }
 
+    /** انیمیشن ورود نرم دیالوگ: فید اوورلی + بانس فنری کارت. */
+    private fun animateDialogIn(overlay: FrameLayout, card: LinearLayout) {
+        overlay.alpha = 0f
+        card.alpha = 0f
+        card.scaleX = 0.88f
+        card.scaleY = 0.88f
+        overlay.animate().alpha(1f).setDuration(180).start()
+        card.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(300)
+            .setInterpolator(OvershootInterpolator(1.05f))
+            .start()
+    }
+
+    /** بستن دیالوگ با محو شدن نرم. */
     private fun dismissOverlay(overlay: FrameLayout) {
-        (overlay.parent as? ViewGroup)?.removeView(overlay)
+        overlay.animate().alpha(0f).setDuration(150).withEndAction {
+            (overlay.parent as? ViewGroup)?.removeView(overlay)
+        }.start()
     }
 
     /** کارت کلیک‌پذیر شیشه‌ای (مثل «درباره ما») با فلش سمت چپ. */
@@ -747,10 +779,10 @@ class SettingsActivity : BaseActivity() {
         subtitle: String,
         iconPath: String,
         valueLabel: String,
-        enabled: Boolean = true,
         onClick: () -> Unit
-    ): LinearLayout {
-        return LinearLayout(this).apply {
+    ): ValueCard {
+        val valueView = TextView(this@SettingsActivity)
+        val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(24, 18, 20, 18)
@@ -761,7 +793,6 @@ class SettingsActivity : BaseActivity() {
             applyGlassBackground(this)
             isClickable = true
             isFocusable = true
-            alpha = if (enabled) 1f else 0.4f
 
             addView(ImageView(this@SettingsActivity).apply {
                 setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
@@ -790,20 +821,22 @@ class SettingsActivity : BaseActivity() {
             }
             addView(textColumn)
 
-            addView(TextView(this@SettingsActivity).apply {
+            valueView.apply {
                 text = valueLabel
                 setTextColor(Color.parseColor("#4C8DFF"))
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 0, 14, 0)
-            })
+            }
+            addView(valueView)
 
             addView(ImageView(this@SettingsActivity).apply {
                 setImageDrawable(buildVectorDrawable(ICON_CHEVRON, Color.parseColor("#666680"), 36))
             })
 
-            setOnClickListener { if (enabled) onClick() }
+            setOnClickListener { onClick() }
         }
+        return ValueCard(card, valueView)
     }
 
     /** پس‌زمینه شیشه‌ای (نیمه‌شفاف + حاشیه روشن). */
@@ -822,11 +855,11 @@ class SettingsActivity : BaseActivity() {
         subtitle: String,
         iconPath: String,
         initial: Boolean,
-        enabled: Boolean = true,
         liveLine: TextView? = null,
         onChange: (Boolean) -> Unit
-    ): LinearLayout {
-        return LinearLayout(this).apply {
+    ): SwitchCard {
+        val switchView = AnimatedSwitchView(this@SettingsActivity)
+        val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(24, 22, 20, 22)
@@ -837,7 +870,6 @@ class SettingsActivity : BaseActivity() {
             applyGlassBackground(this)
             isClickable = true
             isFocusable = true
-            alpha = if (enabled) 1f else 0.4f
 
             addView(ImageView(this@SettingsActivity).apply {
                 setImageDrawable(buildVectorDrawable(iconPath, Color.parseColor("#A0A0AC"), 40))
@@ -868,19 +900,19 @@ class SettingsActivity : BaseActivity() {
                 textColumn.addView(liveLine)
             }
 
-            val switchView = AnimatedSwitchView(this@SettingsActivity).apply {
+            switchView.apply {
                 layoutParams = LinearLayout.LayoutParams(dp(48), dp(26))
                 setChecked(initial)
-                isClickable = enabled
-                onCheckedChangeListener = { checked -> if (enabled) onChange(checked) }
+                onCheckedChangeListener = { checked -> onChange(checked) }
             }
 
             addView(textColumn)
             addView(switchView)
 
-            // لمس هرجای کارت = روشن/خاموش (فقط وقتی فعال باشد)
-            setOnClickListener { if (enabled) switchView.performClick() }
+            // لمس هرجای کارت = روشن/خاموش
+            setOnClickListener { switchView.performClick() }
         }
+        return SwitchCard(card, switchView)
     }
 
     /** دیالوگ تأیید ساده (برای هشدارها) با دو دکمه. */
@@ -962,6 +994,7 @@ class SettingsActivity : BaseActivity() {
 
         overlay.addView(card)
         root.addView(overlay)
+        animateDialogIn(overlay, card)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
