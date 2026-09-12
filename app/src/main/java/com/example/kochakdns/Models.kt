@@ -4,6 +4,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
@@ -162,6 +163,15 @@ object VpnStats {
     // در کش نبوده‌اند. با هم نرخ «پاسخ از کش» را می‌سازند (نمایش در تنظیمات).
     val dnsCacheHits = AtomicLong(0)
     val dnsCacheMisses = AtomicLong(0)
+
+    // تخمین زمان صرفه‌جویی‌شده از پاسخ‌های کش (مجموع RTTهایی که دور زده شده‌اند).
+    val dnsCacheSavedMs = AtomicLong(0)
+
+    /** یک رکورد از لاگ پاسخ‌های سرو‌شده از کش — فقط نام دامنه (بدون آدرس/کد سرور). */
+    data class CacheLogEntry(val domain: String, val servedAt: Long)
+
+    /** آخرین پاسخ‌های سرو‌شده از کش (جدیدترین در انتهای صف). */
+    val dnsCacheLog = ConcurrentLinkedQueue<CacheLogEntry>()
 
     @Volatile
     var isVpnActive = false
