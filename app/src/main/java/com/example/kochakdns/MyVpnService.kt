@@ -245,6 +245,8 @@ class MyVpnService : VpnService() {
             VpnStats.totalPacketsBlocked.set(0)
             VpnStats.dnsCacheHits.set(0)
             VpnStats.dnsCacheMisses.set(0)
+            VpnStats.dnsCacheSavedMs.set(0)
+            VpnStats.dnsCacheLog.clear()
             connectStartTime = System.currentTimeMillis()
             readerJob = serviceScope.launch { processPackets() }
             statsUpdateHandler?.removeCallbacksAndMessages(null)
@@ -373,6 +375,7 @@ class MyVpnService : VpnService() {
                 val cached = dnsCache.get(dnsPayload, queryId)
                 if (cached != null) {
                     VpnStats.dnsCacheHits.incrementAndGet()
+                    recordCacheHit(dnsPayload, dstIp)
                     writeReplyV4(output, dstIp, srcIp, srcPort, cached.bytes)
                     // پاسخ نرم (منقضی ولی قابل سرو): در پس‌زمینه تازه‌سازی کن
                     if (cached.stale) refreshCacheEntry(dnsPayload, dstIp)
@@ -416,6 +419,7 @@ class MyVpnService : VpnService() {
                 val cached = dnsCache.get(dnsPayload, queryId)
                 if (cached != null) {
                     VpnStats.dnsCacheHits.incrementAndGet()
+                    recordCacheHit(dnsPayload, dstIp)
                     writeReplyV6(output, dstIp, srcIp, srcPort, cached.bytes)
                     if (cached.stale) refreshCacheEntry(dnsPayload, dstIp)
                     return
@@ -562,6 +566,42 @@ class MyVpnService : VpnService() {
     }
 
     // ---- تازه‌سازی پیشدستانه‌ی ورودی‌های کش منقضی‌شده (stale-while-revalidate) ----
+
+    /**
+     * ثبت یک پاسخِ سرو‌شده از کش:
+     *  - تخمین زمان صرفه‌جویی‌شده (RTT آن سرور که دور زده شده) جمع می‌شود،
+     *  - و نام دامنه (نه آدرس/کد سرور) به لاگ اضافه می‌شود.
+     */
+    private fun recordCacheHit(dnsPayload: ByteArray, server: InetAddress) {
+        val rtt = rttEma[server.hostAddress] ?: 120.0
+        VpnStats.dnsCacheSavedMs.addAndGet(rtt.toLong().coerceAtLeast(1))
+        val domain = extractDomain(dnsPayload)
+        if (domain.isNotBlank()) {
+            VpnStats.dnsCacheLog.offer(VpnStats.CacheLogEntry(domain, System.currentTimeMillis()))
+            while (VpnStats.dnsCacheLog.size > 50) VpnStats.dnsCacheLog.poll()
+        }
+    }
+
+    /** استخراج نام دامنه از پرس‌وجوی DNS (فقط QNAME؛ بدون هیچ آدرس سروری). */
+    private fun extractDomain(dnsPayload: ByteArray): String {
+        return try {
+            if (dnsPayload.size < 13) return ""
+            var off = 12
+            val labels = mutableListOf<String>()
+            while (off < dnsPayload.size && labels.size < 20) {
+                val len = dnsPayload[off].toInt() and 0xFF
+                if (len == 0) break
+                if (len and 0xC0 == 0xC0) break // compression pointer — پرش
+                off++
+                if (off + len > dnsPayload.size) break
+                labels.add(String(dnsPayload, off, len, Charsets.UTF_8))
+                off += len
+            }
+            labels.joinToString(".")
+        } catch (_: Exception) {
+            ""
+        }
+    }
 
     private fun refreshCacheEntry(query: ByteArray, server: InetAddress) {
         val k = dnsCache.keyOf(query)
@@ -791,6 +831,8 @@ class MyVpnService : VpnService() {
         VpnStats.isVpnActive = false
         VpnStats.dnsCacheHits.set(0)
         VpnStats.dnsCacheMisses.set(0)
+        VpnStats.dnsCacheSavedMs.set(0)
+        VpnStats.dnsCacheLog.clear()
         readerJob?.cancel()
         readerJob = null
         refreshingKeys.clear()
