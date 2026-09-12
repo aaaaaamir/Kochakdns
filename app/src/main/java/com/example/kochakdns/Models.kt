@@ -383,42 +383,41 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_TCP_ONLY, value).apply()
     }
 
-    // حداکثر پرس‌وجوی هم‌زمان UDP به سمت سرور (پیش‌فرض ۸؛ بین ۱ تا ۶۴).
+    // حداکثر پرس‌وجوی هم‌زمان UDP به سمت سرور (پیش‌فرض ۸؛ بدون سقف از تنظیمات).
     fun getUdpConcurrent(context: android.content.Context): Int =
-        prefs(context).getInt(KEY_UDP_CONCURRENT, 8).coerceIn(1, 64)
+        prefs(context).getInt(KEY_UDP_CONCURRENT, 8).coerceAtLeast(1)
 
     fun setUdpConcurrent(context: android.content.Context, value: Int) {
-        prefs(context).edit().putInt(KEY_UDP_CONCURRENT, value.coerceIn(1, 64)).apply()
+        prefs(context).edit().putInt(KEY_UDP_CONCURRENT, value.coerceAtLeast(1)).apply()
     }
 
-    // حداکثر پرس‌وجوی هم‌زمان TCP به سمت سرور (پیش‌فرض ۴؛ بین ۱ تا ۶۴).
+    // حداکثر پرس‌وجوی هم‌زمان TCP به سمت سرور (پیش‌فرض ۴؛ بدون سقف از تنظیمات).
     fun getTcpConcurrent(context: android.content.Context): Int =
-        prefs(context).getInt(KEY_TCP_CONCURRENT, 4).coerceIn(1, 64)
+        prefs(context).getInt(KEY_TCP_CONCURRENT, 4).coerceAtLeast(1)
 
     fun setTcpConcurrent(context: android.content.Context, value: Int) {
-        prefs(context).edit().putInt(KEY_TCP_CONCURRENT, value.coerceIn(1, 64)).apply()
+        prefs(context).edit().putInt(KEY_TCP_CONCURRENT, value.coerceAtLeast(1)).apply()
     }
 
     // نقطه‌ی شروع (و سقف) تایم‌اوت تطبیقی هر درخواست، به میلی‌ثانیه.
-    // پیش‌فرض ۵۰۰۰ms — همان صبرِ نسخه‌ی پایدار. بین ۲۰۰۰ تا ۱۰۰۰۰.
+    // پیش‌فرض ۸۰۰۰ms؛ بدون سقف (فقط باید مثبت باشد).
     fun getTimeoutStartMs(context: android.content.Context): Int =
-        prefs(context).getInt(KEY_TIMEOUT_START, 5000).coerceIn(2000, 10000)
+        prefs(context).getInt(KEY_TIMEOUT_START, 8000).coerceAtLeast(1)
 
     fun setTimeoutStartMs(context: android.content.Context, value: Int) {
-        prefs(context).edit().putInt(KEY_TIMEOUT_START, value.coerceIn(2000, 10000)).apply()
+        prefs(context).edit().putInt(KEY_TIMEOUT_START, value.coerceAtLeast(1)).apply()
     }
 
     // کفِ تایم‌اوت تطبیقی: تایم‌اوت سرورهای سریع هرگز از این کمتر نمی‌شود.
-    // پیش‌فرض ۲۰۰۰ms. کمتر از آن (مخصوصاً زیر ~۱۵۰۰ms) روی لینک‌های ناپایدار
-    // ممکن است پاسخ‌های سالمِ کمی‌دیر را قطع کند و پکت گم‌شده را زیاد کند.
+    // همیشه بین ۱ و «نقطه شروع» نگه داشته می‌شود تا رابطه‌ی کف ≤ سقف برقرار بماند.
     fun getTimeoutFloorMs(context: android.content.Context): Int {
         val start = getTimeoutStartMs(context)
-        return prefs(context).getInt(KEY_TIMEOUT_FLOOR, 2000).coerceIn(500, start)
+        return prefs(context).getInt(KEY_TIMEOUT_FLOOR, 2000).coerceIn(1, start)
     }
 
     fun setTimeoutFloorMs(context: android.content.Context, value: Int) {
         val start = getTimeoutStartMs(context)
-        prefs(context).edit().putInt(KEY_TIMEOUT_FLOOR, value.coerceIn(500, start)).apply()
+        prefs(context).edit().putInt(KEY_TIMEOUT_FLOOR, value.coerceIn(1, start)).apply()
     }
 
     // تایم‌اوت تطبیقی: روشن = تایم‌اوت با سرعت سرور تنظیم می‌شود (پیش‌فرض).
@@ -430,12 +429,12 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_ADAPTIVE_TIMEOUT, value).apply()
     }
 
-    // تایم‌اوت ثابت (وقتی تایم‌اوت تطبیقی خاموش باشد). پیش‌فرض ۵۰۰۰ms؛ ۵۰۰ تا ۱۰۰۰۰.
+    // تایم‌اوت ثابت (وقتی تایم‌اوت تطبیقی خاموش باشد). پیش‌فرض ۵۰۰۰ms؛ بدون سقف.
     fun getFixedTimeoutMs(context: android.content.Context): Int =
-        prefs(context).getInt(KEY_FIXED_TIMEOUT, 5000).coerceIn(500, 10000)
+        prefs(context).getInt(KEY_FIXED_TIMEOUT, 5000).coerceAtLeast(1)
 
     fun setFixedTimeoutMs(context: android.content.Context, value: Int) {
-        prefs(context).edit().putInt(KEY_FIXED_TIMEOUT, value.coerceIn(500, 10000)).apply()
+        prefs(context).edit().putInt(KEY_FIXED_TIMEOUT, value.coerceAtLeast(1)).apply()
     }
 
     // زبان برنامه: "device" (پیش‌فرض) | "fa" | "en"
