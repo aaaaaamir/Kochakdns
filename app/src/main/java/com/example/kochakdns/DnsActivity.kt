@@ -1431,15 +1431,37 @@ class DnsActivity : BaseActivity() {
             // نفس‌کشیدن ملایم فقط وقتی خاموش و آماده‌ی اتصاله معنا داره
             if (newState == VpnUiState.DISCONNECTED) startPowerIconBreathing() else stopPowerIconBreathing()
 
-            // یک بانس کوچیک روی هر تغییر حالت، تا کاربر همیشه حس کنه چیزی عوض شد
+            // ===== انیمیشن تغییر حالت (بانس فنری + چرخش خفیف + پاپ آیکون) =====
+            // دکمه با یک فنر نرم به اندازه‌ی اصلی برمی‌گردد؛ موقع وصل/قطع شدن،
+            // یک چرخش خفیف حس «کلیک» می‌دهد و آیکون با کمی تأخیر پاپ می‌شود.
             powerButton.animate().cancel()
-            powerButton.scaleX = 0.88f
-            powerButton.scaleY = 0.88f
+            powerButton.scaleX = 0.82f
+            powerButton.scaleY = 0.82f
+            powerButton.rotation = if (clickable) 0f else 4f
             powerButton.animate()
-                .scaleX(1f).scaleY(1f)
-                .setDuration(220)
-                .setInterpolator(android.view.animation.OvershootInterpolator(2.5f))
+                .scaleX(1f)
+                .scaleY(1f)
+                .rotation(0f)
+                .setDuration(420)
+                .setInterpolator(android.view.animation.OvershootInterpolator(3.2f))
                 .start()
+
+            // پاپ آیکون پاور، کمی بعد از بانس دکمه — فقط وقتی نفس‌کشیدن خاموش است
+            // (در حالت DISCONNECTED خودِ نفس‌کشیدن حس زنده‌بودن را می‌دهد)
+            if (newState != VpnUiState.DISCONNECTED) {
+                powerIcon.animate().cancel()
+                powerIcon.scaleX = 0.55f
+                powerIcon.scaleY = 0.55f
+                powerIcon.alpha = 0.2f
+                powerIcon.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .alpha(1f)
+                    .setStartDelay(70)
+                    .setDuration(320)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
+                    .start()
+            }
         }
     }
 
@@ -2334,7 +2356,7 @@ class DnsActivity : BaseActivity() {
             operatorList.visibility = View.VISIBLE
 
             val header = TextView(context).apply {
-                text = "عملکرد اوپراتورها"
+                text = context.str("op_performance")
                 setTextColor(Color.parseColor("#888888"))
                 textSize = 11f
                 setTypeface(null, Typeface.BOLD)
@@ -2519,7 +2541,7 @@ class DnsActivity : BaseActivity() {
                 lastKnownBestOperator = bestOpLabel
                 if (bestOpLabel != null) {
                     operatorBadge.visibility = View.VISIBLE
-                    operatorBadge.text = "بهترین عملکرد: $bestOpLabel"
+                    operatorBadge.text = "${context.str("op_best")}: $bestOpLabel"
                     operatorBadge.setTextColor(Color.parseColor("#4CAF50"))
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         operatorBadge.background = android.graphics.drawable.GradientDrawable().apply {
