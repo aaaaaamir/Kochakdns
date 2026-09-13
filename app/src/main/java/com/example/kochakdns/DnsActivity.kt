@@ -1679,6 +1679,8 @@ class DnsActivity : BaseActivity() {
 
     private fun rebuildDnsList() {
         runOnUiThread {
+            // انیمیشن‌های بی‌نهایت ویوهای قبلی را متوقف کن تا leak نشوند
+            dnsItemViews.values.forEach { it.dispose() }
             dnsListContainer.removeAllViews()
             dnsItemViews.clear()
             val sorted = dnsItems.sortedWith(compareBy<DnsItem> {
@@ -2106,6 +2108,9 @@ class DnsActivity : BaseActivity() {
         pingJob?.cancel()
         statsJob?.cancel()
         confirmJob?.cancel()
+        stopPowerIconBreathing()
+        powerColorAnimator?.cancel()
+        dnsItemViews.values.forEach { it.dispose() }
         try {
             unregisterReceiver(vpnReceiver)
         } catch (_: Exception) {
@@ -2133,6 +2138,8 @@ class DnsActivity : BaseActivity() {
         private var cardStrokeColor = Color.parseColor("#2A2A3E")
         private var cardColorAnimator: android.animation.ValueAnimator? = null
         private val cardShape: android.graphics.drawable.GradientDrawable
+        // انیمیشن‌های بی‌نهایتِ نقطه‌های لودینگ — برای متوقف شدن موقع dispose
+        private val dotAnimators = mutableListOf<android.animation.ValueAnimator>()
 
         init {
             cardShape = android.graphics.drawable.GradientDrawable().apply {
@@ -2331,7 +2338,7 @@ class DnsActivity : BaseActivity() {
                     }
                 }
                 container.addView(dot)
-                android.animation.ValueAnimator.ofFloat(0.5f, 1f).apply {
+                val dotAnimator = android.animation.ValueAnimator.ofFloat(0.5f, 1f).apply {
                     duration = 500
                     repeatMode = android.animation.ValueAnimator.REVERSE
                     repeatCount = android.animation.ValueAnimator.INFINITE
@@ -2343,10 +2350,17 @@ class DnsActivity : BaseActivity() {
                         dot.scaleY = scale
                         dot.alpha = 0.4f + scale * 0.6f
                     }
-                    start()
                 }
+                dotAnimators.add(dotAnimator)
+                dotAnimator.start()
             }
             return container
+        }
+
+        /** متوقف کردن انیمیشن‌های بی‌نهایت این کارت (جلوگیری از leak). */
+        fun dispose() {
+            dotAnimators.forEach { it.cancel() }
+            dotAnimators.clear()
         }
 
         /** باز/بسته کردن پنل جزئیات با انیمیشن ارتفاع نرم، و چرخش ۱۸۰ درجه‌ی پیکان. */
