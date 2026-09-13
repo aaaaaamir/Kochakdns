@@ -56,6 +56,8 @@ class AnimatedSwitchView(context: Context) : View(context) {
 
     /** تنظیم حالت بدون انیمیشن (برای مقداردهی اولیه). */
     fun setChecked(value: Boolean) {
+        animator?.cancel()
+        animator = null
         if (checked == value) {
             progress = if (value) 1f else 0f
             invalidate()
