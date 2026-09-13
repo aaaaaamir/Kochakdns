@@ -33,6 +33,10 @@ class MainActivity : BaseActivity() {
         ActivityResultContracts.RequestPermission()
     ) { onPermissionsGranted() }
 
+    // انیمیشن‌های شناورِ اسپلش نگه داشته می‌شوند تا در onDestroy متوقف شوند؛
+    // وگرنه AnimationHandler آن‌ها را (با مرجع ویو) تا ابد زنده نگه می‌دارد.
+    private val floatingAnimators = mutableListOf<ValueAnimator>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
@@ -335,9 +339,9 @@ class MainActivity : BaseActivity() {
 
     /** شناوری پیوسته‌ی هر آیکون: حرکت نرم در دو محور + چرخش ملایم. */
     private fun startFloating(view: View, icon: FloatingIcon) {
-        // ValueAnimator بعد از start توسط AnimationHandler نگه داشته می‌شود،
-        // پس نیازی به نگه‌داشتن مرجع نیست.
-        ValueAnimator.ofFloat(0f, icon.driftX, 0f, -icon.driftX, 0f).apply {
+        // انیمیشن‌ها در لیست نگه داشته می‌شوند تا موقع بستن صفحه لغو شوند
+        // (ValueAnimator بینهایت خودش هیچ‌وقت GC نمی‌شود).
+        floatingAnimators += ValueAnimator.ofFloat(0f, icon.driftX, 0f, -icon.driftX, 0f).apply {
             duration = icon.duration
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
@@ -345,7 +349,7 @@ class MainActivity : BaseActivity() {
             addUpdateListener { view.translationX = it.animatedValue as Float }
             start()
         }
-        ValueAnimator.ofFloat(0f, -icon.driftY, 0f, icon.driftY, 0f).apply {
+        floatingAnimators += ValueAnimator.ofFloat(0f, -icon.driftY, 0f, icon.driftY, 0f).apply {
             duration = icon.duration * 5 / 4
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
@@ -354,7 +358,7 @@ class MainActivity : BaseActivity() {
             start()
         }
         // چرخش ملایم (نوسان ±۶ درجه) برای حس زنده‌بودن آیکون‌ها
-        ValueAnimator.ofFloat(-6f, 6f, -6f).apply {
+        floatingAnimators += ValueAnimator.ofFloat(-6f, 6f, -6f).apply {
             duration = icon.duration * 3 / 2
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
@@ -362,5 +366,11 @@ class MainActivity : BaseActivity() {
             addUpdateListener { view.rotation = it.animatedValue as Float }
             start()
         }
+    }
+
+    override fun onDestroy() {
+        floatingAnimators.forEach { it.cancel() }
+        floatingAnimators.clear()
+        super.onDestroy()
     }
 }
