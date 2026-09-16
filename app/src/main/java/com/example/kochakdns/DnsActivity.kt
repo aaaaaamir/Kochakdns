@@ -306,9 +306,7 @@ class DnsActivity : BaseActivity() {
     private var isDrawerOpen = false
     private var drawerWidthPx = 0
     private var mainContainerRef: View? = null
-    private lateinit var powerButton: LinearLayout
-    private lateinit var powerIcon: PowerIconView
-    private lateinit var powerButtonShape: android.graphics.drawable.GradientDrawable
+    private lateinit var powerButton: PowerButtonView
     private lateinit var jitterText: TextView
     private lateinit var lastPingText: TextView
     private lateinit var statsLayout: LinearLayout
@@ -1031,27 +1029,19 @@ class DnsActivity : BaseActivity() {
         statusIndicator.addView(retryButton)
         header.addView(statusIndicator)
         mainContainer.addView(header)
-        powerButton = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { toggleVpn() }
+        powerButton = PowerButtonView(this).apply {
             layoutParams = LinearLayout.LayoutParams(480, 480).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = 80
                 bottomMargin = 32
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                powerButtonShape = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(Color.parseColor("#1E1E2E"))
-                    setStroke(8, Color.parseColor("#2A2A3E"))
-                }
-                background = powerButtonShape
-                // ریپل لمسی گرد، هم‌شکل با خود دکمه، تا کاربر همیشه ببینه تپش ثبت شده
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { toggleVpn() }
+            // ریپل لمسی گرد، هم‌شکل با خود دکمه، تا کاربر همیشه ببینه تپش ثبت شده
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val rippleMask = android.graphics.drawable.GradientDrawable().apply {
-                    this.shape = android.graphics.drawable.GradientDrawable.OVAL
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
                     setColor(Color.WHITE)
                 }
                 foreground = android.graphics.drawable.RippleDrawable(
@@ -1061,11 +1051,6 @@ class DnsActivity : BaseActivity() {
                 )
             }
         }
-        powerIcon = PowerIconView(this).apply {
-            setIconColor(Color.parseColor("#666680"))
-            layoutParams = LinearLayout.LayoutParams(160, 160)
-        }
-        powerButton.addView(powerIcon)
         mainContainer.addView(powerButton)
         val statsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1457,34 +1442,31 @@ class DnsActivity : BaseActivity() {
      * انتقال (CONNECTING/DISCONNECTING) غیرفعال می‌کنه تا دوبار-تپ زدن
      * race condition نسازه.
      */
-    private var powerBgColor = Color.parseColor("#1E1E2E")
-    private var powerStrokeColor = Color.parseColor("#2A2A3E")
-    private var powerIconColor = Color.parseColor("#666680")
-    private var breathingAnimator: android.animation.ValueAnimator? = null
-    private var powerColorAnimator: android.animation.ValueAnimator? = null
-
     private fun setVpnState(newState: VpnUiState) {
         vpnState = newState
         if (newState == VpnUiState.CONNECTED) maybeShowQsTileSuggestion()
         runOnUiThread {
-            val (bgColor, strokeColor, iconColor, clickable) = when (newState) {
-                VpnUiState.CONNECTED -> Quad("#1B3A22", "#4CAF50", "#4CAF50", true)
-                VpnUiState.DISCONNECTED -> Quad("#1E1E2E", "#2A2A3E", "#666680", true)
-                VpnUiState.CONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
-                VpnUiState.DISCONNECTING -> Quad("#3A2E00", "#FFD700", "#FFD700", false)
+            if (!::powerButton.isInitialized) return@runOnUiThread
+            val clickable = newState == VpnUiState.CONNECTED || newState == VpnUiState.DISCONNECTED
+
+            // ===== رنگ و انیمیشن کامل داخل خود PowerButtonView است =====
+            // هر وضعیتِ واقعیِ سرویس به یک فاز انیمیشن نگاشت می‌شود؛ دکمه هیچ‌وقت
+            // خودش وانمود نمی‌کند وصل شده — توپ تا آمدن نتیجه‌ی واقعی درجا می‌زند.
+            when (newState) {
+                VpnUiState.CONNECTING -> powerButton.startConnecting()
+                VpnUiState.CONNECTED -> powerButton.finishConnecting()
+                VpnUiState.DISCONNECTING -> powerButton.startDisconnecting()
+                VpnUiState.DISCONNECTED -> powerButton.notifyDisconnected()
             }
-            val strokeWidth = if (newState == VpnUiState.CONNECTED) 10 else 8
-            animatePowerButtonColors(Color.parseColor(bgColor), Color.parseColor(strokeColor), Color.parseColor(iconColor), strokeWidth)
 
             powerButton.isClickable = clickable
             powerButton.alpha = if (clickable) 1f else 0.75f
 
             // نفس‌کشیدن ملایم فقط وقتی خاموش و آماده‌ی اتصاله معنا داره
-            if (newState == VpnUiState.DISCONNECTED) startPowerIconBreathing() else stopPowerIconBreathing()
+            if (newState == VpnUiState.DISCONNECTED) powerButton.startIdleBreathing() else powerButton.stopIdleBreathing()
 
-            // ===== انیمیشن تغییر حالت (بانس فنری + چرخش خفیف + پاپ آیکون) =====
-            // دکمه با یک فنر نرم به اندازه‌ی اصلی برمی‌گردد؛ موقع وصل/قطع شدن،
-            // یک چرخش خفیف حس «کلیک» می‌دهد و آیکون با کمی تأخیر پاپ می‌شود.
+            // دکمه با یک فنر نرم به اندازه‌ی اصلی برمی‌گردد؛ موقع وصل/قطع شدن
+            // یک چرخش خفیف حس «کلیک» می‌دهد (فازهای داخلی، پاپ آیکون را خودشان دارند)
             powerButton.animate().cancel()
             powerButton.scaleX = 0.82f
             powerButton.scaleY = 0.82f
@@ -1496,74 +1478,8 @@ class DnsActivity : BaseActivity() {
                 .setDuration(420)
                 .setInterpolator(android.view.animation.OvershootInterpolator(3.2f))
                 .start()
-
-            // پاپ آیکون پاور، کمی بعد از بانس دکمه — فقط وقتی نفس‌کشیدن خاموش است
-            // (در حالت DISCONNECTED خودِ نفس‌کشیدن حس زنده‌بودن را می‌دهد)
-            if (newState != VpnUiState.DISCONNECTED) {
-                powerIcon.animate().cancel()
-                powerIcon.scaleX = 0.55f
-                powerIcon.scaleY = 0.55f
-                powerIcon.alpha = 0.2f
-                powerIcon.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .alpha(1f)
-                    .setStartDelay(70)
-                    .setDuration(320)
-                    .setInterpolator(android.view.animation.OvershootInterpolator(2.2f))
-                    .start()
-            }
         }
     }
-
-    /** رنگ پس‌زمینه، حاشیه، و آیکون رو به‌جای پرش ناگهانی، نرم به رنگ جدید محو می‌کنه. */
-    private fun animatePowerButtonColors(targetBg: Int, targetStroke: Int, targetIcon: Int, strokeWidthPx: Int) {
-        val fromBg = powerBgColor
-        val fromStroke = powerStrokeColor
-        val fromIcon = powerIconColor
-        val evaluator = android.animation.ArgbEvaluator()
-
-        powerColorAnimator?.cancel()
-        powerColorAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 320
-            addUpdateListener { anim ->
-                val f = anim.animatedValue as Float
-                powerButtonShape.setColor(evaluator.evaluate(f, fromBg, targetBg) as Int)
-                powerButtonShape.setStroke(strokeWidthPx, evaluator.evaluate(f, fromStroke, targetStroke) as Int)
-                powerIcon.setIconColor(evaluator.evaluate(f, fromIcon, targetIcon) as Int)
-            }
-            start()
-        }
-        powerBgColor = targetBg
-        powerStrokeColor = targetStroke
-        powerIconColor = targetIcon
-    }
-
-    /** یک نفس‌کشیدن خیلی ملایم روی خودِ آیکون، فقط وقتی آماده‌ی اتصاله (حالت خاموش). */
-    private fun startPowerIconBreathing() {
-        if (breathingAnimator?.isRunning == true) return
-        breathingAnimator = android.animation.ValueAnimator.ofFloat(1f, 1.06f).apply {
-            duration = 1600
-            repeatMode = android.animation.ValueAnimator.REVERSE
-            repeatCount = android.animation.ValueAnimator.INFINITE
-            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
-            addUpdateListener {
-                val scale = it.animatedValue as Float
-                powerIcon.scaleX = scale
-                powerIcon.scaleY = scale
-            }
-            start()
-        }
-    }
-
-    private fun stopPowerIconBreathing() {
-        breathingAnimator?.cancel()
-        breathingAnimator = null
-        powerIcon.scaleX = 1f
-        powerIcon.scaleY = 1f
-    }
-
-    private data class Quad(val a: String, val b: String, val c: String, val d: Boolean)
 
 
     private suspend fun syncDnsData(force: Boolean = false) {
@@ -2108,8 +2024,7 @@ class DnsActivity : BaseActivity() {
         pingJob?.cancel()
         statsJob?.cancel()
         confirmJob?.cancel()
-        stopPowerIconBreathing()
-        powerColorAnimator?.cancel()
+        if (::powerButton.isInitialized) powerButton.stopIdleBreathing()
         dnsItemViews.values.forEach { it.dispose() }
         try {
             unregisterReceiver(vpnReceiver)
@@ -2236,9 +2151,9 @@ class DnsActivity : BaseActivity() {
             infoContainer.addView(pingRow)
 
             // پیکانِ باز/بسته شدن جزئیات: انتخاب‌نشده توخالی، انتخاب‌شده توپُر.
-            // ویو بزرگ‌تر از خودِ آیکون است تا جای لمس راحت‌تر باشد.
+            // ویو کمی بزرگ‌تر از خودِ آیکون است تا جای لمس داشته باشد (۹۶px).
             expandArrow = ExpandArrowView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(120, 120).apply { marginStart = 0 }
+                layoutParams = LinearLayout.LayoutParams(96, 96).apply { marginStart = 0 }
                 isClickable = true
                 isFocusable = true
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
