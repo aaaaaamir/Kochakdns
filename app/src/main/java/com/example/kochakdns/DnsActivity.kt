@@ -79,55 +79,6 @@ private fun colorForPercent(percent: Double): Int {
 }
 
 /**
- * آیکون پاور، مستقیم با Canvas کشیده می‌شه — دیگه فایل drawable جدا لازم
- * نیست، همه‌چیز همین‌جا توی خودِ DnsActivity.kt کنار همدیگه‌ست.
- * سبک: خطی (stroke)، سفید، گوشه‌ها و سرِ خط‌ها گرد — دقیقاً شبیه آیکون
- * "power" از ست آیکون Lucide.
- *
- * اگه بعداً خواستی نسخه‌ی رسمی SVG رو جایگزین کنی (مثلاً یک انیمیشنش رو
- * بسازی)، این دستور رو توی ترمینال بزن تا فایل اصلی Lucide دانلود بشه:
- *
- *   curl -o app/src/main/res/drawable/ic_power.svg \
- *     https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/power.svg
- *
- * توجه: فایل svg مستقیم قابل استفاده به‌عنوان drawable اندروید نیست؛ باید
- * تبدیلش کنی به vector XML — ساده‌ترین راه توی Android Studio:
- * راست‌کلیک روی پوشه‌ی drawable → New → Vector Asset → Local file →
- * همین svg رو انتخاب کن. بعدش کافیه توی کد این کلاس رو با یک ImageView که
- * به R.drawable.ic_power اشاره می‌کنه عوض کنی.
- */
-class PowerIconView(context: Context) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = Color.WHITE
-    }
-
-    fun setIconColor(color: Int) {
-        paint.color = color
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val size = minOf(width, height).toFloat()
-        if (size <= 0) return
-        paint.strokeWidth = size * 0.09f
-        val cx = width / 2f
-        val cy = height / 2f
-        val r = size * 0.32f
-
-        // خط عمودی بالا (دسته‌ی کلید)
-        canvas.drawLine(cx, cy - r * 1.15f, cx, cy - r * 0.15f, paint)
-
-        // کمان دایره با یک شکاف بالا (نماد استاندارد پاور)
-        val rectF = RectF(cx - r, cy - r, cx + r, cy + r)
-        canvas.drawArc(rectF, -55f, 290f, false, paint)
-    }
-}
-
-/**
  * شورون رو به پایین (نماد باز شدن جزئیات) با نسبت‌های دقیق آیکون مرجع:
  * دو بازوی ۴۵ درجه با سر و ته گرد. انتخاب‌نشده = توخالی (فقط حاشیه)،
  * انتخاب‌شده = توپُر. رنگ هم نرم بین خاکستری و سفید انیمیت می‌شود و چرخشِ
@@ -1451,7 +1402,7 @@ class DnsActivity : BaseActivity() {
 
             // ===== رنگ و انیمیشن کامل داخل خود PowerButtonView است =====
             // هر وضعیتِ واقعیِ سرویس به یک فاز انیمیشن نگاشت می‌شود؛ دکمه هیچ‌وقت
-            // خودش وانمود نمی‌کند وصل شده — توپ تا آمدن نتیجه‌ی واقعی درجا می‌زند.
+            // خودش وانمود نمی‌کند وصل شده — یک پرش دارد و تا آمدن نتیجه آرام نفس می‌کشد.
             when (newState) {
                 VpnUiState.CONNECTING -> powerButton.startConnecting()
                 VpnUiState.CONNECTED -> powerButton.finishConnecting()
@@ -1465,19 +1416,9 @@ class DnsActivity : BaseActivity() {
             // نفس‌کشیدن ملایم فقط وقتی خاموش و آماده‌ی اتصاله معنا داره
             if (newState == VpnUiState.DISCONNECTED) powerButton.startIdleBreathing() else powerButton.stopIdleBreathing()
 
-            // دکمه با یک فنر نرم به اندازه‌ی اصلی برمی‌گردد؛ موقع وصل/قطع شدن
-            // یک چرخش خفیف حس «کلیک» می‌دهد (فازهای داخلی، پاپ آیکون را خودشان دارند)
-            powerButton.animate().cancel()
-            powerButton.scaleX = 0.82f
-            powerButton.scaleY = 0.82f
-            powerButton.rotation = if (clickable) 0f else 4f
-            powerButton.animate()
-                .scaleX(1f)
-                .scaleY(1f)
-                .rotation(0f)
-                .setDuration(420)
-                .setInterpolator(android.view.animation.OvershootInterpolator(3.2f))
-                .start()
+            // بانس فنری بیرونی حذف شد: با هر فراخوانی تغییر وضعیت اجرا می‌شد و
+            // در هر وصل/قطع «دو پرش» می‌ساخت (یکی موقع گذار، یکی موقع نتیجه).
+            // حالا تمام حرکت را فازهای داخلیِ PowerButtonView انجام می‌دهند.
         }
     }
 
