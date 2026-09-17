@@ -17,15 +17,16 @@ import android.view.View
 /**
  * دکمه پاور با انیمیشن چهارفازی (طرح PowerButtonView):
  *  1) MORPH  — آیکون پاور (حلقه + خط) آب می‌شود و به یک توپ سفید سه‌بعدی تبدیل می‌شود
- *  2) JUMP   — توپ می‌پرد و تا رسیدن نتیجه‌ی واقعی اتصال، پریدن را تکرار می‌کند (زرد = در حال اتصال)
+ *  2) JUMP   — توپ فقط یک بار می‌پرد (زرد = در حال اتصال)؛ اگر نتیجه نرسیده باشد
+ *              فاز HOLD توپ را روی زمین آرام «نفس» می‌دهد — بدون پرش‌های مکرر
  *  3) EMERGE — توپ دوباره به آیکون پاور تبدیل می‌شود و رنگ سبز می‌گیرد
  *  4) SPIN   — چرخش ۳۶۰ درجه با motion-blur برای قطع شدن (سبز می‌چرخد، بعد خاکستری می‌شود)
  *
  * تفاوت مهم با نسخه‌ی دمو: وضعیت‌ها را DnsActivity از نتیجه‌ی واقعی سرویس VPN
  * (VpnUiState) با startConnecting / finishConnecting / startDisconnecting /
  * notifyDisconnected کنترل می‌کند؛ دکمه خودش «وانمود» نمی‌کند که وصل شده.
- * توپ تا آمدن پاسخ سرور/سرویس درجا می‌زند و دقیقاً در لحظه فرود (نه وسط هوا)
- * به فاز ظاهر شدن می‌رود تا پرش نداشته باشیم.
+ * در هر تغییر وضعیت حداکثر یک پرش داریم و نتیجه همیشه در لحظه فرود/ایست
+ * تحویل داده می‌شود، پس «پرش دوباره» یا پرش وسط هوا نمی‌بینی.
  */
 class PowerButtonView @JvmOverloads constructor(
     context: Context,
@@ -61,6 +62,10 @@ class PowerButtonView @JvmOverloads constructor(
     private var shadowScaleY = 1f
     private var iconBlur = 0f
     private var breath = 1f
+
+    /** نبض ملایم فاز HOLD (ایستادن روی زمین حین انتظار نتیجه). */
+    private var holdPulse = 1f
+    private var inHold = false
 
     // ---- رنگ‌ها (تم تیره‌ی خودِ برنامه؛ همان‌هایی که قبلاً ست شده بود) ----
     private var bgColor = Color.parseColor("#1E1E2E")
@@ -131,7 +136,11 @@ class PowerButtonView @JvmOverloads constructor(
     /** اتصال برقرار شد (CONNECTED). */
     fun finishConnecting() {
         when (currentState) {
-            STATE_TURNING_ON -> pendingFinish = true          // در اولین فرود، EMERGE شروع می‌شود
+            STATE_TURNING_ON -> {
+                // حین پرش بودیم → در فرودِ همون پرش تحویل بده؛
+                // ایستاده (HOLD) بودیم → انیمیشن بی‌نهایت hold را لغو و فوری EMERGE کن
+                if (inHold) { cancelAll(); startEmerging() } else pendingFinish = true
+            }
             STATE_EMERGING -> { /* دارد ظاهر می‌شود؛ کاری لازم نیست */ }
             else -> { cancelAll(); resetAll(); setState(STATE_ON) } // مثلاً build مجدد صفحه هنگام VPN فعال
         }
@@ -199,6 +208,8 @@ class PowerButtonView @JvmOverloads constructor(
         shadowAlpha = 0f
         shadowScaleX = 1f; shadowScaleY = 1f
         iconBlur = 0f
+        holdPulse = 1f
+        inHold = false
         applyStateColors(currentState)
         invalidate()
     }
@@ -241,6 +252,7 @@ class PowerButtonView @JvmOverloads constructor(
 
     private fun cancelAll() {
         pendingFinish = false
+        inHold = false
         for (a in animators) {
             a.removeAllListeners()
             a.cancel()
@@ -303,10 +315,11 @@ class PowerButtonView @JvmOverloads constructor(
         morph.start()
     }
 
-    // ==================== فاز ۲: JUMP (حلقه‌ای تا رسیدن نتیجه) ====================
+    // ==================== فاز ۲: JUMP (فقط یک پرش) ====================
+    // پرش تکرار نمی‌شود؛ اگر نتیجه تا پایان پرش نرسیده باشد، فاز HOLD
+    // (ایستادن آرام روی زمین) شروع می‌شود — این‌طوری هیچ‌وقت «دو-پرش» نمی‌بینیم.
     private fun startJumpPhase() {
         val jump = ValueAnimator.ofFloat(0f, 1f).apply { duration = 700 }
-        jump.repeatCount = ValueAnimator.INFINITE
         jump.addUpdateListener { a ->
             val p = a.animatedValue as Float
 
@@ -320,22 +333,43 @@ class PowerButtonView @JvmOverloads constructor(
             shadowScaleX = keyframe(p, 0f, 1.05f, 0.12f, 1.15f, 0.45f, 0.35f, 0.80f, 1.20f, 1f, 1f)
             shadowScaleY = keyframe(p, 0f, 0.95f, 0.12f, 1.05f, 0.45f, 0.50f, 0.80f, 1.12f, 1f, 1f)
 
-            // نتیجه‌ی اتصال رسید؟ فقط در انتهای سیکل (توپ روی زمین) تحویل بده تا پرش نبینیم
-            if (pendingFinish && p >= 0.92f) {
-                a.removeAllListeners()
-                a.cancel()
-                startEmerging()
-                return@addUpdateListener
-            }
             invalidate()
         }
+        jump.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(a: Animator) {
+                if (currentState != STATE_TURNING_ON) return
+                if (pendingFinish) startEmerging() else startHoldPhase()
+            }
+        })
         animators.add(jump)
         jump.start()
+    }
+
+    // ==================== فاز ۲.۵: HOLD (ایستاده، نفس آرام؛ بدون پرش) ====================
+    private fun startHoldPhase() {
+        inHold = true
+        // مقدار ابتدا و انتهای هر سیکل یکی است، پس حلقه‌ی بی‌نهایت بدون هیچ
+        // پرشی جریان دارد — فقط نبض و سایه‌ی ملایمِ توپ روی زمین
+        val hold = ValueAnimator.ofFloat(0f, 1f).apply { duration = 1100 }
+        hold.repeatCount = ValueAnimator.INFINITE
+        hold.addUpdateListener { a ->
+            val p = a.animatedValue as Float
+            iconOffsetY = 0f
+            shadowAlpha  = keyframe(p, 0f, 0f, 0.15f, 0.45f, 0.50f, 0.70f, 0.85f, 0.45f, 1f, 0f)
+            shadowScaleX = keyframe(p, 0f, 0.90f, 0.50f, 1.00f, 1f, 0.90f)
+            shadowScaleY = keyframe(p, 0f, 0.80f, 0.50f, 1.00f, 1f, 0.80f)
+            holdPulse = keyframe(p, 0f, 1f, 0.50f, 1.07f, 1f, 1f)
+            invalidate()
+        }
+        animators.add(hold)
+        hold.start()
     }
 
     // ==================== فاز ۳: EMERGING ====================
     private fun startEmerging() {
         pendingFinish = false
+        inHold = false
+        holdPulse = 1f
         setState(STATE_EMERGING)
         val emerge = ValueAnimator.ofFloat(0f, 1f).apply { duration = 650 }
         emerge.addUpdateListener { a ->
@@ -431,9 +465,9 @@ class PowerButtonView @JvmOverloads constructor(
             ballPaint.maskFilter = null
         }
 
-        // ۱) توپ پرکننده (سه‌بعدی)
+        // ۱) توپ پرکننده (سه‌بعدی) — holdPulse نبض فاز ایستاده را می‌دهد
         if (fillScale > 0.001f) {
-            val r = ringRadius * (10.8f / 9f) * fillScale
+            val r = ringRadius * (10.8f / 9f) * fillScale * holdPulse
             ballPaint.shader = RadialGradient(
                 0f, r * 0.3f, r * 1.05f,
                 intArrayOf(
