@@ -11,11 +11,16 @@ import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -37,10 +42,27 @@ class MainActivity : BaseActivity() {
     // وگرنه AnimationHandler آن‌ها را (با مرجع ویو) تا ابد زنده نگه می‌دارد.
     private val floatingAnimators = mutableListOf<ValueAnimator>()
 
+    // موافقت‌نامه بار اول روی اسپلش؛ تا پذیرفته نشود هیچ درخواست شبکه‌ای
+    // زده نمی‌شود و کاربر وارد برنامه نمی‌شود.
+    private var consentOverlay: FrameLayout? = null
+    private var mainFlowStarted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         setupSplashScreen()
+
+        if (AppSettings.isConsentAgreed(this)) {
+            startMainFlow()
+        } else {
+            showConsentOverlay()
+        }
+    }
+
+    /** ادامه راه‌اندازی — فقط بعد از پذیرش موافقت (یا در نسخه‌های قبلی که ست کرده‌اند). */
+    private fun startMainFlow() {
+        if (mainFlowStarted) return
+        mainFlowStarted = true
 
         // دریافت لیست DNS از همین لحظه (همزمان با انیمیشن اسپلش) شروع می‌شه،
         // نه بعد از ۳ ثانیه تاخیر. DnsActivity بعداً به همین درخواست در حال
@@ -77,6 +99,145 @@ class MainActivity : BaseActivity() {
             delay(3000)
             checkNotificationPermission()
         }
+    }
+
+    // ===================================================================
+    // موافقت‌نامه بار اول (اسپلش)
+    // ===================================================================
+    private fun showConsentOverlay() {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#F005050A"))
+            alpha = 0f
+            isClickable = true // از عبور تپ‌ها به اسپلش پشتش جلوگیری می‌کند
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1E2E"))
+                cornerRadius = dp(22).toFloat()
+                setStroke(dp(2), Color.parseColor("#2A2A3E"))
+            }
+            setPadding(dp(22), dp(20), dp(22), dp(14))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            ).apply {
+                marginStart = dp(22)
+                marginEnd = dp(22)
+            }
+            scaleX = 0.9f
+            scaleY = 0.9f
+        }
+
+        val title = TextView(this).apply {
+            text = str("consent_title")
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        card.addView(title)
+
+        val body = TextView(this).apply {
+            text = str("consent_message")
+            textSize = 13f
+            setTextColor(Color.parseColor("#C8C8D2"))
+            setLineSpacing(dp(4).toFloat(), 1f)
+        }
+        val scroller = object : ScrollView(this) {
+            private val maxHPx = (resources.displayMetrics.heightPixels * 0.6f).toInt()
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                // سقف ارتفاع = ۶۰٪ صفحه؛ بقیه‌ی متن با اسکرول دیده می‌شود و
+                // دکمه‌ها همیشه پایین کارت چسبان می‌مانند
+                super.onMeasure(
+                    widthMeasureSpec,
+                    View.MeasureSpec.makeMeasureSpec(maxHPx, View.MeasureSpec.AT_MOST)
+                )
+            }
+        }.apply {
+            addView(body)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(12)
+                bottomMargin = dp(14)
+            }
+        }
+        card.addView(scroller)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        // LTR ثابت: «نمی‌پذیرم» چپ، «می‌پذیرم» راست — مثل بقیه چیدمان‌های برنامه
+        val decline = TextView(this).apply {
+            text = str("consent_decline")
+            textSize = 14f
+            setTextColor(Color.parseColor("#A0A0AC"))
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(14), dp(12), dp(14))
+            isClickable = true
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.9f)
+            setOnClickListener {
+                // بدون موافقت، ورودی وجود ندارد؛ برنامه همان لحظه بسته می‌شود
+                finishAndRemoveTask()
+            }
+        }
+        val agree = TextView(this).apply {
+            text = str("consent_agree")
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(14), dp(12), dp(14))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#4C8DFF"))
+                cornerRadius = dp(12).toFloat()
+            }
+            isClickable = true
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.6f).apply {
+                marginStart = dp(10)
+            }
+            setOnClickListener {
+                AppSettings.markConsentAgreed(this@MainActivity)
+                dismissConsentOverlay()
+                startMainFlow()
+            }
+        }
+        row.addView(decline)
+        row.addView(agree)
+        card.addView(row)
+
+        scrim.addView(card)
+        (window.decorView as ViewGroup).addView(scrim)
+        consentOverlay = scrim
+
+        scrim.animate().alpha(1f).setDuration(200).start()
+        card.animate().scaleX(1f).scaleY(1f).setDuration(300)
+            .setInterpolator(OvershootInterpolator(1.6f)).start()
+    }
+
+    private fun dismissConsentOverlay() {
+        val scrim = consentOverlay ?: return
+        consentOverlay = null
+        scrim.animate().alpha(0f).setDuration(180)
+            .withEndAction { (scrim.parent as? ViewGroup)?.removeView(scrim) }
+            .start()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (consentOverlay != null) {
+            // تا تکلیف موافقت روشن نشود، بازگشت نباید برنامه را ببندد؛ فقط یادآوری
+            Toast.makeText(this, str("consent_decide_first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        super.onBackPressed()
     }
 
     private fun checkNotificationPermission() {
