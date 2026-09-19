@@ -926,7 +926,9 @@ class MyVpnService : VpnService() {
         if (!profileName.isNullOrBlank() && (sent > 0 || lost > 0) && durationMs >= 30_000) {
             sendStatsToServer(profileName, sent, lost, getOperatorInfo(this))
         }
-        PendingStatsStore.clear(this)
+        // اگر موافقت پذیرفته نشده باشد چک‌پوینت را پاک نمی‌کنیم تا آمار از دست
+        // نرود؛ بعد از پذیرش، اولین فلاشِ MainActivity آن را ارسال می‌کند.
+        if (AppSettings.isConsentAgreed(this)) PendingStatsStore.clear(this)
         connectStartTime = 0L
 
         VpnStats.isVpnActive = false
@@ -953,6 +955,10 @@ class MyVpnService : VpnService() {
     }
 
     private fun sendStatsToServer(profileName: String, sent: Long, lost: Long, operator: String) {
+        // موافقت‌نامه پذیرفته نشده (مثلاً کاربر قبل از اولین ورود به برنامه، از
+        // کاشی دسترسی سریع وصل شده) → هیچ آماری ارسال نمی‌شود؛ چک‌پوینت روی
+        // دیسک می‌ماند تا بعد از پذیرش و اولین باز کردن برنامه فلاش شود.
+        if (!AppSettings.isConsentAgreed(this)) return
         statsScope.launch {
             StatsReporter.send(profileName, sent, lost, operator)
         }
@@ -964,6 +970,8 @@ class MyVpnService : VpnService() {
      * صورت پاک می‌شود تا جلسه‌ی جدید با عدد صفر شروع شود.
      */
     private fun flushPendingStatsIfAny() {
+        // بدون موافقت پذیرفته‌شده، نه می‌فرستیم نه پاک می‌کنیم — داده محلی می‌ماند
+        if (!AppSettings.isConsentAgreed(this)) return
         val pending = PendingStatsStore.read(this) ?: return
         // اول پاک کن تا هیچ مسیر دیگری نتواند همین آمار را دوباره بخواند/بفرستد
         PendingStatsStore.clear(this)
