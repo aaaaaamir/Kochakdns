@@ -187,7 +187,12 @@ object I18n {
         "apps_select_all" to "انتخاب همه",
         "apps_clear_all" to "لغو همه",
         "apps_system" to "سیستمی",
-        "apps_load_error" to "خطا در دریافت لیست برنامه‌ها"
+        "apps_load_error" to "خطا در دریافت لیست برنامه‌ها",
+        "consent_title" to "حریم خصوصی و شرایط استفاده",
+        "consent_message" to "برای ادامه، لطفاً این موارد را بخوان و تأیید کن.\n\nچه اطلاعاتی جمع‌آوری می‌شود؟\nفقط دو مورد، به‌صورت آماری و برای رتبه‌بندی سرورهای DNS:\n• تعداد بسته‌های ارسالی و گمشده در هر پروفایل DNS\n• نام اپراتور تلفن همراه تو (برای رتبه‌بندی بر اساس اپراتور)\n\nچه اطلاعاتی جمع‌آوری نمی‌شود؟\nهیچ اطلاعات حساسی. دامنه‌ها یا تاریخچه پرس‌وجوهای DNS، مخاطبین، موقعیت مکانی، شناسه دستگاه و محتوای ترافیک هرگز ذخیره یا ارسال نمی‌شوند. این برنامه فقط سرور DNS را عوض می‌کند و هیچ ترافیکی از گوشی تو عبور نمی‌کند.\n\nسلب مسئولیت\nاین ابزار برای بهبود عملکرد DNS ساخته شده است. سازنده در قبال هرگونه استفاده نادرست، نقض قوانین یا سیاست‌های اپراتورها و سازمان‌ها، اختلال احتمالی در شبکه و هر زیان ناشی از آن هیچ مسئولیتی ندارد؛ استفاده از برنامه کاملاً بر عهده خودت است.\n\nبا زدن «می‌پذیرم، ادامه» تأیید می‌کنی که این متن را خوانده‌ای و می‌پذیری.",
+        "consent_agree" to "می‌پذیرم، ادامه",
+        "consent_decline" to "نمی‌پذیرم",
+        "consent_decide_first" to "برای ادامه باید یکی از گزینه‌ها را انتخاب کنی"
     )
 
     private val EN = mapOf(
@@ -319,7 +324,12 @@ object I18n {
         "apps_select_all" to "Select all",
         "apps_clear_all" to "Clear all",
         "apps_system" to "System",
-        "apps_load_error" to "Error loading app list"
+        "apps_load_error" to "Error loading app list",
+        "consent_title" to "Privacy & Terms of Use",
+        "consent_message" to "Please read and confirm the following to continue.\n\nWhat is collected?\nOnly two items, aggregated, to rank DNS servers:\n• Number of packets sent and lost per DNS profile\n• Your mobile operator name (for per-operator ranking)\n\nWhat is NOT collected?\nNo sensitive data. Queried domains or DNS history, contacts, location, device identifiers and traffic content are never stored or sent. This app only changes the DNS server; no traffic passes through your phone.\n\nDisclaimer\nThis tool is provided to improve DNS performance. The developer accepts no liability for any misuse, violation of operator/organization policies, potential network disruption, or any resulting damages; you use the app entirely at your own risk.\n\nBy tapping “Accept & continue” you confirm you have read and accept the above.",
+        "consent_agree" to "Accept & continue",
+        "consent_decline" to "Decline",
+        "consent_decide_first" to "Choose one of the options to continue"
     )
 
     /** ترجمه‌ی کلید به زبان فعلی (fallback به فارسی). */
