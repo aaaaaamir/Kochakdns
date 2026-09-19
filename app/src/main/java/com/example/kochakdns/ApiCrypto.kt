@@ -28,9 +28,11 @@ object ApiCrypto {
 
     const val PREFIX = "ENC1:"
 
-    private const val PASSPHRASE = "kochak-dns-shared-secret-v1"
-    private const val SALT = "kochakdns::salt::2026"
-    private const val ITERATIONS = 10_000
+    // کلید/پارامترهای واقعی در ApiConfig.kt (خارج از گیت) هستند — باید دقیقاً
+    // با worker.js یکسان بمانند؛ اینجا فقط لایه‌ی دسترسی است.
+    private const val PASSPHRASE = ApiConfig.ENC_PASSPHRASE
+    private const val SALT = ApiConfig.ENC_SALT
+    private const val ITERATIONS = ApiConfig.ENC_ITERATIONS
     private const val KEY_BITS = 256
     private const val IV_LENGTH = 12
     private const val TAG_LENGTH_BITS = 128
