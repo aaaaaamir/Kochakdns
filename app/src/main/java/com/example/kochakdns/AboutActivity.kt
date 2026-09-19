@@ -101,9 +101,9 @@ class AboutActivity : BaseActivity() {
             setPadding(0, 12, 0, 36)
         })
 
-        // لینک‌ها در کارت‌های خاکستری
-        content.addView(linkCard("${str("about_website")} kodns.ir", "https://kodns.ir"))
-        content.addView(linkCard("${str("about_website")} idothis.ir", "https://idothis.ir"))
+        // لینک‌ها در کارت‌های خاکستری (آدرس‌ها از ApiConfig، نه hard-code)
+        content.addView(linkCard("${str("about_website")} ${AppConfig.SITE_URL.substringAfter("://")}", AppConfig.SITE_URL))
+        content.addView(linkCard("${str("about_website")} ${AppConfig.SUPPORT_URL.substringAfter("://")}", AppConfig.SUPPORT_URL))
 
         root.addView(content)
         setContentView(root)
