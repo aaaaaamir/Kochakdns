@@ -123,8 +123,8 @@ class DnsSyncManager(private val context: Context) {
     )
 
     /**
-     * آمار پکت‌های ارسالی/گم‌شده‌ی هر پروفایل را از سرور می‌گیرد (GET
-     * /api/dns/stats) همراه با تفکیک اوپراتورها.
+     * آمار پکت‌های ارسالی/گم‌شده‌ی هر پروفایل را از سرور می‌گیرد
+     * (endpoint آمار در AppConfig.API_DNS_STATS) همراه با تفکیک اوپراتورها.
      *
      * @return map از profile_name به DnsStatsData
      */
@@ -132,14 +132,14 @@ class DnsSyncManager(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
-                    .url("${AppConfig.BASE_URL}/api/dns/stats")
+                    .url(AppConfig.BASE_URL + AppConfig.API_DNS_STATS)
                     .get()
                     .build()
 
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@withContext emptyMap()
                     val body = response.body?.string() ?: return@withContext emptyMap()
-                    // پاسخ /api/dns/stats هم ممکن است رمزنگاری‌شده باشد (ENC1:)؛
+                    // پاسخ endpoint آمار هم ممکن است رمزنگاری‌شده باشد (ENC1:)؛
                     // در آن صورت رمزگشایی می‌شود، وگرنه مستقیم خوانده می‌شود.
                     val decoded = try {
                         ApiCrypto.decryptIfNeeded(body)
@@ -186,10 +186,10 @@ class DnsSyncManager(private val context: Context) {
 
     private fun fetchListFromServer(): List<DnsProfile> {
         val requestBuilder = Request.Builder()
-            .url("${AppConfig.BASE_URL}/api/dns/list")
+            .url(AppConfig.BASE_URL + AppConfig.API_DNS_LIST)
             .get()
             .header("Accept", "application/json")
-            .header("User-Agent", "KochakDNS-Android-Client/1.0")
+            .header("User-Agent", AppConfig.USER_AGENT)
 
         accessToken?.let {
             requestBuilder.header("Authorization", "Bearer $it")
