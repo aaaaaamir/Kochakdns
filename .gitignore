@@ -1,1 +1,32 @@
+# ============================================================
+#  KochakDNS — Android project .gitignore
+#  (این فایل را کنار settings.gradle بگذار؛ اگر از قبل داری، بلوک اول را ادغام کن)
+# ============================================================
+
+# ---- 🔒 کلیدها و آدرس‌های API — فقط محلی؛ هرگز commit نشود ----
+# الگوی commit‌شدنی: ApiConfig.example.kt
+app/src/main/java/com/example/kochakdns/ApiConfig.kt
+.env
+.env.local
+
+# ---- رازهای امضای APK ----
 release.keystore
+app/release.keystore
+*.keystore
+*.jks
+keystore.properties
+
+# ---- Gradle/IDE/خروجی‌ها ----
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- سیستم‌عامل ----
+.DS_Store
+Thumbs.db
