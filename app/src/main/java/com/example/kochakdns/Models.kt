@@ -8,14 +8,24 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
-/** دامنه‌ی اصلی بک‌اند، یک‌جا تعریف شده تا هم DnsSyncManager هم MyVpnService از همین استفاده کنن. */
+/**
+ * لایه‌ی دسترسی ثابت به بک‌اند — خودِ مقدارها (دامنه، مسیرها، کلید رمزنگاری)
+ * در `ApiConfig.kt` هستند که از گیت بیرون نگه داشته می‌شود.
+ * بقیه‌ی کد فقط با همین نام‌ها کار می‌کند تا اگر روزی ساختار عوض شد، یک فایل عوض شود.
+ */
 object AppConfig {
-    const val BASE_URL = "https://kodns.ir"
+    const val BASE_URL = ApiConfig.BASE_URL
 
     // مسیرهای API (بک‌اند Cloudflare Worker)
-    const val API_APP_INFO = "/api/app/info"          // بررسی بروزرسانی (ورژن/حجم)
-    const val API_APP_DOWNLOAD = "/api/app/download"  // دانلود APK
-    const val API_ANNOUNCEMENT = "/api/app/announcement" // اطلاعیه داخل برنامه
+    const val API_DNS_LIST = ApiConfig.API_DNS_LIST
+    const val API_DNS_PROFILE = ApiConfig.API_DNS_PROFILE
+    const val API_DNS_STATS = ApiConfig.API_DNS_STATS
+    const val API_APP_INFO = ApiConfig.API_APP_INFO
+    const val API_APP_DOWNLOAD = ApiConfig.API_APP_DOWNLOAD
+    const val API_ANNOUNCEMENT = ApiConfig.API_ANNOUNCEMENT
+    const val USER_AGENT = ApiConfig.USER_AGENT
+    const val SITE_URL = ApiConfig.SITE_URL
+    const val SUPPORT_URL = ApiConfig.SUPPORT_URL
 }
 
 data class DnsServer(
@@ -109,7 +119,7 @@ data class DnsProfile(
     }
 }
 
-/** آمار یک اوپراتور خاص برای یک DNS (از GET /api/dns/stats). */
+/** آمار یک اوپراتور خاص برای یک DNS (از endpoint آمار). */
 data class OperatorStat(
     val operator: String,
     val packetsSent: Long,
@@ -127,7 +137,7 @@ data class DnsItem(
     val servers: List<DnsServer>,
     val ping: Long = -1,
     val previousPing: Long = -1,
-    // آماری که از سرور (GET /api/dns/stats) خونده می‌شه؛ مجموع پکت‌های
+    // آماری که از سرور (endpoint آمار) خونده می‌شه؛ مجموع پکت‌های
     // ارسالی/گم‌شده‌ای که قبلاً وقتی این پروفایل وصل بوده، ثبت شده.
     val statsPacketsSent: Long = 0,
     val statsPacketsLost: Long = 0,
@@ -281,7 +291,7 @@ object StatsReporter {
             val body = json.toString()
                 .toRequestBody("application/json".toMediaType())
             val request = okhttp3.Request.Builder()
-                .url("${AppConfig.BASE_URL}/api/dns/stats")
+                .url(AppConfig.BASE_URL + AppConfig.API_DNS_STATS)
                 .post(body)
                 .addHeader("Content-Type", "application/json")
                 .build()
@@ -302,6 +312,8 @@ object AppSettings {
     private const val KEY_ANNOUNCEMENT = "announcement_enabled"
     private const val KEY_QS_TILE = "qs_tile_enabled"
     private const val KEY_QS_SUGGESTION = "qs_tile_suggestion_shown"
+    // پذیرش موافقت‌نامه حریم خصوصی/شرایط — بار اول روی اسپلش پرسیده می‌شود.
+    private const val KEY_CONSENT = "terms_consent_v1"
     private const val KEY_TCP_FALLBACK = "tcp_fallback"
     private const val KEY_TCP_ONLY = "tcp_only"
     private const val KEY_UDP_CONCURRENT = "udp_concurrent"
@@ -373,6 +385,14 @@ object AppSettings {
 
     fun markQsTileSuggestionShown(context: android.content.Context) {
         prefs(context).edit().putBoolean(KEY_QS_SUGGESTION, true).apply()
+    }
+
+    // بدون پذیرش موافقت‌نامه: نه وارد برنامه می‌شویم، نه آماری ارسال می‌کنیم.
+    fun isConsentAgreed(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_CONSENT, false)
+
+    fun markConsentAgreed(context: android.content.Context) {
+        prefs(context).edit().putBoolean(KEY_CONSENT, true).apply()
     }
 
     // پیش‌فرض true: اگر پرس‌وجوی UDP بی‌پاسخ بماند، همان پرس‌وجو با TCP (پورت ۵۳)
