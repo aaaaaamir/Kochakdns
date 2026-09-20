@@ -1,4 +1,4 @@
-package com.example.kochakdns
+package com.example.powerbutton
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -12,22 +12,9 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 
-/**
- * دکمه پاور با انیمیشن چهارفازی (طرح PowerButtonView):
- *  1) MORPH  — آیکون پاور (حلقه + خط) آب می‌شود و به یک توپ سفید سه‌بعدی تبدیل می‌شود
- *  2) JUMP   — توپ فقط یک بار می‌پرد (زرد = در حال اتصال)؛ اگر نتیجه نرسیده باشد
- *              فاز HOLD توپ را روی زمین آرام «نفس» می‌دهد — بدون پرش‌های مکرر
- *  3) EMERGE — توپ دوباره به آیکون پاور تبدیل می‌شود و رنگ سبز می‌گیرد
- *  4) SPIN   — چرخش ۳۶۰ درجه با motion-blur برای قطع شدن (سبز می‌چرخد، بعد خاکستری می‌شود)
- *
- * تفاوت مهم با نسخه‌ی دمو: وضعیت‌ها را DnsActivity از نتیجه‌ی واقعی سرویس VPN
- * (VpnUiState) با startConnecting / finishConnecting / startDisconnecting /
- * notifyDisconnected کنترل می‌کند؛ دکمه خودش «وانمود» نمی‌کند که وصل شده.
- * در هر تغییر وضعیت حداکثر یک پرش داریم و نتیجه همیشه در لحظه فرود/ایست
- * تحویل داده می‌شود، پس «پرش دوباره» یا پرش وسط هوا نمی‌بینی.
- */
 class PowerButtonView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -42,9 +29,14 @@ class PowerButtonView @JvmOverloads constructor(
         const val STATE_TURNING_OFF = 4
     }
 
+    interface OnStateChangeListener {
+        fun onStateChanged(newState: Int)
+    }
+
+    private var listener: OnStateChangeListener? = null
     private var currentState = STATE_OFF
 
-    // ---- مقادیر انیمیشنی ----
+    // ---- Animated values ----
     private var fillScale = 0f
     private var ringSquashX = 1f
     private var ringSquashY = 1f
@@ -56,57 +48,49 @@ class PowerButtonView @JvmOverloads constructor(
     private var iconSquashX = 1f
     private var iconSquashY = 1f
     private var iconRotation = 0f
-    private var iconAlpha = 1f
     private var shadowAlpha = 0f
     private var shadowScaleX = 1f
     private var shadowScaleY = 1f
     private var iconBlur = 0f
-    private var breath = 1f
 
-    /** نبض ملایم فاز HOLD (ایستادن روی زمین حین انتظار نتیجه). */
-    private var holdPulse = 1f
-    private var inHold = false
+    // ---- Colors ----
+    private var bgColor = 0xFF181829.toInt()
+    private var borderColor = 0xFF2A2A40.toInt()
+    private var iconColor = 0xFF4A4A6A.toInt()
 
-    // ---- رنگ‌ها (تم تیره‌ی خودِ برنامه؛ همان‌هایی که قبلاً ست شده بود) ----
-    private var bgColor = Color.parseColor("#1E1E2E")
-    private var borderColor = Color.parseColor("#2A2A3E")
-    private var iconColor = Color.parseColor("#666680")
-
-    // ---- قلم‌موها ----
+    // ---- Paints ----
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val ballPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ballPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    // ---- اندازه‌ها ----
+    // ---- Sizes ----
     private var cx = 0f
     private var cy = 0f
     private var radius = 0f
     private var iconSize = 0f
     private var ringRadius = 0f
-    private var strokeW = 0f
     private val density = resources.displayMetrics.density
 
     private val animators = mutableListOf<ValueAnimator>()
-    private var breathAnimator: ValueAnimator? = null
-
-    /** وقتی حین پریدنِ توپ، اتصال واقعی برقرار شود؛ در فرود بعدی به فاز EMERGE می‌رویم. */
-    private var pendingFinish = false
+    private var colorAnimator: ValueAnimator? = null
 
     init {
         bgPaint.style = Paint.Style.FILL
         borderPaint.style = Paint.Style.STROKE
-        borderPaint.strokeWidth = dp(2.6f)
+        borderPaint.strokeWidth = dp(2f)
         iconPaint.style = Paint.Style.STROKE
         iconPaint.strokeCap = Paint.Cap.ROUND
-        ballPaint.style = Paint.Style.FILL
         shadowPaint.style = Paint.Style.FILL
-        shadowPaint.color = 0xAA000000.toInt()
+        ballPaint.style = Paint.Style.FILL
 
-        // BlurMaskFilter روی بوم سخت‌افزاری (قبل از API 28) نادیده گرفته می‌شود؛
-        // لایه نرم‌افزاری تضمین می‌کند بلورِ فاز خاموش‌شدن در همه دستگاه‌ها دیده شود.
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
+        isClickable = true
+        isFocusable = true
+    }
+
+    fun setOnStateChangeListener(l: OnStateChangeListener) {
+        listener = l
     }
 
     private fun dp(v: Float) = v * density
@@ -115,88 +99,51 @@ class PowerButtonView @JvmOverloads constructor(
         super.onSizeChanged(w, h, oldw, oldh)
         cx = w / 2f
         cy = h / 2f
-        radius = minOf(w, h) / 2f - dp(1.5f)
+        radius = minOf(w, h) / 2f - dp(2f)
         iconSize = minOf(w, h) * (68f / 220f)
         ringRadius = iconSize * (9f / 24f)
-        strokeW = iconSize * (2.5f / 24f)
-        iconPaint.strokeWidth = strokeW
+        iconPaint.strokeWidth = iconSize * (2.5f / 24f)
     }
 
-    // ==================== API بیرونی (از سمت DnsActivity صدا زده می‌شود) ====================
-
-    /** شروع اتصال (CONNECTING): مورف + پرش توپ تا اعلام نتیجه. */
-    fun startConnecting() {
-        if (currentState == STATE_TURNING_ON || currentState == STATE_EMERGING) return
-        cancelAll()
-        resetAll()
-        setState(STATE_TURNING_ON)
-        startMorphPhase()
+    // ==================== Touch ====================
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP) {
+            performClick()
+            return true
+        }
+        return true
     }
 
-    /** اتصال برقرار شد (CONNECTED). */
-    fun finishConnecting() {
+    override fun performClick(): Boolean {
+        handleClick()
+        return super.performClick()
+    }
+
+    // ==================== Click (interruptible) ====================
+    private fun handleClick() {
         when (currentState) {
-            STATE_TURNING_ON -> {
-                // حین پرش بودیم → در فرودِ همون پرش تحویل بده؛
-                // ایستاده (HOLD) بودیم → انیمیشن بی‌نهایت hold را لغو و فوری EMERGE کن
-                if (inHold) { cancelAll(); startEmerging() } else pendingFinish = true
+            STATE_OFF -> startTurningOn()
+
+            STATE_TURNING_ON, STATE_EMERGING -> {
+                cancelAll()
+                resetAll()
+                animateColorsTo(STATE_OFF, 500)
+                setState(STATE_OFF)
             }
-            STATE_EMERGING -> { /* دارد ظاهر می‌شود؛ کاری لازم نیست */ }
-            else -> { cancelAll(); resetAll(); setState(STATE_ON) } // مثلاً build مجدد صفحه هنگام VPN فعال
+
+            STATE_ON -> startTurningOff()
+
+            STATE_TURNING_OFF -> {
+                cancelAll()
+                setLayerType(LAYER_TYPE_NONE, null)
+                resetAll()
+                animateColorsTo(STATE_ON, 500)
+                setState(STATE_ON)
+            }
         }
     }
 
-    /** شروع قطع (DISCONNECTING): چرخش + بلور. */
-    fun startDisconnecting() {
-        if (currentState == STATE_TURNING_OFF) return
-        cancelAll()
-        resetAll()
-        setState(STATE_TURNING_OFF)
-        applyStateColors(STATE_ON) // سبز بماند تا آخر چرخش
-        startSpinPhase()
-    }
-
-    /** قطع کامل شد (DISCONNECTED): اگر وسط چرخش هستیم بگذاریم اسپین تمام شود، وگرنه فوری خاموش. */
-    fun notifyDisconnected() {
-        if (currentState == STATE_TURNING_OFF) return
-        cancelAll()
-        resetAll()
-        setState(STATE_OFF)
-    }
-
-    /** ست‌کردن بی‌انیمیشنِ وضعیت (ساخت اولیه/ری‌کریت اکتیویتی). */
-    fun snapTo(state: Int) {
-        cancelAll()
-        resetAll()
-        setState(state)
-    }
-
-    /** نفس‌کشیدن ملایم آیکون، فقط وقتی خاموش و آماده‌ی اتصال است. */
-    fun startIdleBreathing() {
-        if (currentState != STATE_OFF) return
-        if (breathAnimator?.isRunning == true) return
-        breathAnimator = ValueAnimator.ofFloat(1f, 1.06f).apply {
-            duration = 1600
-            repeatMode = ValueAnimator.REVERSE
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
-            addUpdateListener {
-                breath = it.animatedValue as Float
-                invalidate()
-            }
-            start()
-        }
-    }
-
-    fun stopIdleBreathing() {
-        breathAnimator?.cancel()
-        breathAnimator = null
-        breath = 1f
-        invalidate()
-    }
-
-    // ==================== کمکی‌ها ====================
-
+    // ==================== Helpers ====================
     private fun resetAll() {
         fillScale = 0f
         ringSquashX = 1f; ringSquashY = 1f; ringAlpha = 1f
@@ -204,81 +151,77 @@ class PowerButtonView @JvmOverloads constructor(
         iconOffsetY = 0f
         iconSquashX = 1f; iconSquashY = 1f
         iconRotation = 0f
-        iconAlpha = 1f
         shadowAlpha = 0f
         shadowScaleX = 1f; shadowScaleY = 1f
         iconBlur = 0f
-        holdPulse = 1f
-        inHold = false
-        applyStateColors(currentState)
         invalidate()
     }
 
     private fun setState(s: Int) {
         currentState = s
-        applyStateColors(s)
-        invalidate()
-    }
-
-    /**
-     * پالت رنگی هر وضعیت — هماهنگ با بقیه‌ی UI برنامه:
-     * اگر بخواهی دقیقاً مثل دمو زمینه‌ی زرد/سبزِ یکدست و آیکون سفید داشته باشی،
-     * فقط همین بدنه را عوض کن؛ بقیه‌ی انیمیشن مستقل از رنگ‌هاست.
-     */
-    private fun applyStateColors(s: Int) {
-        when (s) {
-            STATE_OFF -> {
-                bgColor = Color.parseColor("#1E1E2E")
-                borderColor = Color.parseColor("#2A2A3E")
-                iconColor = Color.parseColor("#666680")
-            }
-            STATE_TURNING_ON -> {
-                bgColor = Color.parseColor("#3A2E00")
-                borderColor = Color.parseColor("#FFD700")
-                iconColor = Color.parseColor("#FFD700")
-            }
-            STATE_TURNING_OFF -> {
-                bgColor = Color.parseColor("#3A2E00")
-                borderColor = Color.parseColor("#FFD700")
-                iconColor = Color.parseColor("#FFD700")
-            }
-            STATE_EMERGING, STATE_ON -> {
-                bgColor = Color.parseColor("#1B3A22")
-                borderColor = Color.parseColor("#4CAF50")
-                iconColor = Color.parseColor("#4CAF50")
-            }
-        }
+        listener?.onStateChanged(s)
     }
 
     private fun cancelAll() {
-        pendingFinish = false
-        inHold = false
         for (a in animators) {
             a.removeAllListeners()
             a.cancel()
         }
         animators.clear()
-        breathAnimator?.cancel()
-        breathAnimator = null
-        breath = 1f
+        colorAnimator?.cancel()
     }
 
-    /**
-     * interpolate بین keyframeها.
-     * آرگومان‌ها به صورت زوج‌های (زمان 0..1، مقدار) هستند:
-     * keyframe(p, 0f, 0f,  0.5f, 1f,  1f, 0f)
-     * یعنی: p=0 ← 0، p=0.5 ← 1، p=1 ← 0
-     */
+    // ==================== Color Animation ====================
+    private fun animateColorsTo(state: Int, durationMs: Long) {
+        val target = colorsFor(state)
+        val fromBg = bgColor
+        val fromBorder = borderColor
+        val fromIcon = iconColor
+
+        colorAnimator?.cancel()
+        colorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = durationMs
+            addUpdateListener { a ->
+                val p = a.animatedValue as Float
+                bgColor     = lerpColor(fromBg,     target[0], p)
+                borderColor = lerpColor(fromBorder, target[1], p)
+                iconColor   = lerpColor(fromIcon,   target[2], p)
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun colorsFor(state: Int): IntArray {
+        return when (state) {
+            STATE_OFF, STATE_TURNING_OFF ->
+                intArrayOf(0xFF181829.toInt(), 0xFF2A2A40.toInt(), 0xFF4A4A6A.toInt())
+            STATE_TURNING_ON ->
+                intArrayOf(0xFF181829.toInt(), 0xFFFACC15.toInt(), 0xFFFFFFFF.toInt())
+            STATE_EMERGING, STATE_ON ->
+                intArrayOf(0xFF22C55E.toInt(), 0xFF16A34A.toInt(), 0xFFFFFFFF.toInt())
+            else ->
+                intArrayOf(0xFF181829.toInt(), 0xFF2A2A40.toInt(), 0xFF4A4A6A.toInt())
+        }
+    }
+
+    private fun lerpColor(from: Int, to: Int, t: Float): Int {
+        val a = (Color.alpha(from) + (Color.alpha(to) - Color.alpha(from)) * t).toInt()
+        val r = (Color.red(from)   + (Color.red(to)   - Color.red(from))   * t).toInt()
+        val g = (Color.green(from) + (Color.green(to) - Color.green(from)) * t).toInt()
+        val b = (Color.blue(from)  + (Color.blue(to)  - Color.blue(from))  * t).toInt()
+        return Color.argb(a, r, g, b)
+    }
+
+    // ==================== Keyframe interpolation ====================
     private fun keyframe(p: Float, vararg tv: Float): Float {
         val n = tv.size / 2
         if (n == 0) return 0f
         if (p <= tv[0]) return tv[1]
         if (p >= tv[2 * (n - 1)]) return tv[2 * (n - 1) + 1]
         for (i in 0 until n - 1) {
-            val t1 = tv[2 * i]
-            val v1 = tv[2 * i + 1]
-            val t2 = tv[2 * i + 2]
-            val v2 = tv[2 * i + 3]
+            val t1 = tv[2 * i];     val v1 = tv[2 * i + 1]
+            val t2 = tv[2 * i + 2]; val v2 = tv[2 * i + 3]
             if (p <= t2) {
                 val local = (p - t1) / (t2 - t1)
                 return v1 + (v2 - v1) * local
@@ -287,8 +230,13 @@ class PowerButtonView @JvmOverloads constructor(
         return tv[2 * (n - 1) + 1]
     }
 
-    // ==================== فاز ۱: MORPH ====================
-    private fun startMorphPhase() {
+    // ==================== Phase 1: MORPH ====================
+    private fun startTurningOn() {
+        cancelAll()
+        resetAll()
+        animateColorsTo(STATE_TURNING_ON, 500)
+        setState(STATE_TURNING_ON)
+
         val morph = ValueAnimator.ofFloat(0f, 1f).apply { duration = 550 }
         morph.addUpdateListener { a ->
             val p = a.animatedValue as Float
@@ -297,13 +245,12 @@ class PowerButtonView @JvmOverloads constructor(
 
             ringSquashX = keyframe(p, 0f, 1f, 0.25f, 1.08f, 0.55f, 0.95f, 0.80f, 0.97f, 1f, 0.80f)
             ringSquashY = keyframe(p, 0f, 1f, 0.25f, 0.94f, 0.55f, 1.05f, 0.80f, 0.94f, 1f, 0.80f)
-            ringAlpha   = keyframe(p, 0f, 1f, 0.25f, 1f, 0.55f, 0.60f, 0.80f, 0.25f, 1f, 0f)
+            ringAlpha   = keyframe(p, 0f, 1f, 0.25f, 1f,    0.55f, 0.60f, 0.80f, 0.25f, 1f, 0f)
 
             stemSquashX = keyframe(p, 0f, 1f, 0.25f, 0.94f, 0.55f, 1.05f, 0.80f, 1.08f, 1f, 1.10f)
             stemSquashY = keyframe(p, 0f, 1f, 0.25f, 1.08f, 0.55f, 0.85f, 0.80f, 0.50f, 1f, 0f)
-            stemAlpha   = keyframe(p, 0f, 1f, 0.25f, 1f, 0.55f, 0.80f, 0.80f, 0.35f, 1f, 0f)
+            stemAlpha   = keyframe(p, 0f, 1f, 0.25f, 1f,    0.55f, 0.80f, 0.80f, 0.35f, 1f, 0f)
 
-            shadowAlpha = 0f
             invalidate()
         }
         morph.addListener(object : AnimatorListenerAdapter() {
@@ -315,61 +262,44 @@ class PowerButtonView @JvmOverloads constructor(
         morph.start()
     }
 
-    // ==================== فاز ۲: JUMP (فقط یک پرش) ====================
-    // پرش تکرار نمی‌شود؛ اگر نتیجه تا پایان پرش نرسیده باشد، فاز HOLD
-    // (ایستادن آرام روی زمین) شروع می‌شود — این‌طوری هیچ‌وقت «دو-پرش» نمی‌بینیم.
+    // ==================== Phase 2: JUMP ====================
     private fun startJumpPhase() {
         val jump = ValueAnimator.ofFloat(0f, 1f).apply { duration = 700 }
         jump.addUpdateListener { a ->
             val p = a.animatedValue as Float
 
-            // اوج پرش به اندازه‌ی آیکون مقیاس می‌شود (در دمو dp ثابت بود و
-            // روی دکمه‌های کوچک‌تر/بزرگ‌تر از تعادل خارج می‌شد)
-            iconOffsetY = keyframe(p, 0f, 0f, 0.12f, 0f, 0.45f, -iconSize * 0.62f, 0.80f, 0f, 1f, 0f)
+            iconOffsetY = keyframe(p, 0f, 0f, 0.12f, 0f, 0.45f, -dp(44f), 0.80f, 0f, 1f, 0f)
             iconSquashX = keyframe(p, 0f, 1f, 0.12f, 1.05f, 0.45f, 0.97f, 0.80f, 1.06f, 1f, 1f)
             iconSquashY = keyframe(p, 0f, 1f, 0.12f, 0.96f, 0.45f, 1.03f, 0.80f, 0.95f, 1f, 1f)
 
-            shadowAlpha  = keyframe(p, 0f, 0.65f, 0.12f, 0.85f, 0.45f, 0.12f, 0.80f, 0.90f, 0.95f, 0.60f, 1f, 0f)
-            shadowScaleX = keyframe(p, 0f, 1.05f, 0.12f, 1.15f, 0.45f, 0.35f, 0.80f, 1.20f, 1f, 1f)
-            shadowScaleY = keyframe(p, 0f, 0.95f, 0.12f, 1.05f, 0.45f, 0.50f, 0.80f, 1.12f, 1f, 1f)
+            // shadow keyframes دقیقاً مطابق CSS
+            shadowAlpha  = keyframe(p,
+                0f,    0f,
+                0.05f, 0.70f,
+                0.12f, 0.95f,
+                0.45f, 0.15f,
+                0.80f, 1.0f,
+                0.95f, 0.70f,
+                1f,    0f)
+            shadowScaleX = keyframe(p,
+                0f, 1.05f, 0.12f, 1.15f, 0.45f, 0.35f, 0.80f, 1.20f, 1f, 1f)
+            shadowScaleY = keyframe(p,
+                0f, 0.95f, 0.12f, 1.05f, 0.45f, 0.50f, 0.80f, 1.12f, 1f, 1f)
 
             invalidate()
         }
         jump.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(a: Animator) {
-                if (currentState != STATE_TURNING_ON) return
-                if (pendingFinish) startEmerging() else startHoldPhase()
+                if (currentState == STATE_TURNING_ON) startEmerging()
             }
         })
         animators.add(jump)
         jump.start()
     }
 
-    // ==================== فاز ۲.۵: HOLD (ایستاده، نفس آرام؛ بدون پرش) ====================
-    private fun startHoldPhase() {
-        inHold = true
-        // مقدار ابتدا و انتهای هر سیکل یکی است، پس حلقه‌ی بی‌نهایت بدون هیچ
-        // پرشی جریان دارد — فقط نبض و سایه‌ی ملایمِ توپ روی زمین
-        val hold = ValueAnimator.ofFloat(0f, 1f).apply { duration = 1100 }
-        hold.repeatCount = ValueAnimator.INFINITE
-        hold.addUpdateListener { a ->
-            val p = a.animatedValue as Float
-            iconOffsetY = 0f
-            shadowAlpha  = keyframe(p, 0f, 0f, 0.15f, 0.45f, 0.50f, 0.70f, 0.85f, 0.45f, 1f, 0f)
-            shadowScaleX = keyframe(p, 0f, 0.90f, 0.50f, 1.00f, 1f, 0.90f)
-            shadowScaleY = keyframe(p, 0f, 0.80f, 0.50f, 1.00f, 1f, 0.80f)
-            holdPulse = keyframe(p, 0f, 1f, 0.50f, 1.07f, 1f, 1f)
-            invalidate()
-        }
-        animators.add(hold)
-        hold.start()
-    }
-
-    // ==================== فاز ۳: EMERGING ====================
+    // ==================== Phase 3: EMERGING ====================
     private fun startEmerging() {
-        pendingFinish = false
-        inHold = false
-        holdPulse = 1f
+        animateColorsTo(STATE_EMERGING, 500)
         setState(STATE_EMERGING)
         val emerge = ValueAnimator.ofFloat(0f, 1f).apply { duration = 650 }
         emerge.addUpdateListener { a ->
@@ -392,31 +322,42 @@ class PowerButtonView @JvmOverloads constructor(
         }
         emerge.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(a: Animator) {
-                if (currentState == STATE_EMERGING) {
-                    resetAll()
-                    setState(STATE_ON)
-                }
+                if (currentState == STATE_EMERGING) setState(STATE_ON)
             }
         })
         animators.add(emerge)
         emerge.start()
     }
 
-    // ==================== فاز ۴: TURNING OFF (چرخش + بلور) ====================
-    private fun startSpinPhase() {
+    // ==================== Phase 4: TURNING OFF (Spin + Blur) ====================
+    private fun startTurningOff() {
+        cancelAll()
+        resetAll()
+
+        // فعال کردن رندر نرم‌افزاری برای BlurMaskFilter
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+
+        // رنگ‌ها بلافاصله به حالت خاموش می‌رن (با انیمیشن ۵۰۰ms)
+        animateColorsTo(STATE_OFF, 500)
+        setState(STATE_TURNING_OFF)
+
         val spin = ValueAnimator.ofFloat(0f, 1f).apply { duration = 800 }
         spin.addUpdateListener { a ->
             val p = a.animatedValue as Float
             iconRotation = 360f * p
-            // بلور: شروع ۲۵٪، اوج ۴۰٪، پایان ۶۰٪
-            iconBlur = keyframe(p, 0f, 0f, 0.25f, 0f, 0.40f, dp(5f), 0.60f, 0f, 1f, 0f)
+            // بلور: شروع ۲۵٪، اوج ۴۰٪، پایان ۶۰٪ (خطی مثل CSS)
+            iconBlur = keyframe(p,
+                0f,    0f,
+                0.25f, 0f,
+                0.40f, dp(5f),
+                0.60f, 0f,
+                1f,    0f)
             invalidate()
         }
         spin.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(a: Animator) {
-                iconRotation = 0f
-                iconBlur = 0f
                 if (currentState == STATE_TURNING_OFF) {
+                    setLayerType(LAYER_TYPE_NONE, null)
                     resetAll()
                     setState(STATE_OFF)
                 }
@@ -426,11 +367,11 @@ class PowerButtonView @JvmOverloads constructor(
         spin.start()
     }
 
-    // ==================== رسم ====================
+    // ==================== Draw ====================
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // خودِ دکمه
+        // پس‌زمینه دکمه
         bgPaint.color = bgColor
         canvas.drawCircle(cx, cy, radius, bgPaint)
 
@@ -438,40 +379,62 @@ class PowerButtonView @JvmOverloads constructor(
         borderPaint.color = borderColor
         canvas.drawCircle(cx, cy, radius, borderPaint)
 
-        // سایه زیر توپ
+        // ============ سایه‌ی زیر دایره‌ی پرنده ============
         if (shadowAlpha > 0.001f) {
+            val sw = iconSize * 0.48f
+            val sh = iconSize * 0.105f
+
             canvas.save()
             canvas.translate(cx, cy + iconSize * 0.55f)
             canvas.scale(shadowScaleX, shadowScaleY)
-            shadowPaint.alpha = (170 * shadowAlpha).toInt()
-            val sw = iconSize * 0.40f
-            val sh = iconSize * 0.08f
-            canvas.drawOval(RectF(-sw, -sh, sw, sh), shadowPaint)
+
+            // برای اینکه گرادیان به شکل بیضی دربیاد، canvas رو عمودی فشرده می‌کنیم
+            canvas.save()
+            canvas.scale(1f, sh / sw)
+
+            val aCenter = (242 * shadowAlpha).toInt().coerceIn(0, 255)
+            val aMid    = (178 * shadowAlpha).toInt().coerceIn(0, 255)
+            val aOuter  = (77  * shadowAlpha).toInt().coerceIn(0, 255)
+
+            shadowPaint.shader = RadialGradient(
+                0f, 0f, sw,
+                intArrayOf(
+                    Color.argb(aCenter, 0, 0, 0),
+                    Color.argb(aMid,    0, 0, 0),
+                    Color.argb(aOuter,  0, 0, 0),
+                    Color.argb(0,       0, 0, 0)
+                ),
+                floatArrayOf(0f, 0.35f, 0.65f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawCircle(0f, 0f, sw, shadowPaint)
+
+            canvas.restore()
             canvas.restore()
         }
 
-        // آیکون (حلقه + خط + توپ) — نفس‌کشیدن بی‌کار روی هر دو محوری اعمال می‌شود
+        // ============ آیکون ============
         canvas.save()
         canvas.translate(cx, cy + iconOffsetY)
         canvas.rotate(iconRotation)
-        canvas.scale(iconSquashX * breath, iconSquashY * breath)
+        canvas.scale(iconSquashX, iconSquashY)
 
-        // افکت بلور حین چرخش (روی بوم نرم‌افزاری)
+        // افکت blur (فقط در رندر نرم‌افزاری کار می‌کنه)
         if (iconBlur > 0.5f) {
-            iconPaint.maskFilter = BlurMaskFilter(iconBlur, BlurMaskFilter.Blur.NORMAL)
-            ballPaint.maskFilter = BlurMaskFilter(iconBlur, BlurMaskFilter.Blur.NORMAL)
+            try {
+                iconPaint.maskFilter = BlurMaskFilter(iconBlur, BlurMaskFilter.Blur.NORMAL)
+            } catch (_: Exception) { }
         } else {
             iconPaint.maskFilter = null
-            ballPaint.maskFilter = null
         }
 
-        // ۱) توپ پرکننده (سه‌بعدی) — holdPulse نبض فاز ایستاده را می‌دهد
+        // ۱) دایره‌ی پرکننده‌ی سه‌بعدی
         if (fillScale > 0.001f) {
-            val r = ringRadius * (10.8f / 9f) * fillScale * holdPulse
+            val r = ringRadius * (10.8f / 9f) * fillScale
             ballPaint.shader = RadialGradient(
                 0f, r * 0.3f, r * 1.05f,
                 intArrayOf(
-                    Color.WHITE,
+                    0xFFFFFFFF.toInt(),
                     0xFFF8F8FC.toInt(),
                     0xFFD8D8E2.toInt(),
                     0xFF8A8A9C.toInt()
@@ -487,29 +450,23 @@ class PowerButtonView @JvmOverloads constructor(
             canvas.save()
             canvas.scale(ringSquashX, ringSquashY)
             iconPaint.color = iconColor
-            iconPaint.alpha = (255 * ringAlpha * iconAlpha).toInt()
+            iconPaint.alpha = (255 * ringAlpha).toInt()
             val ringRect = RectF(-ringRadius, -ringRadius, ringRadius, ringRadius)
             canvas.drawArc(ringRect, -60f, 300f, false, iconPaint)
             canvas.restore()
         }
 
-        // ۳) خط وسط — pivot پایین خط
+        // ۳) خط وسط (pivot در پایین)
         if (stemAlpha > 0.001f) {
             val stemTop = -iconSize * (10f / 24f)
             canvas.save()
             canvas.scale(stemSquashX, stemSquashY, 0f, 0f)
             iconPaint.color = iconColor
-            iconPaint.alpha = (255 * stemAlpha * iconAlpha).toInt()
+            iconPaint.alpha = (255 * stemAlpha).toInt()
             canvas.drawLine(0f, stemTop, 0f, 0f, iconPaint)
             canvas.restore()
         }
 
         canvas.restore()
-    }
-
-    override fun onDetachedFromWindow() {
-        // هرگز انیمیشن بی‌نهایت را روی View رها نکن (جلوگیری از leak)
-        cancelAll()
-        super.onDetachedFromWindow()
     }
 }
