@@ -1,4 +1,4 @@
-package com.example.powerbutton
+package com.example.kochakdns
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
