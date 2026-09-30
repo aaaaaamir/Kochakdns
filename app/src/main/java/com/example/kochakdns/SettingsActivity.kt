@@ -44,6 +44,8 @@ class SettingsActivity : BaseActivity() {
         private const val ICON_TIMER = "M15,1H9v2h6V1zM11,14h2V8h-2V14zM19.03,7.39l1.42,-1.42c-0.43,-0.51 -0.9,-0.99 -1.41,-1.41l-1.42,1.42C16.07,4.74 14.12,4 12,4c-4.97,0 -9,4.03 -9,9s4.02,9 9,9 9,-4.03 9,-9c0,-2.12 -0.74,-4.07 -1.97,-5.61zM12,20c-3.87,0 -7,-3.13 -7,-7s3.13,-7 7,-7 7,3.13 7,7 -3.13,7 -7,7z"
         // آیکون زبان (ترجمه — Material «translate»)
         private const val ICON_LANG = "M12.87,15.07l-2.54,-2.51 0.03,-0.03c1.74,-1.94 2.98,-4.17 3.71,-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5,7.92 10.44,9.75 9,11.35 8.07,10.32 7.3,9.19 6.69,8h-2c0.73,1.63 1.73,3.17 2.98,4.56l-5.09,5.02L4,19l5,-5 3.11,3.11 0.76,-2.04zM18.5,10h-2L12,22h2l1.12,-3h4.75L21,22h2l-4.5,-12zM16.88,17l1.62,-4.33L20.12,17h-3.24z"
+        // آیکون روش پینگ (کره/شبکه — Material «public»)
+        private const val ICON_GLOBE = "M11.99,2C6.47,2 2,6.48 2,12s4.47,10 9.99,10C17.52,22 22,17.52 22,12S17.52,2 11.99,2zM18.92,8h-2.95c-0.32,-1.25 -0.78,-2.45 -1.38,-3.56 1.84,0.63 3.37,1.91 4.33,3.56zM12,4.04c0.83,1.2 1.48,2.53 1.91,3.96h-3.82c0.43,-1.43 1.08,-2.76 1.91,-3.96zM4.26,14C4.1,13.36 4,12.69 4,12s0.1,-1.36 0.26,-2h3.38c-0.08,0.66 -0.14,1.32 -0.14,2 0,0.68 0.06,1.34 0.14,2L4.26,14zM5.08,16h2.95c0.32,1.25 0.78,2.45 1.38,3.56 -1.84,-0.63 -3.37,-1.9 -4.33,-3.56zM8.03,8H5.08c0.96,-1.66 2.49,-2.93 4.33,-3.56C8.81,5.55 8.35,6.75 8.03,8zM12,19.96c-0.83,-1.2 -1.48,-2.53 -1.91,-3.96h3.82c-0.43,1.43 -1.08,2.76 -1.91,3.96zM14.34,14H9.66c-0.09,-0.66 -0.16,-1.32 -0.16,-2 0,-0.68 0.07,-1.35 0.16,-2h4.68c0.09,0.65 0.16,1.32 0.16,2 0,0.68 -0.07,1.34 -0.16,2zM14.59,19.56c0.6,-1.11 1.06,-2.31 1.38,-3.56h2.95c-0.96,1.65 -2.49,2.93 -4.33,3.56zM16.36,14c0.08,-0.66 0.14,-1.32 0.14,-2 0,-0.68 -0.06,-1.34 -0.14,-2h3.38c0.16,0.64 0.26,1.31 0.26,2s-0.1,1.36 -0.26,2h-3.38z"
 
         // مقادیر پیش‌فرض (برای نمایش برچسب «پیش‌فرض»)
         private const val DEFAULT_UDP = 8
@@ -70,6 +72,7 @@ class SettingsActivity : BaseActivity() {
     private lateinit var timeoutStartCard: ValueCard
     private lateinit var timeoutFloorCard: ValueCard
     private lateinit var fixedTimeoutCard: ValueCard
+    private lateinit var pingModeCard: ValueCard
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -292,6 +295,18 @@ class SettingsActivity : BaseActivity() {
         }
         list.addView(fixedTimeoutCard.card)
 
+        // روش پینگ‌گیری — پیش‌فرض = همان رفتار فعلی (پرس‌وجوی DNS)؛ حالت‌های
+        // https و دستی، تأخیر واقعی‌ترِ TCP+TLS تا یک آدرس مشخص را می‌سنجند.
+        pingModeCard = glassValueCard(
+            title = str("ping_mode_title"),
+            subtitle = str("ping_mode_sub"),
+            iconPath = ICON_GLOBE,
+            valueLabel = ""
+        ) {
+            showPingModeDialog()
+        }
+        list.addView(pingModeCard.card)
+
         // ===================== نمایش =====================
         list.addView(sectionHeader(str("sec_display")))
 
@@ -401,6 +416,149 @@ class SettingsActivity : BaseActivity() {
         timeoutStartCard.valueView.text = valueLabel(AppSettings.getTimeoutStartMs(this), DEFAULT_TIMEOUT_START, str("val_ms"))
         timeoutFloorCard.valueView.text = valueLabel(AppSettings.getTimeoutFloorMs(this), DEFAULT_TIMEOUT_FLOOR, str("val_ms"))
         fixedTimeoutCard.valueView.text = valueLabel(AppSettings.getFixedTimeoutMs(this), DEFAULT_FIXED_TIMEOUT, str("val_ms"))
+        pingModeCard.valueView.text = pingModeLabel()
+    }
+
+    /** برچسب کارت «روش پینگ» — در حالت دستی خودِ آدرس هم نشان داده می‌شود. */
+    private fun pingModeLabel(): String = when (AppSettings.getPingMode(this)) {
+        AppSettings.PING_MODE_PUBG -> "Pubgmobile.com"
+        AppSettings.PING_MODE_GOOGLE -> "Google 204"
+        AppSettings.PING_MODE_MANUAL -> {
+            val url = AppSettings.getPingManualUrl(this)
+            if (url.isBlank()) str("ping_mode_need_url") else url.substringAfter("://")
+        }
+        else -> str("ping_mode_dns")
+    }
+
+    /** دیالوگ انتخاب روش پینگ؛ گزینه «دستی» اول آدرس معتبر می‌خواهد. */
+    private fun showPingModeDialog() {
+        pickValueDialog(
+            title = str("ping_mode_title"),
+            options = listOf(
+                AppSettings.PING_MODE_DNS to str("ping_mode_dns"),
+                AppSettings.PING_MODE_PUBG to "https://pubgmobile.com",
+                AppSettings.PING_MODE_GOOGLE to "https://www.google.com/generate_204",
+                AppSettings.PING_MODE_MANUAL to str("ping_mode_manual")
+            ),
+            current = AppSettings.getPingMode(this),
+            onCustom = null
+        ) { v ->
+            when (v) {
+                AppSettings.PING_MODE_MANUAL -> urlPingInputDialog()
+                else -> {
+                    AppSettings.setPingMode(this, v)
+                    refreshValueLabels()
+                }
+            }
+        }
+    }
+
+    /**
+     * ورود آدرس دستی پینگ — فقط لینک کامل https:// معتبر پذیرفته می‌شود
+     * (طرح/سبک دقیقاً مثل numberInputDialog؛ با «تأیید» هم روش روی دستی ست می‌شود).
+     */
+    private fun urlPingInputDialog() {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#99000000"))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 26, 28, 20)
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                leftMargin = 44
+                rightMargin = 44
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1E1E2E"))
+                cornerRadius = 28f
+                setStroke(2, Color.parseColor("#2A2A3E"))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        card.addView(TextView(this).apply {
+            text = str("ping_mode_url_title")
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 6)
+        })
+        card.addView(TextView(this).apply {
+            text = str("ping_mode_url_hint")
+            setTextColor(Color.parseColor("#8A8A9A"))
+            textSize = 12f
+            setPadding(0, 0, 0, 14)
+        })
+
+        val input = EditText(this).apply {
+            setText(AppSettings.getPingManualUrl(this@SettingsActivity))
+            hint = "https://example.com"
+            setHintTextColor(Color.parseColor("#5A5A6E"))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            background = GradientDrawable().apply {
+                cornerRadius = 16f
+                setColor(Color.parseColor("#2A2A3E"))
+                setStroke(2, Color.parseColor("#3A3A4E"))
+            }
+            setPadding(20, 14, 20, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 16 }
+        }
+        card.addView(input)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(makeDialogButton(str("cancel"), false) {
+            dismissOverlay(overlay)
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(android.view.View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(16), 1)
+        })
+        row.addView(makeDialogButton(str("ok"), true) {
+            val v = input.text.toString().trim()
+            if (!isValidHttpsUrl(v)) {
+                Toast.makeText(this, str("ping_mode_invalid_url"), Toast.LENGTH_SHORT).show()
+            } else {
+                AppSettings.setPingManualUrl(this, v)
+                AppSettings.setPingMode(this, AppSettings.PING_MODE_MANUAL)
+                dismissOverlay(overlay)
+                refreshValueLabels()
+            }
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(row)
+
+        overlay.addView(card)
+        root.addView(overlay)
+        animateDialogIn(overlay, card)
+        input.requestFocus()
+    }
+
+    /** اعتبار لینک پینگ دستی: باید با https:// شروع شود و یک URL کامل با هاست معتبر باشد. */
+    private fun isValidHttpsUrl(raw: String): Boolean {
+        val s = raw.trim()
+        if (s.length < 12 || s.length > 2048) return false
+        if (s.any { it <= ' ' }) return false
+        if (!s.startsWith("https://", ignoreCase = true)) return false
+        return try {
+            val host = java.net.URI(s).host
+            host != null && host.contains('.') && !host.endsWith(".")
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** محو کردن (و غیرقابل لمس کردن) یک کارت بدون حذفش از صفحه. */
