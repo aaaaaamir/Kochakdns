@@ -322,6 +322,9 @@ object AppSettings {
     private const val KEY_TIMEOUT_FLOOR = "timeout_floor_ms"
     private const val KEY_ADAPTIVE_TIMEOUT = "adaptive_timeout"
     private const val KEY_FIXED_TIMEOUT = "fixed_timeout_ms"
+    // روش پینگ‌گیری + آدرس دستی
+    private const val KEY_PING_MODE = "ping_mode"
+    private const val KEY_PING_MANUAL_URL = "ping_manual_url"
     private const val KEY_LANGUAGE = "app_language"
 
     private fun prefs(context: android.content.Context) =
@@ -465,6 +468,26 @@ object AppSettings {
 
     fun setFixedTimeoutMs(context: android.content.Context, value: Int) {
         prefs(context).edit().putInt(KEY_FIXED_TIMEOUT, value.coerceAtLeast(1)).apply()
+    }
+
+    // ---- روش پینگ‌گیری (تنظیمات → نحوه پینگ) ----
+    const val PING_MODE_DNS = "dns"          // پیش‌فرض: پرس‌وجوی DNS به سرور خودِ پروفایل (UDP/TCP:53)
+    const val PING_MODE_PUBG = "pubg"        // https://pubgmobile.com
+    const val PING_MODE_GOOGLE = "google"    // https://www.google.com/generate_204
+    const val PING_MODE_MANUAL = "manual"    // آدرس دلخواه کاربر (حتماً https:// معتبر)
+
+    fun getPingMode(context: android.content.Context): String =
+        prefs(context).getString(KEY_PING_MODE, PING_MODE_DNS) ?: PING_MODE_DNS
+
+    fun setPingMode(context: android.content.Context, mode: String) {
+        prefs(context).edit().putString(KEY_PING_MODE, mode).apply()
+    }
+
+    fun getPingManualUrl(context: android.content.Context): String =
+        prefs(context).getString(KEY_PING_MANUAL_URL, "") ?: ""
+
+    fun setPingManualUrl(context: android.content.Context, url: String) {
+        prefs(context).edit().putString(KEY_PING_MANUAL_URL, url.trim()).apply()
     }
 
     // زبان برنامه: "device" (پیش‌فرض) | "fa" | "en"
