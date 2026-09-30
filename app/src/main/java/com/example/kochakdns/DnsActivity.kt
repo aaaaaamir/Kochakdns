@@ -1561,11 +1561,21 @@ class DnsActivity : BaseActivity() {
                     // یکی‌یکی و پشت‌سرهم بدون مکث پینگ می‌گیریم؛ فقط وقتی کل
                     // صف تموم شد، ۵ ثانیه صبر می‌کنیم و از اول شروع می‌کنیم.
                     val itemsToPing = dnsItems.toList()
+
+                    // روش پینگ از تنظیمات: «dns» رفتار همیشگی است (پرس‌وجوی DNS به
+                    // سرور خودِ هر پروفایل). در حالت‌های https هر چرخه یک نمونه‌ی
+                    // مشترک گرفته می‌شود و به‌روِ همه‌ی کارت‌ها ست می‌گردد — چون
+                    // هدف، سنجش تأخیر واقعیِ شبکه تا آن سرور است نه کیفیت DNSها.
+                    // (هر چرخه دوباره خوانده می‌شود؛ تغییر حالت بدون ری‌استارت اعمال می‌شود.)
+                    val pingMode = AppSettings.getPingMode(applicationContext)
+                    val httpPingMode = pingMode != AppSettings.PING_MODE_DNS
+                    val sharedHttpPing = if (httpPingMode && itemsToPing.isNotEmpty()) pingViaHttps(pingMode) else -1L
+
                     for (item in itemsToPing) {
                         if (!isActive) break
                         if (vpnState == VpnUiState.CONNECTED) break // اگه وسط صف وصل شد، صف رو نگه دار
 
-                        val newPing = pingDnsWithFallback(item.servers)
+                        val newPing = if (httpPingMode) sharedHttpPing else pingDnsWithFallback(item.servers)
 
                         mainHandler.post {
                             val index = dnsItems.indexOfFirst { it.name == item.name }
@@ -1717,6 +1727,52 @@ class DnsActivity : BaseActivity() {
             cachedUnderlyingNetwork
         } catch (e: Exception) {
             null
+        }
+    }
+
+    // ===================================================================
+    // پینگ HTTPS (حالت‌های Pubgmobile / Google 204 / دستی از تنظیمات)
+    // ===================================================================
+
+    /** آدرس هدف پینگ بر اساس حالت انتخابی؛ null یعنی آدرس معتبری ست نیست. */
+    private fun pingTargetUrl(mode: String): String? = when (mode) {
+        AppSettings.PING_MODE_PUBG -> "https://pubgmobile.com"
+        AppSettings.PING_MODE_GOOGLE -> "https://www.google.com/generate_204"
+        AppSettings.PING_MODE_MANUAL ->
+            AppSettings.getPingManualUrl(applicationContext).takeIf { it.isNotBlank() }
+        else -> null
+    }
+
+    /**
+     * کلاینت سبکِ سنجش تأخیر: فقط تا رسیدن هدر پاسخ صبر می‌کند (بدنه دانلود
+     * نمی‌شود) و ریدایرکت را دنبال نمی‌کند — پاسخِ هر کدی که باشد، زمان رسیدنش
+     * ملاک است. چون مسیر TCP+TLS کامل طی می‌شود عدد کمی از پینگ خام DNS بزرگ‌تر
+     * است و همین هدف این حالت‌هاست: تأخیرِ شبیهِ چیزی که بازی/براوزر حس می‌کند.
+     */
+    private val pingHttp by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(false)
+            .retryOnConnectionFailure(false)
+            .build()
+    }
+
+    /** یک نمونه تأخیر HTTP(S)؛ -1 یعنی خطا/تایم‌اوت (همان قرارداد پینگ DNS). */
+    private suspend fun pingViaHttps(mode: String): Long {
+        val url = pingTargetUrl(mode) ?: return -1L
+        return try {
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("User-Agent", AppConfig.USER_AGENT)
+                .get()
+                .build()
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            pingHttp.newCall(request).execute().use { resp -> resp.code }
+            val ms = android.os.SystemClock.elapsedRealtime() - t0
+            if (ms in 1L..10_000L) ms else -1L
+        } catch (_: Exception) {
+            -1L
         }
     }
 
