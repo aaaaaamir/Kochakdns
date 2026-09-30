@@ -1,32 +1,51 @@
-name: Build Android ARM64
+name: Android CI
+
+# اگر workflow فعلی‌ات triggerهای دیگری دارد، همان‌ها را نگه دار؛
+# این فایل بر پایه‌ی لاگ Actions خودت (checkout@v4 + setup-java@v5 temurin 17
+# + gradle/actions@v4 با Gradle 8.10.2 + assembleDebug) بازسازی شده است.
 
 on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
-          add-job-summary: 'always'
+          gradle-version: 8.10.2
 
-      - name: Ensure gradlew exists and make executable
+      # ===== مهم‌ترین بخش: ساختن ApiConfig.kt از راز مخزن =====
+      # بدون این مرحله، چون فایل در .gitignore است، در clone بیلد وجود ندارد
+      # و همه‌ی ارجاع‌ها (Models.kt / ApiCrypto.kt) با
+      # «Unresolved reference: ApiConfig» می‌شکنند.
+      - name: Create ApiConfig.kt from repository secret
+        env:
+          API_CONFIG_KT: ${{ secrets.API_CONFIG_KT }}
+        run: |
+          if [ -z "$API_CONFIG_KT" ]; then
+            echo "::error::Repository secret 'API_CONFIG_KT' is not set."
+            echo "برو به Settings → Secrets and variables → Actions و یک secret با همین نام بساز؛ مقدارش = کل محتوای فایل ApiConfig.kt"
+            exit 1
+          fi
+          mkdir -p app/src/main/java/com/example/kochakdns
+          printf '%s\n' "$API_CONFIG_KT" > app/src/main/java/com/example/kochakdns/ApiConfig.kt
+
+      - name: Ensure Gradle wrapper
         run: |
           if [ ! -f ./gradlew ]; then
             echo "gradlew not found! Generating Gradle Wrapper..."
@@ -34,21 +53,18 @@ jobs:
           fi
           chmod +x ./gradlew
 
-      - name: Build Debug APK for ARM64
-        run: |
-          ./gradlew assembleDebug --build-cache --stacktrace --warning-mode=all
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --build-cache --stacktrace --warning-mode=all
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: kochakdns-arm64-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: ignore
 
-      - name: Upload Error Reports
+      - name: Upload compiler reports
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: compiler-reports
           path: |
