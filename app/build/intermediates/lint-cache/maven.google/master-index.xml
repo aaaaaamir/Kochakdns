@@ -7,6 +7,8 @@
   <android.arch.persistence/>
   <android.arch.persistence.room/>
   <android.arch.work/>
+  <androidx.a2ui/>
+  <androidx.a2ui.compose/>
   <androidx.activity/>
   <androidx.ads/>
   <androidx.annotation/>
@@ -130,6 +132,7 @@
   <androidx.startup/>
   <androidx.swiperefreshlayout/>
   <androidx.test/>
+  <androidx.test.backup/>
   <androidx.test.espresso/>
   <androidx.test.espresso.idling/>
   <androidx.test.ext/>
