@@ -1569,7 +1569,27 @@ class DnsActivity : BaseActivity() {
                     // (هر چرخه دوباره خوانده می‌شود؛ تغییر حالت بدون ری‌استارت اعمال می‌شود.)
                     val pingMode = AppSettings.getPingMode(applicationContext)
                     val httpPingMode = pingMode != AppSettings.PING_MODE_DNS
-                    val sharedHttpPing = if (httpPingMode && itemsToPing.isNotEmpty()) pingViaHttps(pingMode) else -1L
+                    var sharedHttpPing = -1L
+                    if (httpPingMode && itemsToPing.isNotEmpty()) {
+                        // اگر حالت عوض شده یا بیش از ۲ دقیقه نمونه نگرفته‌ایم (اتصال
+                        // استخر بیات شده) → اول یک نمونه صرفِ گرم‌کردن (DNS+TCP+TLS)
+                        // گرفته و دور ریخته می‌شود؛ عدد نمایشی بعد از آن روی کانکشن
+                        // گرم است ≈ RTT واقعی، نه هزینه‌ی دست‌دادنِ کامل.
+                        val needsWarm = httpPingWarmMode != pingMode ||
+                            System.currentTimeMillis() - lastHttpSampleOkAt > 120_000L
+                        if (needsWarm) {
+                            // یک نمونه‌ی دور‌ریختنی برای ساختِ اتصال (و کش DNS)
+                            val warmSample = pingViaHttps(pingMode, warmup = true)
+                            if (warmSample > 0) {
+                                httpPingWarmMode = pingMode
+                                delay(250) // فاصله‌ی کوتاه تا اتصال در استخر جا بیفتد
+                            }
+                            // اگر warm هم شکست خورد، حالت warmup حفظ می‌ماند و
+                            // چرخه‌ی بعد دوباره گرم می‌کند (عدد سرد به کاربر نشان داده
+                            // نمی‌شود؛ فقط Timeout/عدد قبلی می‌ماند)
+                        }
+                        sharedHttpPing = pingViaHttps(pingMode)
+                    }
 
                     for (item in itemsToPing) {
                         if (!isActive) break
@@ -1603,7 +1623,10 @@ class DnsActivity : BaseActivity() {
                                 val oldDisplayPing = oldItem.ping
                                 val newItem = oldItem.copy(
                                     ping = displayPing,
-                                    previousPing = oldDisplayPing
+                                    previousPing = oldDisplayPing,
+                                    // اگر همین آخرین نمونه خطا/تایم‌اوت بود، کارت به‌جای
+                                    // عدد قبلی برچسب «تایم‌اوت» می‌گیرد (هر دو حالت: DNS/https)
+                                    timedOut = raw < 0
                                 )
                                 dnsItems[index] = newItem
                                 dnsItemViews[item.name]?.update(newItem, item.name == selectedDnsName)
@@ -1669,10 +1692,10 @@ class DnsActivity : BaseActivity() {
     private fun updateSelectedDnsStats() {
         val selectedItem = dnsItems.find { it.name == selectedDnsName }
         if (selectedItem != null) {
-            lastPingText.text = if (selectedItem.ping > 0) {
-                "${selectedItem.ping} ms"
-            } else {
-                "-- ms"
+            lastPingText.text = when {
+                selectedItem.timedOut -> str("ping_timeout")
+                selectedItem.ping > 0 -> "${selectedItem.ping} ms"
+                else -> "-- ms"
             }
             jitterText.text = if (directJitterMs > 0) {
                 "${directJitterMs.toLong()} ms"
@@ -1680,6 +1703,7 @@ class DnsActivity : BaseActivity() {
                 "-- ms"
             }
             when {
+                selectedItem.timedOut -> lastPingText.setTextColor(Color.parseColor("#FF7043"))
                 selectedItem.ping < 0 -> lastPingText.setTextColor(Color.parseColor("#666666"))
                 selectedItem.ping < 50 -> lastPingText.setTextColor(Color.parseColor("#4CAF50"))
                 selectedItem.ping < 100 -> lastPingText.setTextColor(Color.parseColor("#FFC107"))
@@ -1743,35 +1767,83 @@ class DnsActivity : BaseActivity() {
         else -> null
     }
 
+    // ---- کش DNS: هاست یک‌بار resolve می‌شود و ~۱۰ دقیقه روی همان IP تست می‌شود ----
+    // (درخواست کاربر: «بار اول IP رو در بیاره، بقیه رو همون IP پینگ بگیره».)
+    // در خطا کشِ آن هاست پاک می‌شود تا نمونه‌ی بعدی مجبور به resolve تازه باشد.
+    private val pingDnsCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<List<java.net.InetAddress>, Long>>()
+
+    /** بعد تغییر حالت/گسست طولانی، نمونه‌ی بعدی باید اول اتصال را گرم کند. */
+    private var httpPingWarmMode: String? = null
+    private var lastHttpSampleOkAt = 0L
+
     /**
-     * کلاینت سبکِ سنجش تأخیر: فقط تا رسیدن هدر پاسخ صبر می‌کند (بدنه دانلود
-     * نمی‌شود) و ریدایرکت را دنبال نمی‌کند — پاسخِ هر کدی که باشد، زمان رسیدنش
-     * ملاک است. چون مسیر TCP+TLS کامل طی می‌شود عدد کمی از پینگ خام DNS بزرگ‌تر
-     * است و همین هدف این حالت‌هاست: تأخیرِ شبیهِ چیزی که بازی/براوزر حس می‌کند.
+     * کلاینت سبکِ سنجش تأخیر — اصلاحات ضد «پینگ کاذبِ بالا» نسبت به نسخه‌ی اول:
+     *  ۱) HEAD بدون بدنه + تخلیه‌ی کامل → اتصال در استخر OkHttp زنده می‌ماند و
+     *     نمونه‌های بعدی روی همان کانکشن گرمِ TCP+TLS زده می‌شوند. قبلاً هر نمونه
+     *     یک دست‌دادن کامل (DNS+TCP+TLS ≈ دو-سه RTT اضافه) روی عدد می‌انداخت
+     *     چون بدنه خوانده‌نشده با close دور ریخته می‌شد و اتصال اصلاً reuse نمی‌شد.
+     *  ۲) DNS کش‌شده → resolve فقط هر ۱۰ دقیقه یک‌بار، نه هر نمونه.
+     *  ۳) followRedirects خاموش → ریدایرکت‌های پنهانی که زمان را باد می‌کنند حذف.
+     *  ۴) retryOnConnectionFailure روشن → اتصال بیات‌شده‌ی استخر بی‌سروصدا با
+     *     اتصال تازه جایگزین می‌شود.
      */
     private val pingHttp by lazy {
         okhttp3.OkHttpClient.Builder()
             .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
             .followRedirects(false)
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
+            .dns(object : okhttp3.Dns {
+                override fun lookup(hostname: String): List<java.net.InetAddress> {
+                    val now = System.currentTimeMillis()
+                    val hit = pingDnsCache[hostname]
+                    if (hit != null && hit.second > now) return hit.first
+                    val resolved = java.net.InetAddress.getAllByName(hostname).toList()
+                    pingDnsCache[hostname] = Pair(resolved, now + 10 * 60_000L)
+                    return resolved
+                }
+            })
             .build()
     }
 
-    /** یک نمونه تأخیر HTTP(S)؛ -1 یعنی خطا/تایم‌اوت (همان قرارداد پینگ DNS). */
-    private suspend fun pingViaHttps(mode: String): Long {
+    /**
+     * یک نمونه تأخیر HTTP(S)؛ -1 یعنی خطا/تایم‌اوت (همان قرارداد پینگ DNS).
+     * زمان‌سنجی فقط تا رسیدن هدر پاسخ است؛ تخلیه‌ی بدنه «بعد از» اندازه‌گیری
+     * انجام می‌شود تا اتصالِ keep-alive برای نمونه‌ی بعدی سالم بماند.
+     * warmup=true یعنی این نمونه فقط برای گرم‌کردن اتصال است و زمانش گزارش نمی‌شود.
+     */
+    private suspend fun pingViaHttps(mode: String, warmup: Boolean = false): Long {
         val url = pingTargetUrl(mode) ?: return -1L
         return try {
             val request = okhttp3.Request.Builder()
                 .url(url)
                 .header("User-Agent", AppConfig.USER_AGENT)
-                .get()
+                .head()
                 .build()
             val t0 = android.os.SystemClock.elapsedRealtime()
-            pingHttp.newCall(request).execute().use { resp -> resp.code }
+            val resp = pingHttp.newCall(request).execute()
             val ms = android.os.SystemClock.elapsedRealtime() - t0
+            try {
+                resp.body?.let { b ->
+                    val input = b.byteStream()
+                    val buf = ByteArray(2048)
+                    var drained = 0L
+                    while (drained < 65536L) {
+                        val n = input.read(buf)
+                        if (n == -1) break
+                        drained += n
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                try { resp.close() } catch (_: Exception) {}
+            }
+            if (!warmup) lastHttpSampleOkAt = System.currentTimeMillis()
             if (ms in 1L..10_000L) ms else -1L
         } catch (_: Exception) {
+            // احتمال تغییر IP/قطعی میزبان → کش DNS همین هاست باطل شود
+            runCatching { java.net.URI(url).host?.let { pingDnsCache.remove(it) } }
             -1L
         }
     }
@@ -2106,14 +2178,22 @@ class DnsActivity : BaseActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+            val initialHasValue = initial.ping > 0 || initial.timedOut
             pingText = TextView(context).apply {
-                text = if (initial.ping > 0) "${initial.ping} ms" else ""
-                setTextColor(Color.parseColor("#888888"))
+                text = when {
+                    initial.timedOut -> context.str("ping_timeout")
+                    initial.ping > 0 -> "${initial.ping} ms"
+                    else -> ""
+                }
+                setTextColor(
+                    if (initial.timedOut) Color.parseColor("#FF7043")
+                    else Color.parseColor("#888888")
+                )
                 textSize = 12f
-                visibility = if (initial.ping > 0) View.VISIBLE else View.GONE
+                visibility = if (initialHasValue) View.VISIBLE else View.GONE
             }
             loadingDots = buildLoadingDots(context).apply {
-                visibility = if (initial.ping > 0) View.GONE else View.VISIBLE
+                visibility = if (initialHasValue) View.GONE else View.VISIBLE
             }
             // درصد موفقیت ارسال پکت‌ها (از آماری که سرور برگردونده)، همون
             // کنار پینگ — یک جای مناسب و کم‌حجم که همیشه در دید باشه.
@@ -2316,6 +2396,7 @@ class DnsActivity : BaseActivity() {
 
         private var lastKnownSelected: Boolean? = null
         private var lastKnownPing: Long? = null
+        private var lastKnownTimedOut = false
         private var lastKnownPercent: Double? = null
         private var lastKnownStatsSent: Long? = null
         private var lastKnownStatsLost: Long? = null
@@ -2455,21 +2536,34 @@ class DnsActivity : BaseActivity() {
             this.isSelected = isSelected
             if (nameText.text != item.name) nameText.text = item.name
 
-            if (lastKnownPing != item.ping) {
+            if (lastKnownPing != item.ping || lastKnownTimedOut != item.timedOut) {
                 lastKnownPing = item.ping
-                if (item.ping > 0) {
-                    pingText.text = "${item.ping} ms"
-                    pingText.visibility = View.VISIBLE
-                    loadingDots.visibility = View.GONE
-                } else {
-                    pingText.visibility = View.GONE
-                    loadingDots.visibility = View.VISIBLE
-                }
+                lastKnownTimedOut = item.timedOut
                 when {
-                    item.ping < 0 -> pingText.setTextColor(Color.parseColor("#666666"))
-                    item.ping < 50 -> pingText.setTextColor(Color.parseColor("#4CAF50"))
-                    item.ping < 100 -> pingText.setTextColor(Color.parseColor("#FFC107"))
-                    else -> pingText.setTextColor(Color.parseColor("#F44336"))
+                    item.timedOut -> {
+                        // آخرین نمونه پاسخ نداد → به‌جای نقطه‌های لودینگ، «تایم‌اوت»
+                        pingText.text = context.str("ping_timeout")
+                        pingText.visibility = View.VISIBLE
+                        loadingDots.visibility = View.GONE
+                        pingText.setTextColor(Color.parseColor("#FF7043"))
+                    }
+                    item.ping > 0 -> {
+                        pingText.text = "${item.ping} ms"
+                        pingText.visibility = View.VISIBLE
+                        loadingDots.visibility = View.GONE
+                        pingText.setTextColor(
+                            when {
+                                item.ping < 50 -> Color.parseColor("#4CAF50")
+                                item.ping < 100 -> Color.parseColor("#FFC107")
+                                else -> Color.parseColor("#F44336")
+                            }
+                        )
+                    }
+                    else -> {
+                        // هنوز هیچ نمونه‌ای گرفته نشده — نقطه‌های لودینگ
+                        pingText.visibility = View.GONE
+                        loadingDots.visibility = View.VISIBLE
+                    }
                 }
             }
 
