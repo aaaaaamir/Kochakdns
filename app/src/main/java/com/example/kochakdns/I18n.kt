@@ -200,7 +200,18 @@ object I18n {
         "ping_mode_url_title" to "آدرس دستی پینگ",
         "ping_mode_url_hint" to "باید با https:// شروع شود و یک لینک معتبر و کامل باشد",
         "ping_mode_invalid_url" to "لینک نامعتبر است؛ باید https:// و آدرس کامل باشد",
-        "ping_mode_need_url" to "آدرس را وارد کن"
+        "ping_mode_need_url" to "آدرس را وارد کن",
+        "ping_timeout" to "تایم‌اوت",
+        "rate_limit" to "محدودسازی ارسال کوئری",
+        "rate_limit_sub" to "حداکثر تعداد مجاز پرس‌وجو به سرور DNS در هر بازه؛ بدون رگبار پشت‌سرهم",
+        "rate_limit_count" to "کوئری مجاز در هر بازه",
+        "rate_limit_count_sub" to "عدد بالاتر = پاسخ‌دهی سریع‌تر؛ عدد پایین‌تر = الگوی ترافیک یکنواخت‌تر",
+        "rate_limit_window" to "طول بازه",
+        "rate_limit_window_sub" to "بازه‌ای که سقف کوئری‌ها داخل آن شمرده می‌شود",
+        "rate_limit_timeout" to "تایم‌اوت صف",
+        "rate_limit_timeout_sub" to "کوئری معطلی که نوبتش از این هم بیشتر عقب بیفتد حذف می‌شود — در پکت گمشده هم حساب نمی‌شود",
+        "val_queries" to "کوئری",
+        "val_seconds" to "ثانیه"
     )
 
     private val EN = mapOf(
@@ -345,7 +356,18 @@ object I18n {
         "ping_mode_url_title" to "Custom ping URL",
         "ping_mode_url_hint" to "Must start with https:// and be a full, valid link",
         "ping_mode_invalid_url" to "Invalid link; it must be a full https:// URL",
-        "ping_mode_need_url" to "Enter the URL"
+        "ping_mode_need_url" to "Enter the URL",
+        "ping_timeout" to "Timeout",
+        "rate_limit" to "Query send throttling",
+        "rate_limit_sub" to "Max queries the DNS server receives per window; no back-to-back bursts",
+        "rate_limit_count" to "Queries per window",
+        "rate_limit_count_sub" to "Higher = snappier replies; lower = smoother traffic pattern",
+        "rate_limit_window" to "Window length",
+        "rate_limit_window_sub" to "The interval over which the query cap is counted",
+        "rate_limit_timeout" to "Queue timeout",
+        "rate_limit_timeout_sub" to "A queued query waiting longer than this is dropped — it is NOT counted as a lost packet",
+        "val_queries" to "queries",
+        "val_seconds" to "sec"
     )
 
     /** ترجمه‌ی کلید به زبان فعلی (fallback به فارسی). */
