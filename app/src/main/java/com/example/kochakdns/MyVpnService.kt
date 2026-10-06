@@ -123,6 +123,18 @@ class MyVpnService : VpnService() {
     // بقیه نادیده گرفته می‌شوند تا یک قطعی، چندین «گم‌شده» نسازد.
     private val inFlightQueries = ConcurrentHashMap<String, Boolean>()
 
+    // ---- محدودساز سرعت ارسال کوئری (تنظیمات → محدودسازی ارسال کوئری) ----
+    // رزرو «اسلات»: در هر پنجره‌ی زمانی حداکثر N ارسال مجاز است و زمان اسلات‌ها
+    // روی کل پنجره با جیتر تصادفی (تا نیم‌اسلات) پخش می‌شود — پس کوئری‌هایی که
+    // در پنجره‌ی قبلی پشت صف مانده‌اند، ابتدای پنجره‌ی بعد یکهو پشت‌سرهم شلیک
+    // نمی‌شوند. اگر نوبت یک کوئری بیشتر از «تایم‌اوت صف» عقب بیفتد، حذف می‌شود
+    // و عمداً در sent/lost شمرده نمی‌شود. پاسخ‌های کش‌خورده اصلاً شبکه نمی‌زنند،
+    // پس اسلات مصرف نمی‌کنند.
+    private val rateLock = Any()
+    private val rateRnd = java.util.Random()
+    private var rateWinStart = 0L
+    private var rateWinSent = 0
+
     // مجموعه‌ی کلیدهای در حال تازه‌سازی پیشدستانه‌ی کش — تا برای یک کلید
     // دو تازه‌سازی موازی نشود.
     private val refreshingKeys = ConcurrentHashMap<String, Boolean>()
@@ -254,6 +266,9 @@ class MyVpnService : VpnService() {
             VpnStats.totalPacketsSent.set(0)
             VpnStats.totalPacketsLost.set(0)
             VpnStats.totalPacketsBlocked.set(0)
+            VpnStats.totalQueriesThrottled.set(0)
+            rateWinStart = 0L
+            rateWinSent = 0
             VpnStats.dnsCacheHits.set(0)
             VpnStats.dnsCacheMisses.set(0)
             VpnStats.dnsCacheSavedMs.set(0)
@@ -316,16 +331,11 @@ class MyVpnService : VpnService() {
 
                 val data = packet.copyOf(length)
                 when {
-                    isIpv4Udp53(data) -> {
-                        VpnStats.totalPacketsSent.incrementAndGet()
-                        VpnStats.totalBytesSent.addAndGet(length.toLong())
-                        launchRelay { relayDnsQueryV4(data, output) }
-                    }
-                    isIpv6Udp53(data) -> {
-                        VpnStats.totalPacketsSent.incrementAndGet()
-                        VpnStats.totalBytesSent.addAndGet(length.toLong())
-                        launchRelay { relayDnsQueryV6(data, output) }
-                    }
+                    isIpv4Udp53(data) -> launchRelay { relayDnsQueryV4(data, output) }
+                    isIpv6Udp53(data) -> launchRelay { relayDnsQueryV6(data, output) }
+                    // (counting sent/bytes به داخل relay منتقل شد: دقیقاً وقتی که یا
+                    //  از کش پاسخ داده شد یا اسلاتِ محدودساز گرفته شد — تا کوئری
+                    //  که به‌دلیل تایم‌اوتِ صف حذف می‌شود، sent هم حساب نشود.)
                     else -> {
                         // فقط DNS وارد تون می‌شود؛ هر پکت دیگری (مثلاً ریتِرایِ
                         // TCP:53 ریزالور بعد از پاسخ‌های بزرگ/TC، یا ICMP) عمداً
@@ -376,6 +386,48 @@ class MyVpnService : VpnService() {
         }
     }
 
+    /**
+     * مجوز ارسال یک پرس‌وجو به upstream (فقط برای cache-miss صدا زده می‌شود).
+     * true = بفرست (شاید بعد از انتظار برای اسلات رزروشده)؛
+     * false = صبر از تایم‌اوت صف بیشتر شد، کوئری دور ریخته شد — در هیچ
+     * شمارنده‌ی sent/lost حساب نمی‌شود؛ ریزالور اندروید بعد از مهلتش با
+     * queryId تازه ریترای می‌کند و آن یکی حساب می‌شود.
+     *
+     * توجه: در حین انتظار، کلید inFlight همین کوئری گرفته است — پس ریترای‌های
+     * تکراریِ ریزالور در همین فاصله با همین یکی ادغام می‌شوند و صف باد نمی‌کند.
+     */
+    private suspend fun acquireUpstreamSlot(): Boolean {
+        if (!AppSettings.isQueryRateLimitEnabled(this)) return true
+        val per = AppSettings.getQueryRateCount(this).coerceAtLeast(1)
+        val winMs = AppSettings.getQueryRateWindowSec(this).coerceAtLeast(1) * 1000L
+        val maxAgeMs = AppSettings.getQueryRateTimeoutSec(this).coerceAtLeast(1) * 1000L
+        val slotMs = (winMs / per).coerceAtLeast(15L)
+
+        val now = System.currentTimeMillis()
+        val due: Long
+        synchronized(rateLock) {
+            if (now - rateWinStart >= winMs) { rateWinStart = now; rateWinSent = 0 }
+            // جیتر تصادفیِ تا نیم‌اسلات: خروجی‌ها روی پنجره پخش می‌شوند نه فشرده
+            due = maxOf(now, rateWinStart) + rateWinSent * slotMs +
+                (if (slotMs > 2) (rateRnd.nextFloat() * (slotMs / 2)).toLong() else 0L)
+            rateWinSent++
+            if (rateWinSent >= per) {
+                // پنجره پر شد → پنجره‌ی بعد از انتهای پنجره‌ی فعلی شروع می‌شود؛
+                // اسلات‌های رزرو‌شده‌ی همین صف داخل پنجره‌ی جدید می‌افتند
+                rateWinStart += winMs
+                rateWinSent = 0
+            }
+        }
+        val waitMs = due - now
+        if (waitMs > maxAgeMs) {
+            // «خیلی قدیمی» → حذف؛ نه sent هست نه lost (اصلاً ارسال نشد)
+            VpnStats.totalQueriesThrottled.incrementAndGet()
+            return false
+        }
+        if (waitMs > 0) delay(waitMs)
+        return true
+    }
+
     private suspend fun relayDnsQueryV4(ipPacket: ByteArray, output: FileOutputStream) {
         try {
             val ihl = (ipPacket[0].toInt() and 0x0F) * 4
@@ -398,6 +450,8 @@ class MyVpnService : VpnService() {
                 val cached = dnsCache.get(dnsPayload, queryId)
                 if (cached != null) {
                     VpnStats.dnsCacheHits.incrementAndGet()
+                    VpnStats.totalPacketsSent.incrementAndGet()
+                    VpnStats.totalBytesSent.addAndGet(ipPacket.size.toLong())
                     recordCacheHit(dnsPayload, dstIp)
                     writeReplyV4(output, dstIp, srcIp, srcPort, cached.bytes)
                     // پاسخ نرم (منقضی ولی قابل سرو): در پس‌زمینه تازه‌سازی کن
@@ -411,6 +465,11 @@ class MyVpnService : VpnService() {
             // هر کوئری دقیقاً یک بار شمرده می‌شود: یا موفق (Sent) یا شکست کاملِ
             // UDP+TCP (Lost). شکستِ UDP به‌تنهایی «گم‌شده» نیست چون TCP جبرانش
             // می‌کند؛ و شکستِ هر دو هم فقط همین یک بار حساب می‌شود (نه دو بار).
+            // مجوز ارسال از محدودساز سرعت (خاموش = بلافاصله true)
+            if (!acquireUpstreamSlot()) return
+            // شمارش از «اینجا» است — کوئری دورریختی‌شده sent حساب نمی‌شود
+            VpnStats.totalPacketsSent.incrementAndGet()
+            VpnStats.totalBytesSent.addAndGet(ipPacket.size.toLong())
             val responsePayload = try {
                 queryUpstream(dnsPayload, dstIp)
             } catch (_: Exception) {
@@ -452,6 +511,8 @@ class MyVpnService : VpnService() {
                 val cached = dnsCache.get(dnsPayload, queryId)
                 if (cached != null) {
                     VpnStats.dnsCacheHits.incrementAndGet()
+                    VpnStats.totalPacketsSent.incrementAndGet()
+                    VpnStats.totalBytesSent.addAndGet(ipPacket.size.toLong())
                     recordCacheHit(dnsPayload, dstIp)
                     writeReplyV6(output, dstIp, srcIp, srcPort, cached.bytes)
                     if (cached.stale) refreshCacheEntry(dnsPayload, dstIp)
@@ -462,6 +523,11 @@ class MyVpnService : VpnService() {
 
             // پرس‌وجوی واقعی: اول UDP؛ فقط اگر UDP واقعاً بی‌پاسخ ماند، TCP.
             // (شمارش «گم‌شده» دقیقاً یک بار — فقط وقتی هر دو پروتکل شکست بخورند.)
+            // مجوز ارسال از محدودساز سرعت (خاموش = بلافاصله true)
+            if (!acquireUpstreamSlot()) return
+            // شمارش از «اینجا» است — کوئری دورریختی‌شده sent حساب نمی‌شود
+            VpnStats.totalPacketsSent.incrementAndGet()
+            VpnStats.totalBytesSent.addAndGet(ipPacket.size.toLong())
             val responsePayload = try {
                 queryUpstream(dnsPayload, dstIp)
             } catch (_: Exception) {
