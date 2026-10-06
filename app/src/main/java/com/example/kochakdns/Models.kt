@@ -137,6 +137,8 @@ data class DnsItem(
     val servers: List<DnsServer>,
     val ping: Long = -1,
     val previousPing: Long = -1,
+    // آخرین نمونه‌ی پینگ تایم‌اوت رفته بود؟ (برای نمایش «تایم‌اوت» در لیست)
+    val timedOut: Boolean = false,
     // آماری که از سرور (endpoint آمار) خونده می‌شه؛ مجموع پکت‌های
     // ارسالی/گم‌شده‌ای که قبلاً وقتی این پروفایل وصل بوده، ثبت شده.
     val statsPacketsSent: Long = 0,
@@ -168,6 +170,12 @@ object VpnStats {
     // پکت‌هایی که عمداً به‌دلیل «مسدودسازی» دور ریخته می‌شوند؛ این‌ها گم‌شده
     // نیستند و نه در UI به‌عنوان گم‌شده نمایش داده می‌شوند نه به سرور ارسال می‌شوند.
     val totalPacketsBlocked = AtomicLong(0)
+    /**
+     * کوئری‌هایی که به‌دلیل محدودساز سرعت دور ریخته شدند (منتظر نوبت بیش از
+     * تایم‌اوت ماندن). عمداً در sent/lost حساب نمی‌شوند — ارسال نشدند، پس «گم‌شده»
+     * نیستند؛ ریزالور اندروید خودش بعد از مهلتش ریترای می‌زند.
+     */
+    val totalQueriesThrottled = AtomicLong(0)
 
     // آمار کش DNS: تعداد پاسخ‌هایی که از کش سرو شده‌اند و تعداد پرس‌وجوهایی که
     // در کش نبوده‌اند. با هم نرخ «پاسخ از کش» را می‌سازند (نمایش در تنظیمات).
@@ -312,6 +320,11 @@ object AppSettings {
     private const val KEY_ANNOUNCEMENT = "announcement_enabled"
     private const val KEY_QS_TILE = "qs_tile_enabled"
     private const val KEY_QS_SUGGESTION = "qs_tile_suggestion_shown"
+    // ---- محدودساز سرعت ارسال کوئری (رله‌ی DNS) ----
+    private const val KEY_RATE_LIMIT = "query_rate_limit_enabled"
+    private const val KEY_RATE_COUNT = "query_rate_limit_count"
+    private const val KEY_RATE_WINDOW = "query_rate_limit_window_sec"
+    private const val KEY_RATE_TIMEOUT = "query_rate_limit_timeout_sec"
     // پذیرش موافقت‌نامه حریم خصوصی/شرایط — بار اول روی اسپلش پرسیده می‌شود.
     private const val KEY_CONSENT = "terms_consent_v1"
     private const val KEY_TCP_FALLBACK = "tcp_fallback"
@@ -488,6 +501,38 @@ object AppSettings {
 
     fun setPingManualUrl(context: android.content.Context, url: String) {
         prefs(context).edit().putString(KEY_PING_MANUAL_URL, url.trim()).apply()
+    }
+
+    // ---- محدودساز سرعت ارسال کوئری ----
+    // پیش‌فرض روشن: حداکثر ۶ کوئری در هر ۱ ثانیه به سرور DNS.
+    // کوئری‌هایی که نوبتشان بیشتر از «تایم‌اوت صف» عقب بیفتد، حذف می‌شوند
+    // و در sent/lost حساب نمی‌شوند (ریزالور خودش ریترای می‌کند).
+    fun isQueryRateLimitEnabled(context: android.content.Context): Boolean =
+        prefs(context).getBoolean(KEY_RATE_LIMIT, true)
+
+    fun setQueryRateLimitEnabled(context: android.content.Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_RATE_LIMIT, value).apply()
+    }
+
+    fun getQueryRateCount(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_RATE_COUNT, 6).coerceAtLeast(1)
+
+    fun setQueryRateCount(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_RATE_COUNT, value.coerceAtLeast(1)).apply()
+    }
+
+    fun getQueryRateWindowSec(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_RATE_WINDOW, 1).coerceAtLeast(1)
+
+    fun setQueryRateWindowSec(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_RATE_WINDOW, value.coerceAtLeast(1)).apply()
+    }
+
+    fun getQueryRateTimeoutSec(context: android.content.Context): Int =
+        prefs(context).getInt(KEY_RATE_TIMEOUT, 5).coerceAtLeast(1)
+
+    fun setQueryRateTimeoutSec(context: android.content.Context, value: Int) {
+        prefs(context).edit().putInt(KEY_RATE_TIMEOUT, value.coerceAtLeast(1)).apply()
     }
 
     // زبان برنامه: "device" (پیش‌فرض) | "fa" | "en"
