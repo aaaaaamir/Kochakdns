@@ -53,6 +53,10 @@ class SettingsActivity : BaseActivity() {
         private const val DEFAULT_TIMEOUT_START = 8000
         private const val DEFAULT_TIMEOUT_FLOOR = 2000
         private const val DEFAULT_FIXED_TIMEOUT = 5000
+        // محدودساز ارسال کوئری
+        private const val DEFAULT_RATE_COUNT = 6
+        private const val DEFAULT_RATE_WINDOW = 1
+        private const val DEFAULT_RATE_TIMEOUT = 5
     }
 
     // کارت سوییچ‌دار (برای تغییر وضعیت فعال/غیرفعال درجا)
@@ -73,6 +77,10 @@ class SettingsActivity : BaseActivity() {
     private lateinit var timeoutFloorCard: ValueCard
     private lateinit var fixedTimeoutCard: ValueCard
     private lateinit var pingModeCard: ValueCard
+    private lateinit var rateLimitCard: SwitchCard
+    private lateinit var rateCountCard: ValueCard
+    private lateinit var rateWindowCard: ValueCard
+    private lateinit var rateTimeoutCard: ValueCard
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -307,6 +315,75 @@ class SettingsActivity : BaseActivity() {
         }
         list.addView(pingModeCard.card)
 
+        // ---- محدودسازی سرعت ارسال کوئری (رله‌ی DNS، بدون نیاز به اتصال مجدد اعمال می‌شود) ----
+        rateLimitCard = glassSwitch(
+            title = str("rate_limit"),
+            subtitle = str("rate_limit_sub"),
+            iconPath = ICON_TIMER,
+            initial = AppSettings.isQueryRateLimitEnabled(this)
+        ) { checked ->
+            AppSettings.setQueryRateLimitEnabled(this, checked)
+            refreshDependents()
+        }
+        list.addView(rateLimitCard.card)
+
+        rateCountCard = glassValueCard(
+            title = str("rate_limit_count"),
+            subtitle = str("rate_limit_count_sub"),
+            iconPath = ICON_CONC,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
+                title = str("rate_limit_count"),
+                options = listOf(3, 4, 6, 8, 10, 15, 20, 30),
+                current = AppSettings.getQueryRateCount(this),
+                default = DEFAULT_RATE_COUNT,
+                unit = str("val_queries")
+            ) { v ->
+                AppSettings.setQueryRateCount(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(rateCountCard.card)
+
+        rateWindowCard = glassValueCard(
+            title = str("rate_limit_window"),
+            subtitle = str("rate_limit_window_sub"),
+            iconPath = ICON_TIMER,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
+                title = str("rate_limit_window"),
+                options = listOf(1, 2, 3, 5, 10),
+                current = AppSettings.getQueryRateWindowSec(this),
+                default = DEFAULT_RATE_WINDOW,
+                unit = str("val_seconds")
+            ) { v ->
+                AppSettings.setQueryRateWindowSec(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(rateWindowCard.card)
+
+        rateTimeoutCard = glassValueCard(
+            title = str("rate_limit_timeout"),
+            subtitle = str("rate_limit_timeout_sub"),
+            iconPath = ICON_TIMER,
+            valueLabel = ""
+        ) {
+            numberPickDialog(
+                title = str("rate_limit_timeout"),
+                options = listOf(2, 3, 5, 10, 30),
+                current = AppSettings.getQueryRateTimeoutSec(this),
+                default = DEFAULT_RATE_TIMEOUT,
+                unit = str("val_seconds")
+            ) { v ->
+                AppSettings.setQueryRateTimeoutSec(this, v)
+                refreshValueLabels()
+            }
+        }
+        list.addView(rateTimeoutCard.card)
+
         // ===================== نمایش =====================
         list.addView(sectionHeader(str("sec_display")))
 
@@ -407,6 +484,12 @@ class SettingsActivity : BaseActivity() {
         setCardEnabled(timeoutStartCard.card, adaptive)
         setCardEnabled(timeoutFloorCard.card, adaptive)
         setCardEnabled(fixedTimeoutCard.card, !adaptive)
+
+        // کارت‌های محدودساز فقط وقتی خودِ محدودساز روشن است فعال‌اند
+        val rateOn = AppSettings.isQueryRateLimitEnabled(this)
+        setCardEnabled(rateCountCard.card, rateOn)
+        setCardEnabled(rateWindowCard.card, rateOn)
+        setCardEnabled(rateTimeoutCard.card, rateOn)
     }
 
     /** به‌روزرسانی برچسب مقدارها درجا (بدون بازسازی صفحه). */
@@ -417,6 +500,9 @@ class SettingsActivity : BaseActivity() {
         timeoutFloorCard.valueView.text = valueLabel(AppSettings.getTimeoutFloorMs(this), DEFAULT_TIMEOUT_FLOOR, str("val_ms"))
         fixedTimeoutCard.valueView.text = valueLabel(AppSettings.getFixedTimeoutMs(this), DEFAULT_FIXED_TIMEOUT, str("val_ms"))
         pingModeCard.valueView.text = pingModeLabel()
+        rateCountCard.valueView.text = valueLabel(AppSettings.getQueryRateCount(this), DEFAULT_RATE_COUNT, str("val_queries"))
+        rateWindowCard.valueView.text = valueLabel(AppSettings.getQueryRateWindowSec(this), DEFAULT_RATE_WINDOW, str("val_seconds"))
+        rateTimeoutCard.valueView.text = valueLabel(AppSettings.getQueryRateTimeoutSec(this), DEFAULT_RATE_TIMEOUT, str("val_seconds"))
     }
 
     /** برچسب کارت «روش پینگ» — در حالت دستی خودِ آدرس هم نشان داده می‌شود. */
